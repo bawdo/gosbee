@@ -1,11 +1,6 @@
 run:
   timeout: 5m
   tests: true
-  skip-dirs:
-    - vendor
-    - testdata
-  skip-files:
-    - ".*\\.pb\\.go$"
 
 linters:
   enable:
@@ -74,6 +69,12 @@ linters-settings:
       - whyNoLint          # Not needed
 
 issues:
+  exclude-dirs:
+    - vendor
+    - testdata
+  exclude-files:
+    - ".*\\.pb\\.go$"
+
   exclude-rules:
     # Exclude some linters from running on tests files
     - path: _test\.go
