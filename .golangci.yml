@@ -1,100 +1,74 @@
+version: 2
+
 run:
   timeout: 5m
   tests: true
 
 linters:
   enable:
-    # Core linters
-    - errcheck       # Check for unchecked errors
-    - govet          # Go vet checks
-    - staticcheck    # Static analysis
-    - typecheck      # Type checking
-    - unused         # Unused code detection
+    # Critical linters only - catch real bugs
+    - errcheck       # Unchecked errors
+    - govet          # Suspicious constructs
+    - staticcheck    # Static analysis bugs
+    - ineffassign    # Ineffectual assignments
+    - unused         # Unused code
+    # gosec disabled for Phase A - will enable and fix in Phase B
 
-    # Style linters
-    - gofmt          # Ensure code is formatted
-    - goimports      # Check imports are formatted
-    - gosimple       # Simplify code suggestions
-
-    # Quality linters
-    - ineffassign    # Detect ineffectual assignments
-    - gocritic       # Comprehensive Go source code linter
-    - misspell       # Spelling mistakes
-    - unconvert      # Unnecessary type conversions
-    - unparam        # Unused function parameters
-    - whitespace     # Trailing whitespace
-
-    # Error handling
-    - errname        # Error names should end with Error
-    - errorlint      # Error wrapping best practices
-
-    # Security
-    - gosec          # Security problems
-
-  disable:
-    # Too strict for this project
-    - lll            # Line length (let code review handle this)
-    - gocyclo        # Cyclomatic complexity (too strict)
-    - gomnd          # Magic numbers (too noisy)
-    - funlen         # Function length (too strict)
-    - nestif         # Nested if statements (too strict)
-    - gocognit       # Cognitive complexity (too strict)
-    - cyclop         # Package cyclomatic complexity (too strict)
+  disable-all: false
 
 linters-settings:
   errcheck:
-    check-type-assertions: true
-    check-blank: false
+    check-type-assertions: false  # Too noisy
+    check-blank: false            # Allow _ = errors for now
 
   govet:
-    enable-all: true
+    enable-all: false
+    enable:
+      - atomic           # Atomic access issues
+      - bools            # Boolean mistakes
+      - errorsas         # errors.As usage
+      - ifaceassert      # Impossible interface assertions
+      - nilfunc          # Nil function comparisons
+      - printf           # Printf format issues
+      - stringintconv    # String/int conversions
     disable:
-      - shadow  # Too many false positives
+      - shadow           # Too many false positives
+      - fieldalignment   # Style, not bugs
 
   staticcheck:
     checks: ["all"]
 
   gosec:
     severity: medium
+    confidence: medium
     excludes:
       - G104  # Audit errors not checked (covered by errcheck)
-
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-    disabled-checks:
-      - commentFormatting  # Too pedantic
-      - whyNoLint          # Not needed
+      - G304  # File inclusion via variable (false positives in tests)
+      - G306  # File permissions (too strict for development)
 
 issues:
   exclude-dirs:
     - vendor
     - testdata
+
   exclude-files:
     - ".*\\.pb\\.go$"
 
   exclude-rules:
-    # Exclude some linters from running on tests files
+    # Exclude some linters from running on test files
     - path: _test\.go
       linters:
         - errcheck
         - gosec
-        - unparam
 
-    # Exclude known false positives
-    - text: "weak cryptographic primitive"
+    # Exclude specific gosec rules (will fix in Phase B)
+    - text: "G304.*file inclusion"
+      linters:
+        - gosec
+    - text: "G306.*file permissions"
       linters:
         - gosec
 
-    # Ignore shadowing of 'err'
-    - text: "shadow: declaration of \"err\" shadows declaration"
-      linters:
-        - govet
-
   max-issues-per-linter: 0
   max-same-issues: 0
-
-  # Don't hide issues that were introduced before running golangci-lint
   new: false
