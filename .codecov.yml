@@ -31,7 +31,7 @@ ignore:
   - "**/*_test.go"            # Test files themselves
   - "**/testdata/**/*"        # Test data
   - "**/*.pb.go"              # Generated protobuf files
-  - "internal/testutil/**/*"  # Test utilities and helpers
+  - "internal/testutil/**"    # Test utilities and helpers
 
 github_checks:
   annotations: true

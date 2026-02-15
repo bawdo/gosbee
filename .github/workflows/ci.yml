@@ -77,7 +77,9 @@ jobs:
         run: go mod download
 
       - name: Run tests with coverage
-        run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+        run: |
+          COVERPKG=$(go list ./... | grep -v testutil | tr '\n' ',' | sed 's/,$//')
+          go test -race -coverprofile=coverage.txt -covermode=atomic -coverpkg="$COVERPKG" ./...
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
