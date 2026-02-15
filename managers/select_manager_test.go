@@ -1083,3 +1083,65 @@ func TestSelectManagerAs(t *testing.T) {
 		t.Error("expected column Relation to be the alias")
 	}
 }
+
+// --- Transformers ---
+
+func TestTransformers(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := NewSelectManager(users)
+	
+	// Add a transformer
+	transformer := &mockTransformer{}
+	m.Use(transformer)
+	
+	// Get transformers
+	transformers := m.Transformers()
+	if len(transformers) != 1 {
+		t.Errorf("expected 1 transformer, got %d", len(transformers))
+	}
+	if transformers[0] != transformer {
+		t.Error("expected transformer to match")
+	}
+}
+
+type mockTransformer struct {
+	plugins.BaseTransformer
+}
+
+// --- LateralJoin edge cases ---
+
+func TestLateralJoinWithComplexSubquery(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	orders := nodes.NewTable("orders")
+
+	// Create a subquery
+	subquery := NewSelectManager(orders).
+		Select(orders.Col("total")).
+		Where(orders.Col("user_id").Eq(users.Col("id"))).
+		Limit(1)
+
+	subAlias := subquery.As("latest_order")
+	trueCondition := users.Col("id").Eq(users.Col("id")) // Always true condition
+	m := NewSelectManager(users).
+		Select(users.Col("id")).
+		LateralJoin(subAlias).
+		On(trueCondition)
+
+	// Verify the LATERAL flag is set
+	if len(m.Core.Joins) != 1 {
+		t.Fatalf("expected 1 join, got %d", len(m.Core.Joins))
+	}
+	if !m.Core.Joins[0].Lateral {
+		t.Error("expected Lateral flag to be true")
+	}
+	// Verify it produces SQL without error
+	sql, err := m.ToSQL(testutil.StubVisitor{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sql == "" {
+		t.Error("expected non-empty SQL")
+	}
+}

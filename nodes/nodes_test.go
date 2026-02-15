@@ -1902,3 +1902,125 @@ func TestInAnyEmpty(t *testing.T) {
 		t.Errorf("expected nil for empty InAny, got %v", result)
 	}
 }
+
+// --- Arithmetic constructors ---
+
+func TestNewInfixNode(t *testing.T) {
+	t.Parallel()
+	users := NewTable("users")
+	left := users.Col("price")
+	right := Literal(10)
+	
+	node := NewInfixNode(left, right, OpPlus)
+	
+	if node.Left != left {
+		t.Error("expected Left to be the left operand")
+	}
+	if node.Right != right {
+		t.Error("expected Right to be the right operand")
+	}
+	if node.Op != OpPlus {
+		t.Errorf("expected OpPlus, got %d", node.Op)
+	}
+	
+	// Verify self pointers are set for method chaining
+	cmp := node.Eq(20)
+	if cmp.Left != node {
+		t.Error("expected Predications.self to be set correctly")
+	}
+}
+
+func TestNewUnaryMathNode(t *testing.T) {
+	t.Parallel()
+	users := NewTable("users")
+	expr := users.Col("flags")
+	
+	node := NewUnaryMathNode(expr, OpBitwiseNot)
+	
+	if node.Expr != expr {
+		t.Error("expected Expr to be the expression")
+	}
+	if node.Op != OpBitwiseNot {
+		t.Errorf("expected OpBitwiseNot, got %d", node.Op)
+	}
+	
+	// Verify self pointers are set for method chaining
+	result := node.Multiply(2)
+	if result.Left != node {
+		t.Error("expected Arithmetics.self to be set correctly")
+	}
+}
+
+// --- Over/OverName for named functions ---
+
+func TestNamedFunctionOver(t *testing.T) {
+	t.Parallel()
+	fn := Lower(Literal("NAME"))
+	windowDef := NewWindowDef().Partition(Literal("category"))
+
+	overNode := fn.Over(windowDef)
+
+	if overNode.Expr != fn {
+		t.Error("expected Expr to be the named function")
+	}
+	if overNode.Window != windowDef {
+		t.Error("expected Window to be the window definition")
+	}
+}
+
+func TestNamedFunctionOverName(t *testing.T) {
+	t.Parallel()
+	fn := Upper(Literal("text"))
+
+	overNode := fn.OverName("my_window")
+
+	if overNode.Expr != fn {
+		t.Error("expected Expr to be the named function")
+	}
+	if overNode.WindowName != "my_window" {
+		t.Errorf("expected WindowName %q, got %q", "my_window", overNode.WindowName)
+	}
+}
+
+// --- String() debug helpers ---
+
+func TestJoinTypeString(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		joinType JoinType
+		want     string
+	}{
+		{InnerJoin, "INNER JOIN"},
+		{LeftOuterJoin, "LEFT OUTER JOIN"},
+		{RightOuterJoin, "RIGHT OUTER JOIN"},
+		{FullOuterJoin, "FULL OUTER JOIN"},
+		{CrossJoin, "CROSS JOIN"},
+	}
+	for _, tt := range tests {
+		got := tt.joinType.String()
+		if got != tt.want {
+			t.Errorf("JoinType(%d).String() = %q, want %q", tt.joinType, got, tt.want)
+		}
+	}
+}
+
+func TestSetOpTypeString(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		opType SetOpType
+		want   string
+	}{
+		{Union, "UNION"},
+		{UnionAll, "UNION ALL"},
+		{Intersect, "INTERSECT"},
+		{IntersectAll, "INTERSECT ALL"},
+		{Except, "EXCEPT"},
+		{ExceptAll, "EXCEPT ALL"},
+	}
+	for _, tt := range tests {
+		got := tt.opType.String()
+		if got != tt.want {
+			t.Errorf("SetOpType(%d).String() = %q, want %q", tt.opType, got, tt.want)
+		}
+	}
+}
