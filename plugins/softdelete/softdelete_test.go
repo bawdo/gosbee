@@ -9,7 +9,7 @@ import (
 
 func toSQL(t *testing.T, core *nodes.SelectCore) string {
 	t.Helper()
-	return core.Accept(visitors.NewPostgresVisitor())
+	return core.Accept(visitors.NewPostgresVisitor(visitors.WithoutParams()))
 }
 
 // --- Default behaviour ---

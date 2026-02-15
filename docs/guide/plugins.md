@@ -69,7 +69,7 @@ The plugin applies to all DML operations:
 gosbee.NewSelect(users).Use(sd)
 
 // UPDATE — adds WHERE "users"."deleted_at" IS NULL
-gosbee.NewUpdate(users).Set(users.Col("status"), gosbee.Literal("inactive")).Use(sd)
+gosbee.NewUpdate(users).Set(users.Col("status"), gosbee.BindParam("inactive")).Use(sd)
 
 // DELETE — adds WHERE "users"."deleted_at" IS NULL
 gosbee.NewDelete(users).Use(sd)
@@ -98,7 +98,7 @@ policy := func(tableName string) ([]nodes.Node, error) {
     }
     if tableName == "users" {
         t := gosbee.NewTable(tableName)
-        return []nodes.Node{t.Col("tenant_id").Eq(gosbee.Literal(42))}, nil
+        return []nodes.Node{t.Col("tenant_id").Eq(gosbee.BindParam(42))}, nil
     }
     return nil, nil // no restrictions
 }

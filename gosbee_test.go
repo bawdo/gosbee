@@ -17,8 +17,8 @@ func TestSimpleImportStyle(t *testing.T) {
 		Order(users.Col("name").Asc()).
 		Limit(10)
 
-	visitor := gosbee.NewPostgresVisitor()
-	sql, err := query.ToSQL(visitor)
+	visitor := gosbee.NewPostgresVisitor(gosbee.WithoutParams())
+	sql, _, err := query.ToSQL(visitor)
 	if err != nil {
 		t.Fatalf("ToSQL failed: %v", err)
 	}
@@ -72,8 +72,8 @@ func TestAggregateFunctions(t *testing.T) {
 		).
 		Group(users.Col("department"))
 
-	visitor := gosbee.NewPostgresVisitor()
-	sql, err := query.ToSQL(visitor)
+	visitor := gosbee.NewPostgresVisitor(gosbee.WithoutParams())
+	sql, _, err := query.ToSQL(visitor)
 	if err != nil {
 		t.Fatalf("ToSQL failed: %v", err)
 	}
@@ -119,11 +119,11 @@ func TestMultipleDialects(t *testing.T) {
 
 			switch tt.name {
 			case "PostgreSQL":
-				sql, err = query.ToSQL(gosbee.NewPostgresVisitor())
+				sql, _, err = query.ToSQL(gosbee.NewPostgresVisitor(gosbee.WithoutParams()))
 			case "MySQL":
-				sql, err = query.ToSQL(gosbee.NewMySQLVisitor())
+				sql, _, err = query.ToSQL(gosbee.NewMySQLVisitor(gosbee.WithoutParams()))
 			case "SQLite":
-				sql, err = query.ToSQL(gosbee.NewSQLiteVisitor())
+				sql, _, err = query.ToSQL(gosbee.NewSQLiteVisitor(gosbee.WithoutParams()))
 			}
 
 			if err != nil {
@@ -139,14 +139,14 @@ func TestMultipleDialects(t *testing.T) {
 // TestDMLOperations demonstrates INSERT, UPDATE, DELETE
 func TestDMLOperations(t *testing.T) {
 	users := gosbee.NewTable("users")
-	visitor := gosbee.NewPostgresVisitor()
+	visitor := gosbee.NewPostgresVisitor(gosbee.WithoutParams())
 
 	// INSERT
 	insertQuery := gosbee.NewInsert(users).
 		Columns(users.Col("name"), users.Col("email")).
 		Values(gosbee.Literal("Alice"), gosbee.Literal("alice@example.com"))
 
-	sql, err := insertQuery.ToSQL(visitor)
+	sql, _, err := insertQuery.ToSQL(visitor)
 	if err != nil {
 		t.Fatalf("INSERT ToSQL failed: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestDMLOperations(t *testing.T) {
 		Set(users.Col("status"), gosbee.Literal("inactive")).
 		Where(users.Col("id").Eq(gosbee.Literal(1)))
 
-	sql, err = updateQuery.ToSQL(visitor)
+	sql, _, err = updateQuery.ToSQL(visitor)
 	if err != nil {
 		t.Fatalf("UPDATE ToSQL failed: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestDMLOperations(t *testing.T) {
 	deleteQuery := gosbee.NewDelete(users).
 		Where(users.Col("status").Eq(gosbee.Literal("deleted")))
 
-	sql, err = deleteQuery.ToSQL(visitor)
+	sql, _, err = deleteQuery.ToSQL(visitor)
 	if err != nil {
 		t.Fatalf("DELETE ToSQL failed: %v", err)
 	}

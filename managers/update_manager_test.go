@@ -129,7 +129,7 @@ func TestUpdateTransformerCalled(t *testing.T) {
 	m := NewUpdateManager(users).Set(users.Col("name"), "Bob")
 	m.Use(ct)
 
-	_, err := m.ToSQL(testutil.StubVisitor{})
+	_, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestUpdateTransformerDoesNotModifyOriginal(t *testing.T) {
 	appendingTransformer := &updateAppendTransformer{}
 	m.Use(appendingTransformer)
 
-	_, _ = m.ToSQL(testutil.StubVisitor{})
+	_, _, _ = m.ToSQL(testutil.StubVisitor{})
 
 	if len(m.Statement.Wheres) != 1 {
 		t.Errorf("expected original to have 1 where, got %d", len(m.Statement.Wheres))
@@ -190,7 +190,7 @@ func TestUpdateTransformerErrorStopsGeneration(t *testing.T) {
 	m := NewUpdateManager(users).Set(users.Col("name"), "Bob")
 	m.Use(updateFailingTransformer{})
 
-	sql, err := m.ToSQL(testutil.StubVisitor{})
+	sql, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err == nil {
 		t.Fatal("expected error from failing transformer")
 	}
@@ -206,7 +206,7 @@ func TestUpdateToSQL(t *testing.T) {
 	users := nodes.NewTable("users")
 	m := NewUpdateManager(users).Set(users.Col("name"), "Bob")
 
-	sql, err := m.ToSQL(testutil.StubVisitor{})
+	sql, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

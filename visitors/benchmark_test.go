@@ -20,7 +20,7 @@ func BenchmarkSimpleSelect(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = m.ToSQL(v)
+		_, _, _ = m.ToSQL(v)
 	}
 }
 
@@ -49,7 +49,7 @@ func BenchmarkComplexJoinQuery(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = m.ToSQL(v)
+		_, _, _ = m.ToSQL(v)
 	}
 }
 
@@ -104,7 +104,7 @@ func BenchmarkWithTransformers(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = m.ToSQL(v)
+		_, _, _ = m.ToSQL(v)
 	}
 }
 
@@ -120,6 +120,6 @@ func BenchmarkMySQL(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = m.ToSQL(v)
+		_, _, _ = m.ToSQL(v)
 	}
 }

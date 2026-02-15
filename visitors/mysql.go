@@ -12,13 +12,15 @@ type MySQLVisitor struct {
 }
 
 // NewMySQLVisitor creates a MySQLVisitor ready for use.
-// Pass WithParams() for production queries to enable parameterized mode.
+// Parameterized mode is enabled by default for SQL injection protection.
+// Pass WithoutParams() to disable (not recommended for production).
 func NewMySQLVisitor(opts ...Option) *MySQLVisitor {
 	v := &MySQLVisitor{}
 	v.baseVisitor = &baseVisitor{
-		outer:       v,
-		quoteIdent:  quoting.Backtick,
-		placeholder: func(_ int) string { return "?" },
+		outer:        v,
+		quoteIdent:   quoting.Backtick,
+		placeholder:  func(_ int) string { return "?" },
+		parameterize: true, // Enable by default
 	}
 	v.applyOptions(opts)
 	return v

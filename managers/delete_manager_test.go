@@ -88,7 +88,7 @@ func TestDeleteTransformerCalled(t *testing.T) {
 	m := NewDeleteManager(users).Where(users.Col("id").Eq(1))
 	m.Use(ct)
 
-	_, err := m.ToSQL(testutil.StubVisitor{})
+	_, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestDeleteTransformerDoesNotModifyOriginal(t *testing.T) {
 	appendingTransformer := &deleteAppendTransformer{}
 	m.Use(appendingTransformer)
 
-	_, _ = m.ToSQL(testutil.StubVisitor{})
+	_, _, _ = m.ToSQL(testutil.StubVisitor{})
 
 	if len(m.Statement.Wheres) != 1 {
 		t.Errorf("expected original to have 1 where, got %d", len(m.Statement.Wheres))
@@ -128,7 +128,7 @@ func TestDeleteTransformerErrorStopsGeneration(t *testing.T) {
 	m := NewDeleteManager(users).Where(users.Col("id").Eq(1))
 	m.Use(failingTransformer{})
 
-	sql, err := m.ToSQL(testutil.StubVisitor{})
+	sql, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err == nil {
 		t.Fatal("expected error from failing transformer")
 	}
@@ -144,7 +144,7 @@ func TestDeleteToSQL(t *testing.T) {
 	users := nodes.NewTable("users")
 	m := NewDeleteManager(users).Where(users.Col("id").Eq(1))
 
-	sql, err := m.ToSQL(testutil.StubVisitor{})
+	sql, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

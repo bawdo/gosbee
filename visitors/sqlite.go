@@ -12,13 +12,15 @@ type SQLiteVisitor struct {
 }
 
 // NewSQLiteVisitor creates a SQLiteVisitor ready for use.
-// Pass WithParams() for production queries to enable parameterized mode.
+// Parameterized mode is enabled by default for SQL injection protection.
+// Pass WithoutParams() to disable (not recommended for production).
 func NewSQLiteVisitor(opts ...Option) *SQLiteVisitor {
 	v := &SQLiteVisitor{}
 	v.baseVisitor = &baseVisitor{
-		outer:       v,
-		quoteIdent:  quoting.DoubleQuote,
-		placeholder: func(_ int) string { return "?" },
+		outer:        v,
+		quoteIdent:   quoting.DoubleQuote,
+		placeholder:  func(_ int) string { return "?" },
+		parameterize: true, // Enable by default
 	}
 	v.applyOptions(opts)
 	return v

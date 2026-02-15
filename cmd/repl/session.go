@@ -94,8 +94,9 @@ func (s *Session) pluginNames() []string {
 func (s *Session) setEngine(engine string) {
 	s.engine = engine
 	var opts []visitors.Option
-	if s.parameterize {
-		opts = append(opts, visitors.WithParams())
+	if !s.parameterize {
+		// Params are now enabled by default, so disable them when parameterize is false
+		opts = append(opts, visitors.WithoutParams())
 	}
 	switch engine {
 	case "mysql":
@@ -121,28 +122,33 @@ func (s *Session) ensureTable(name string) *nodes.Table {
 // resolveTable returns an alias or table by name.
 // GenerateSQL produces the SQL string for the current query.
 func (s *Session) GenerateSQL() (string, error) {
+	var sql string
+	var err error
+
 	switch s.mode {
 	case modeInsert:
 		if s.insertQuery == nil {
 			return "", errors.New("no INSERT query defined")
 		}
-		return s.insertQuery.ToSQL(s.visitor)
+		sql, _, err = s.insertQuery.ToSQL(s.visitor)
 	case modeUpdate:
 		if s.updateQuery == nil {
 			return "", errors.New("no UPDATE query defined")
 		}
-		return s.updateQuery.ToSQL(s.visitor)
+		sql, _, err = s.updateQuery.ToSQL(s.visitor)
 	case modeDelete:
 		if s.deleteQuery == nil {
 			return "", errors.New("no DELETE query defined")
 		}
-		return s.deleteQuery.ToSQL(s.visitor)
+		sql, _, err = s.deleteQuery.ToSQL(s.visitor)
 	default:
 		if s.query == nil {
 			return "", errNoQuery
 		}
-		return s.query.ToSQL(s.visitor)
+		sql, _, err = s.query.ToSQL(s.visitor)
 	}
+
+	return sql, err
 }
 
 // Execute parses and runs a single REPL command.

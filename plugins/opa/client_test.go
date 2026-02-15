@@ -14,7 +14,7 @@ import (
 
 func toClientSQL(t *testing.T, n nodes.Node) string {
 	t.Helper()
-	return n.Accept(visitors.NewPostgresVisitor())
+	return n.Accept(visitors.NewPostgresVisitor(visitors.WithoutParams()))
 }
 
 // --- Task 1: Compile response parsing ---

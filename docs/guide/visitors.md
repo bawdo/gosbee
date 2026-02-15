@@ -33,10 +33,10 @@ visitor := visitors.NewMySQLVisitor()
 visitor := visitors.NewSQLiteVisitor()
 ```
 
-Pass the visitor to any manager's `ToSQL` or `ToSQLParams` method:
+Pass the visitor to any manager's `ToSQL` method:
 
 ```go
-sql, err := query.ToSQL(visitor)
+sql, params, err := query.ToSQL(visitor)
 ```
 
 ## Identifier quoting
@@ -53,7 +53,7 @@ Quoting is handled automatically — you never need to quote identifiers yoursel
 
 ## Parameterised queries
 
-Use `BindParam()` to create parameterised values and enable parameterisation with `WithParams()`:
+Parameterised queries are **enabled by default** for SQL injection protection. Use `BindParam()` to create parameterised values:
 
 ```go
 import "github.com/bawdo/gosbee"
@@ -62,9 +62,9 @@ query := gosbee.NewSelect(users).
     Where(users.Col("name").Eq(gosbee.BindParam("Alice"))).
     Where(users.Col("age").Gt(gosbee.BindParam(18)))
 
-// Enable parameterisation mode
-visitor := gosbee.NewPostgresVisitor(gosbee.WithParams())
-sql, params, err := query.ToSQLParams(visitor)
+// Parameterisation is enabled by default
+visitor := gosbee.NewPostgresVisitor()
+sql, params, err := query.ToSQL(visitor)
 // sql:    SELECT ... WHERE "users"."name" = $1 AND "users"."age" > $2
 // params: []any{"Alice", 18}
 ```
@@ -86,19 +86,30 @@ sql, params, err := query.ToSQLParams(visitor)
   fragments.
 - Node-to-node comparisons (e.g. `col.Eq(otherCol)`) produce no parameters.
 
-### Reusing a visitor
+### Disabling parameterisation (Not Recommended)
 
-A parameterising visitor accumulates state across calls. Call `Reset()` before
-reusing it, or use `ToSQLParams()` which handles this automatically:
+⚠️ **WARNING**: Disabling parameterisation removes SQL injection protection. Only use for debugging or when all values are trusted. **Production code should NEVER use this option.**
 
 ```go
-// Manual reset
-v.Reset()
-sql, err := query.ToSQL(v)
-params := v.Params()
+// Disable parameterisation (literals instead of placeholders)
+visitor := gosbee.NewPostgresVisitor(gosbee.WithoutParams())
+sql, _, err := query.ToSQL(visitor)
+// sql:    SELECT ... WHERE "users"."name" = 'Alice' AND "users"."age" > 18
+// Note: No $1, $2 placeholders — values are inlined
+```
 
-// Or use the convenience method (recommended)
-sql, params, err := query.ToSQLParams(v)
+### Reusing a visitor
+
+A parameterising visitor accumulates state across calls. The `ToSQL()` method handles reset automatically:
+
+```go
+// ToSQL automatically resets the visitor before rendering
+sql, params, err := query.ToSQL(visitor)
+
+// For manual control, call Reset() before rendering
+visitor.Reset()
+sql := query.Accept(visitor)
+params := visitor.Params()
 ```
 
 ## Dialect-specific features

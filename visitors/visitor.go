@@ -88,13 +88,25 @@ type Option func(*baseVisitor)
 // WithParams enables parameterized query mode. When enabled, literal values
 // are replaced with bind placeholders and collected for separate retrieval.
 //
-// Production use should always enable parameterized mode to prevent SQL
-// injection. Without WithParams(), literal values are interpolated directly
-// into the SQL string with escaping only -- this is convenient for debugging
-// but is not recommended for production queries that include user input.
+// Note: Parameterized mode is now enabled by default. This option is kept
+// for backwards compatibility and has no effect.
 func WithParams() Option {
 	return func(b *baseVisitor) {
 		b.parameterize = true
+	}
+}
+
+// WithoutParams disables parameterized query mode.
+//
+// ⚠️ WARNING: Disables SQL injection protection. Only use for debugging or when
+// you're certain all values are trusted. Production code should NEVER use this option.
+//
+// When disabled, literal values are interpolated directly into the SQL string
+// with basic escaping only. This is convenient for debugging but creates serious
+// security vulnerabilities with untrusted input.
+func WithoutParams() Option {
+	return func(b *baseVisitor) {
+		b.parameterize = false
 	}
 }
 

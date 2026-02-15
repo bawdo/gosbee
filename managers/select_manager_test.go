@@ -294,7 +294,7 @@ func TestCloneCorePreservesGroupsAndHavings(t *testing.T) {
 		Having(nodes.NewSqlLiteral("COUNT(*)").Gt(5))
 	m.Use(ct)
 
-	_, _ = m.ToSQL(testutil.StubVisitor{})
+	_, _, _ = m.ToSQL(testutil.StubVisitor{})
 
 	if len(m.Core.Groups) != 1 {
 		t.Errorf("expected original to keep 1 group, got %d", len(m.Core.Groups))
@@ -394,7 +394,7 @@ func TestCloneCorePreservesOrderLimitOffset(t *testing.T) {
 		Offset(5)
 	m.Use(ct)
 
-	_, _ = m.ToSQL(testutil.StubVisitor{})
+	_, _, _ = m.ToSQL(testutil.StubVisitor{})
 
 	// Original should be unchanged
 	if len(m.Core.Orders) != 1 {
@@ -451,7 +451,7 @@ func TestCloneCorePreservesDistinct(t *testing.T) {
 	m := NewSelectManager(users).Distinct()
 	m.Use(ct)
 
-	_, _ = m.ToSQL(testutil.StubVisitor{})
+	_, _, _ = m.ToSQL(testutil.StubVisitor{})
 
 	if !m.Core.Distinct {
 		t.Error("expected original to keep Distinct true")
@@ -523,7 +523,7 @@ func TestToSQLDelegatesToVisitor(t *testing.T) {
 	users := nodes.NewTable("users")
 	m := NewSelectManager(users)
 
-	sql, err := m.ToSQL(testutil.StubVisitor{})
+	sql, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -571,7 +571,7 @@ func TestUseRegistersTransformer(t *testing.T) {
 	m := NewSelectManager(users)
 	m.Use(ct)
 
-	_, err := m.ToSQL(testutil.StubVisitor{})
+	_, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -588,7 +588,7 @@ func TestTransformerDoesNotModifyOriginalCore(t *testing.T) {
 		Where(users.Col("active").Eq(true))
 	m.Use(ct)
 
-	_, _ = m.ToSQL(testutil.StubVisitor{})
+	_, _, _ = m.ToSQL(testutil.StubVisitor{})
 
 	// The original core should still have only 1 where
 	if len(m.Core.Wheres) != 1 {
@@ -604,7 +604,7 @@ func TestMultipleTransformersRunInOrder(t *testing.T) {
 	m := NewSelectManager(users)
 	m.Use(ct1).Use(ct2)
 
-	_, err := m.ToSQL(testutil.StubVisitor{})
+	_, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -640,7 +640,7 @@ func TestTransformerErrorStopsGeneration(t *testing.T) {
 	m := NewSelectManager(users)
 	m.Use(failingTransformer{})
 
-	sql, err := m.ToSQL(testutil.StubVisitor{})
+	sql, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err == nil {
 		t.Fatal("expected error from failing transformer")
 	}
@@ -659,7 +659,7 @@ func TestTransformerErrorShortCircuits(t *testing.T) {
 	m := NewSelectManager(users)
 	m.Use(failingTransformer{}).Use(ct)
 
-	_, _ = m.ToSQL(testutil.StubVisitor{})
+	_, _, _ = m.ToSQL(testutil.StubVisitor{})
 
 	// Second transformer should not have been called
 	if ct.called != 0 {
@@ -1137,7 +1137,7 @@ func TestLateralJoinWithComplexSubquery(t *testing.T) {
 		t.Error("expected Lateral flag to be true")
 	}
 	// Verify it produces SQL without error
-	sql, err := m.ToSQL(testutil.StubVisitor{})
+	sql, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -13,13 +13,15 @@ type PostgresVisitor struct {
 }
 
 // NewPostgresVisitor creates a PostgresVisitor ready for use.
-// Pass WithParams() for production queries to enable parameterized mode.
+// Parameterized mode is enabled by default for SQL injection protection.
+// Pass WithoutParams() to disable (not recommended for production).
 func NewPostgresVisitor(opts ...Option) *PostgresVisitor {
 	v := &PostgresVisitor{}
 	v.baseVisitor = &baseVisitor{
-		outer:       v,
-		quoteIdent:  quoting.DoubleQuote,
-		placeholder: func(i int) string { return fmt.Sprintf("$%d", i) },
+		outer:        v,
+		quoteIdent:   quoting.DoubleQuote,
+		placeholder:  func(i int) string { return fmt.Sprintf("$%d", i) },
+		parameterize: true, // Enable by default
 	}
 	v.applyOptions(opts)
 	return v

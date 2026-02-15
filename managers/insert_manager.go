@@ -64,8 +64,8 @@ func (m *InsertManager) Use(t plugins.Transformer) *InsertManager {
 	return m
 }
 
-// ToSQL applies transformers and generates SQL.
-func (m *InsertManager) ToSQL(v nodes.Visitor) (string, error) {
+// toSQLCore applies transformers and generates SQL.
+func (m *InsertManager) toSQLCore(v nodes.Visitor) (string, error) {
 	stmt := m.cloneStatement()
 	for _, t := range m.transformers {
 		var err error
@@ -77,9 +77,17 @@ func (m *InsertManager) ToSQL(v nodes.Visitor) (string, error) {
 	return stmt.Accept(v), nil
 }
 
+// ToSQL applies transformers and generates SQL with parameters.
+// Returns SQL string, parameter values (if parameterised), and any error.
+func (m *InsertManager) ToSQL(v nodes.Visitor) (string, []any, error) {
+	return toSQLParams(v, m.toSQLCore)
+}
+
 // ToSQLParams applies transformers and generates parameterized SQL.
+//
+// Deprecated: Use ToSQL() instead, which now always returns params.
 func (m *InsertManager) ToSQLParams(v nodes.Visitor) (string, []any, error) {
-	return toSQLParams(v, m.ToSQL)
+	return m.ToSQL(v)
 }
 
 func (m *InsertManager) cloneStatement() *nodes.InsertStatement {

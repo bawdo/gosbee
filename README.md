@@ -50,10 +50,10 @@ import "github.com/bawdo/gosbee"
 users := gosbee.NewTable("users")
 query := gosbee.NewSelect(users).
     Select(users.Col("id"), users.Col("name")).
-    Where(users.Col("active").Eq(gosbee.Literal(true)))
+    Where(users.Col("active").Eq(gosbee.BindParam(true)))
 
 visitor := gosbee.NewPostgresVisitor()
-sql, _ := query.ToSQL(visitor)
+sql, params, _ := query.ToSQL(visitor)
 ```
 
 #### **Explicit imports** (Advanced usage)
@@ -70,10 +70,10 @@ import (
 users := nodes.NewTable("users")
 query := managers.NewSelectManager(users).
     Select(users.Col("id"), users.Col("name")).
-    Where(users.Col("active").Eq(nodes.Literal(true)))
+    Where(users.Col("active").Eq(nodes.BindParam(true)))
 
 visitor := visitors.NewPostgresVisitor()
-sql, _ := query.ToSQL(visitor)
+sql, params, _ := query.ToSQL(visitor)
 ```
 
 **You can also mix both approaches** — use the convenience package for common operations and import subpackages for advanced features like window functions or custom node types.
@@ -104,17 +104,17 @@ func main() {
     users := gosbee.NewTable("users")
     posts := gosbee.NewTable("posts")
 
-    // Build a query
+    // Build a query with parameterised values
     query := gosbee.NewSelect(users).
         Select(users.Col("id"), users.Col("name"), posts.Col("title")).
         Join(posts).On(users.Col("id").Eq(posts.Col("user_id"))).
-        Where(users.Col("active").Eq(gosbee.Literal(true))).
+        Where(users.Col("active").Eq(gosbee.BindParam(true))).
         Order(posts.Col("created_at").Desc()).
-        Limit(10)
+        Limit(gosbee.BindParam(10))
 
-    // Generate SQL for PostgreSQL
+    // Generate SQL for PostgreSQL (params enabled by default)
     visitor := gosbee.NewPostgresVisitor()
-    sql, err := query.ToSQL(visitor)
+    sql, params, err := query.ToSQL(visitor)
     if err != nil {
         panic(err)
     }
@@ -123,12 +123,13 @@ func main() {
     // SELECT "users"."id", "users"."name", "posts"."title"
     // FROM "users"
     // INNER JOIN "posts" ON "users"."id" = "posts"."user_id"
-    // WHERE "users"."active" = TRUE
+    // WHERE "users"."active" = $1
     // ORDER BY "posts"."created_at" DESC
-    // LIMIT 10
+    // LIMIT $2
+    fmt.Println(params) // []any{true, 10}
 
-    // Execute the query
-    rows, err := conn.Query(context.Background(), sql)
+    // Execute the query with parameters (safe from SQL injection)
+    rows, err := conn.Query(context.Background(), sql, params...)
     if err != nil {
         log.Fatal(err)
     }
@@ -178,9 +179,9 @@ func main() {
         Where(users.Col("name").Eq(gosbee.BindParam("Alice"))).
         Where(users.Col("age").Gt(gosbee.BindParam(18)))
 
-    // Create visitor with parameterisation enabled
-    visitor := gosbee.NewPostgresVisitor(gosbee.WithParams())
-    sql, params, err := query.ToSQLParams(visitor)
+    // Parameterisation is enabled by default
+    visitor := gosbee.NewPostgresVisitor()
+    sql, params, err := query.ToSQL(visitor)
     if err != nil {
         log.Fatal(err)
     }
@@ -210,6 +211,20 @@ func main() {
 }
 ```
 
+#### Disabling Parameterisation (Not Recommended)
+
+⚠️ **WARNING**: Disabling parameterisation removes SQL injection protection. Only use for debugging or when all values are trusted. **Production code should NEVER use this option.**
+
+```go
+// Disable parameterisation (literals instead of placeholders)
+visitor := gosbee.NewPostgresVisitor(gosbee.WithoutParams())
+sql, _, err := query.ToSQL(visitor)
+// SELECT "users"."id", "users"."name", "users"."age"
+// FROM "users"
+// WHERE "users"."name" = 'Alice' AND "users"."age" > 18
+// (Note: No $1, $2 placeholders - values are inlined)
+```
+
 ### Using Plugins
 
 Transform queries with plugins before SQL generation:
@@ -226,7 +241,7 @@ query := gosbee.NewSelect(users).
     Use(softdelete.New())
 
 visitor := gosbee.NewPostgresVisitor()
-sql, _ := query.ToSQL(visitor)
+sql, _, _ := query.ToSQL(visitor)
 // SELECT "users".* FROM "users" WHERE "users"."deleted_at" IS NULL
 ```
 

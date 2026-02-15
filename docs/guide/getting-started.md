@@ -104,13 +104,13 @@ func main() {
     // 2. Build a SELECT query
     query := gosbee.NewSelect(users).
         Select(users.Col("id"), users.Col("name"), users.Col("email")).
-        Where(users.Col("status").Eq(gosbee.Literal("active"))).
+        Where(users.Col("status").Eq(gosbee.BindParam("active"))).
         Order(users.Col("name").Asc()).
         Limit(10)
 
-    // 3. Render SQL for your database
+    // 3. Render SQL for your database (parameterised by default)
     visitor := gosbee.NewPostgresVisitor()
-    sql, err := query.ToSQL(visitor)
+    sql, params, err := query.ToSQL(visitor)
     if err != nil {
         panic(err)
     }
@@ -118,9 +118,10 @@ func main() {
     fmt.Println(sql)
     // SELECT "users"."id", "users"."name", "users"."email"
     // FROM "users"
-    // WHERE "users"."status" = 'active'
+    // WHERE "users"."status" = $1
     // ORDER BY "users"."name" ASC
     // LIMIT 10
+    fmt.Println(params) // []any{"active"}
 }
 ```
 
@@ -185,8 +186,8 @@ col.NotEq(nil)                // "users"."age" IS NOT NULL
 ### Combining conditions
 
 ```go
-active := users.Col("status").Eq(gosbee.Literal("active"))
-adult  := users.Col("age").GtEq(gosbee.Literal(18))
+active := users.Col("status").Eq(gosbee.BindParam("active"))
+adult  := users.Col("age").GtEq(gosbee.BindParam(18))
 
 // AND
 active.And(adult)
@@ -202,9 +203,9 @@ Multiple calls to `Where()` are AND'ed together:
 
 ```go
 query := gosbee.NewSelect(users).
-    Where(users.Col("status").Eq(gosbee.Literal("active"))).
-    Where(users.Col("age").GtEq(gosbee.Literal(18)))
-// ... WHERE "users"."status" = 'active' AND "users"."age" >= 18
+    Where(users.Col("status").Eq(gosbee.BindParam("active"))).
+    Where(users.Col("age").GtEq(gosbee.BindParam(18)))
+// ... WHERE "users"."status" = $1 AND "users"."age" >= $2
 ```
 
 ## Joins
@@ -235,7 +236,7 @@ query = gosbee.NewSelect(users).
 query := gosbee.NewSelect(users).
     Select(users.Col("department"), gosbee.Count(gosbee.Star()).As("total")).
     Group(users.Col("department")).
-    Having(gosbee.Count(gosbee.Star()).Gt(gosbee.Literal(5))).
+    Having(gosbee.Count(gosbee.Star()).Gt(gosbee.BindParam(5))).
     Order(users.Col("department").Asc()).
     Limit(20).
     Offset(40)
@@ -281,14 +282,14 @@ import (
     "github.com/bawdo/gosbee/nodes"
 )
 
-nodes.Coalesce(users.Col("nickname"), gosbee.Literal("Anonymous"))
+nodes.Coalesce(users.Col("nickname"), gosbee.BindParam("Anonymous"))
 nodes.Lower(users.Col("email"))
 nodes.Upper(users.Col("city"))
-nodes.Substring(users.Col("name"), gosbee.Literal(1), gosbee.Literal(3))
+nodes.Substring(users.Col("name"), gosbee.BindParam(1), gosbee.BindParam(3))
 nodes.Cast(users.Col("age"), "TEXT")
 
 // Arbitrary SQL functions
-nodes.NewNamedFunction("MY_FUNC", users.Col("id"), gosbee.Literal(42))
+nodes.NewNamedFunction("MY_FUNC", users.Col("id"), gosbee.BindParam(42))
 ```
 
 ## CASE expressions
@@ -301,9 +302,9 @@ import (
 
 // Searched CASE
 caseExpr := nodes.NewCase().
-    When(users.Col("age").Lt(gosbee.Literal(18)), gosbee.Literal("minor")).
-    When(users.Col("age").GtEq(gosbee.Literal(18)), gosbee.Literal("adult")).
-    Else(gosbee.Literal("unknown"))
+    When(users.Col("age").Lt(gosbee.BindParam(18)), gosbee.BindParam("minor")).
+    When(users.Col("age").GtEq(gosbee.BindParam(18)), gosbee.BindParam("adult")).
+    Else(gosbee.BindParam("unknown"))
 
 query := gosbee.NewSelect(users).
     Select(users.Col("name"), caseExpr.As("age_group"))
@@ -338,9 +339,9 @@ query := gosbee.NewSelect(users).
     Where(users.Col("name").Eq(gosbee.BindParam("Alice"))).
     Where(users.Col("age").Gt(gosbee.BindParam(18)))
 
-// Enable parameterisation mode with WithParams()
-visitor := gosbee.NewPostgresVisitor(gosbee.WithParams())
-sql, params, err := query.ToSQLParams(visitor)
+// Parameterisation is enabled by default
+visitor := gosbee.NewPostgresVisitor()
+sql, params, err := query.ToSQL(visitor)
 // sql:    ... WHERE "users"."name" = $1 AND "users"."age" > $2
 // params: []any{"Alice", 18}
 
@@ -360,11 +361,11 @@ gosbee supports INSERT, UPDATE, and DELETE in addition to SELECT.
 ```go
 m := gosbee.NewInsert(users).
     Columns(users.Col("name"), users.Col("email")).
-    Values(gosbee.Literal("Alice"), gosbee.Literal("alice@example.com")).
-    Values(gosbee.Literal("Bob"), gosbee.Literal("bob@example.com")).
+    Values(gosbee.BindParam("Alice"), gosbee.BindParam("alice@example.com")).
+    Values(gosbee.BindParam("Bob"), gosbee.BindParam("bob@example.com")).
     Returning(users.Col("id"))
 
-sql, err := m.ToSQL(v)
+sql, params, err := m.ToSQL(v)
 ```
 
 ### UPDATE
@@ -376,23 +377,23 @@ import (
 )
 
 m := gosbee.NewUpdate(users).
-    Set(users.Col("status"), gosbee.Literal("inactive")).
+    Set(users.Col("status"), gosbee.BindParam("inactive")).
     Where(users.Col("last_login").Lt(nodes.NewSqlLiteral("NOW() - INTERVAL '90 days'"))).
     Returning(users.Col("id"))
 
 visitor := gosbee.NewPostgresVisitor()
-sql, err := m.ToSQL(visitor)
+sql, params, err := m.ToSQL(visitor)
 ```
 
 ### DELETE
 
 ```go
 m := gosbee.NewDelete(users).
-    Where(users.Col("status").Eq(gosbee.Literal("deleted"))).
+    Where(users.Col("status").Eq(gosbee.BindParam("deleted"))).
     Returning(users.Col("id"))
 
 visitor := gosbee.NewPostgresVisitor()
-sql, err := m.ToSQL(visitor)
+sql, params, err := m.ToSQL(visitor)
 ```
 
 ### UPSERT (ON CONFLICT)
@@ -405,17 +406,17 @@ import (
 
 m := gosbee.NewInsert(users).
     Columns(users.Col("email"), users.Col("name")).
-    Values(gosbee.Literal("alice@example.com"), gosbee.Literal("Alice")).
+    Values(gosbee.BindParam("alice@example.com"), gosbee.BindParam("Alice")).
     OnConflict(users.Col("email")).DoNothing()
 
 // Or DO UPDATE
 m = gosbee.NewInsert(users).
     Columns(users.Col("email"), users.Col("name")).
-    Values(gosbee.Literal("alice@example.com"), gosbee.Literal("Alice")).
+    Values(gosbee.BindParam("alice@example.com"), gosbee.BindParam("Alice")).
     OnConflict(users.Col("email")).
     DoUpdate(&nodes.AssignmentNode{
         Left:  users.Col("name"),
-        Right: gosbee.Literal("Alice"),
+        Right: gosbee.BindParam("Alice"),
     })
 ```
 
@@ -435,7 +436,7 @@ query := gosbee.NewSelect(users).
     Use(softdelete.New())
 
 visitor := gosbee.NewPostgresVisitor()
-sql, _ := query.ToSQL(visitor)
+sql, _, _ := query.ToSQL(visitor)
 // SELECT "users".* FROM "users" WHERE "users"."deleted_at" IS NULL
 ```
 

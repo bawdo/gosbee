@@ -259,9 +259,9 @@ func (m *SelectManager) Use(t plugins.Transformer) *SelectManager {
 	return m
 }
 
-// ToSQL applies all registered transformers to a copy of the SelectCore,
+// toSQLCore applies all registered transformers to a copy of the SelectCore,
 // then generates SQL using the given visitor.
-func (m *SelectManager) ToSQL(v nodes.Visitor) (string, error) {
+func (m *SelectManager) toSQLCore(v nodes.Visitor) (string, error) {
 	core := m.CloneCore()
 	for _, t := range m.transformers {
 		var err error
@@ -273,11 +273,18 @@ func (m *SelectManager) ToSQL(v nodes.Visitor) (string, error) {
 	return core.Accept(v), nil
 }
 
+// ToSQL applies all registered transformers and generates SQL with parameters.
+// Returns SQL string, parameter values (if parameterised), and any error.
+// Parameters are collected automatically when the visitor has parameterisation enabled.
+func (m *SelectManager) ToSQL(v nodes.Visitor) (string, []any, error) {
+	return toSQLParams(v, m.toSQLCore)
+}
+
 // ToSQLParams applies transformers and generates parameterized SQL.
-// If the visitor implements Parameterizer, parameters are reset before
-// generation and returned alongside the SQL. Otherwise, params is nil.
+//
+// Deprecated: Use ToSQL() instead, which now always returns params.
 func (m *SelectManager) ToSQLParams(v nodes.Visitor) (string, []any, error) {
-	return toSQLParams(v, m.ToSQL)
+	return m.ToSQL(v)
 }
 
 // Accept implements the Node interface so that a SelectManager can be

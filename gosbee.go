@@ -146,8 +146,17 @@ func NewMySQLVisitor(opts ...visitors.Option) *visitors.MySQLVisitor {
 // --- Visitor Options ---
 
 // WithParams enables parameterisation mode for visitors.
-// When enabled, values are replaced with placeholders ($1, $2, etc.) and
-// collected for safe passage to the database driver.
+//
+// Note: Parameterisation is now enabled by default. This option is kept
+// for backwards compatibility and has no effect.
 func WithParams() visitors.Option {
 	return visitors.WithParams()
+}
+
+// WithoutParams disables parameterised query mode.
+//
+// ⚠️ WARNING: Disables SQL injection protection. Only use for debugging or when
+// you're certain all values are trusted. Production code should NEVER use this option.
+func WithoutParams() visitors.Option {
+	return visitors.WithoutParams()
 }

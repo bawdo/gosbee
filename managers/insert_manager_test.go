@@ -189,7 +189,7 @@ func TestInsertTransformerCalled(t *testing.T) {
 		Values("Alice")
 	m.Use(ct)
 
-	_, err := m.ToSQL(testutil.StubVisitor{})
+	_, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestInsertTransformerDoesNotModifyOriginal(t *testing.T) {
 	appendingTransformer := &insertAppendTransformer{}
 	m.Use(appendingTransformer)
 
-	_, _ = m.ToSQL(testutil.StubVisitor{})
+	_, _, _ = m.ToSQL(testutil.StubVisitor{})
 
 	// Original should be unchanged
 	if len(m.Statement.Values) != 1 {
@@ -233,7 +233,7 @@ func TestInsertTransformerErrorStopsGeneration(t *testing.T) {
 		Values("Alice")
 	m.Use(failingTransformer{})
 
-	sql, err := m.ToSQL(testutil.StubVisitor{})
+	sql, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err == nil {
 		t.Fatal("expected error from failing transformer")
 	}
@@ -251,7 +251,7 @@ func TestInsertToSQL(t *testing.T) {
 		Columns(users.Col("name")).
 		Values("Alice")
 
-	sql, err := m.ToSQL(testutil.StubVisitor{})
+	sql, _, err := m.ToSQL(testutil.StubVisitor{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

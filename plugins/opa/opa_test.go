@@ -15,7 +15,7 @@ import (
 
 func toSQL(t *testing.T, core *nodes.SelectCore) string {
 	t.Helper()
-	return core.Accept(visitors.NewPostgresVisitor())
+	return core.Accept(visitors.NewPostgresVisitor(visitors.WithoutParams()))
 }
 
 // --- Condition injection ---
@@ -476,7 +476,7 @@ func TestMaskedValuesNotParameterized(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	v := visitors.NewPostgresVisitor(visitors.WithParams())
+	v := visitors.NewPostgresVisitor()
 	sql := result.Accept(v)
 	params := v.Params()
 
