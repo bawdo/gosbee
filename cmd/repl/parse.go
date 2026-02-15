@@ -342,19 +342,21 @@ func (s *Session) parseNamedFuncCall(tokens []string, pos int) (nodes.Node, int,
 		// Collect type tokens until closing )
 		var typeParts []string
 		depth := 0
+	TypeLoop:
 		for pos < len(tokens) {
-			if tokens[pos] == "(" {
+			switch tokens[pos] {
+			case "(":
 				depth++
 				typeParts = append(typeParts, tokens[pos])
 				pos++
-			} else if tokens[pos] == ")" {
+			case ")":
 				if depth == 0 {
-					break
+					break TypeLoop
 				}
 				depth--
 				typeParts = append(typeParts, tokens[pos])
 				pos++
-			} else {
+			default:
 				typeParts = append(typeParts, tokens[pos])
 				pos++
 			}
@@ -417,11 +419,12 @@ func scanUntilKeyword(tokens []string, pos int, keywords ...string) ([]string, i
 	start := pos
 	depth := 0
 	for pos < len(tokens) {
-		if tokens[pos] == "(" {
+		switch {
+		case tokens[pos] == "(":
 			depth++
-		} else if tokens[pos] == ")" {
+		case tokens[pos] == ")":
 			depth--
-		} else if depth == 0 {
+		case depth == 0:
 			lower := strings.ToLower(tokens[pos])
 			for _, kw := range keywords {
 				if lower == kw {

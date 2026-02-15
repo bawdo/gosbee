@@ -148,8 +148,8 @@ func (c *replCompleter) completeColumnRef(prefix string) []string {
 		tableName := parts[0]
 		colPrefix := parts[1]
 
-		// Check for "table.*".
-		if colPrefix == "" || strings.HasPrefix("*", colPrefix) {
+		// Check for "table.*" or "table." (no prefix yet).
+		if colPrefix == "" || colPrefix == "*" {
 			candidates := []string{tableName + ".*"}
 			if c.sess.conn != nil {
 				for _, col := range c.sess.conn.schemaColumns(tableName) {

@@ -6,34 +6,46 @@ run:
 
 linters:
   enable:
-    # Critical linters only - catch real bugs
-    - errcheck       # Unchecked errors
-    - govet          # Suspicious constructs
-    - staticcheck    # Static analysis bugs
-    - ineffassign    # Ineffectual assignments
-    - unused         # Unused code
-    # gosec disabled for Phase A - will enable and fix in Phase B
+    # Core linters
+    - errcheck       # Check for unchecked errors
+    - govet          # Go vet checks
+    - staticcheck    # Static analysis (includes gosimple)
+    - unused         # Unused code detection
+
+    # Quality linters
+    - ineffassign    # Detect ineffectual assignments
+    - gocritic       # Comprehensive Go source code linter
+    - misspell       # Spelling mistakes
+    - unconvert      # Unnecessary type conversions
+    - unparam        # Unused function parameters
+
+    # Error handling
+    - errname        # Error names should end with Error
+    - errorlint      # Error wrapping best practices
+
+    # Security
+    - gosec          # Security problems
 
   disable-all: false
 
 linters-settings:
   errcheck:
-    check-type-assertions: false  # Too noisy
-    check-blank: false            # Allow _ = errors for now
+    check-type-assertions: false
+    check-blank: false
 
   govet:
     enable-all: false
     enable:
-      - atomic           # Atomic access issues
-      - bools            # Boolean mistakes
-      - errorsas         # errors.As usage
-      - ifaceassert      # Impossible interface assertions
-      - nilfunc          # Nil function comparisons
-      - printf           # Printf format issues
-      - stringintconv    # String/int conversions
+      - atomic
+      - bools
+      - errorsas
+      - ifaceassert
+      - nilfunc
+      - printf
+      - stringintconv
     disable:
-      - shadow           # Too many false positives
-      - fieldalignment   # Style, not bugs
+      - shadow
+      - fieldalignment      # Too many changes, not critical
 
   staticcheck:
     checks: ["all"]
@@ -42,9 +54,20 @@ linters-settings:
     severity: medium
     confidence: medium
     excludes:
-      - G104  # Audit errors not checked (covered by errcheck)
+      - G104  # Covered by errcheck
       - G304  # File inclusion via variable (false positives in tests)
-      - G306  # File permissions (too strict for development)
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - commentFormatting
+      - whyNoLint
+      - unnamedResult      # Too many changes for Phase B
+      - ifElseChain        # Not critical
+      - appendCombine      # Not critical
 
 issues:
   exclude-dirs:
@@ -55,19 +78,11 @@ issues:
     - ".*\\.pb\\.go$"
 
   exclude-rules:
-    # Exclude some linters from running on test files
     - path: _test\.go
       linters:
         - errcheck
-        - gosec
-
-    # Exclude specific gosec rules (will fix in Phase B)
-    - text: "G304.*file inclusion"
-      linters:
-        - gosec
-    - text: "G306.*file permissions"
-      linters:
-        - gosec
+        - unparam
+        - gosec  # Exclude all gosec from tests
 
   max-issues-per-linter: 0
   max-same-issues: 0

@@ -2342,7 +2342,7 @@ func TestDotWritesFile(t *testing.T) {
 		t.Errorf("expected confirmation message, got: %s", out)
 	}
 
-	data, err := os.ReadFile(tmp)
+	data, err := os.ReadFile(tmp) // #nosec G304 - test file path is controlled
 	if err != nil {
 		t.Fatalf("failed to read DOT file: %v", err)
 	}
@@ -2396,7 +2396,7 @@ func TestDotWithSoftdelete(t *testing.T) {
 		t.Fatalf("dot command failed: %v", err)
 	}
 
-	data, _ := os.ReadFile(tmp)
+	data, _ := os.ReadFile(tmp) // #nosec G304 - test file path is controlled
 	dot := string(data)
 	if !strings.Contains(dot, "softdelete") {
 		t.Errorf("expected softdelete cluster in DOT, got:\n%s", dot)

@@ -227,11 +227,12 @@ func translateExpression(expr compileExpression, table *nodes.Table) (nodes.Node
 
 	// Determine which term is the column ref and which is the value.
 	var colTerm, valTerm compileTerm
-	if isDataRef(expr.Terms[1]) {
+	switch {
+	case isDataRef(expr.Terms[1]):
 		colTerm, valTerm = expr.Terms[1], expr.Terms[2]
-	} else if isDataRef(expr.Terms[2]) {
+	case isDataRef(expr.Terms[2]):
 		colTerm, valTerm = expr.Terms[2], expr.Terms[1]
-	} else {
+	default:
 		return nil, errors.New("opa: expression has no data ref term")
 	}
 

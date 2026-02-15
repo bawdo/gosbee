@@ -124,15 +124,14 @@ func (dv *DotVisitor) addEdge(from, to, label string) {
 
 // visitChild saves and restores the parent context, sets the edge label,
 // and calls child.Accept to recursively visit the child node.
-func (dv *DotVisitor) visitChild(parentID, label string, child nodes.Node) string {
+func (dv *DotVisitor) visitChild(parentID, label string, child nodes.Node) {
 	savedParent := dv.parentID
 	savedLabel := dv.edgeLabel
 	dv.parentID = parentID
 	dv.edgeLabel = label
-	result := child.Accept(dv)
+	child.Accept(dv)
 	dv.parentID = savedParent
 	dv.edgeLabel = savedLabel
-	return result
 }
 
 // connectToParent adds an edge from the current parentID to nodeID if a parent exists.

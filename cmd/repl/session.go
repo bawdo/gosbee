@@ -216,16 +216,17 @@ func splitTopLevelCommas(s string) []string {
 	depth := 0
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
-		if ch == '(' {
+		switch {
+		case ch == '(':
 			depth++
 			cur.WriteByte(ch)
-		} else if ch == ')' {
+		case ch == ')':
 			depth--
 			cur.WriteByte(ch)
-		} else if ch == ',' && depth == 0 {
+		case ch == ',' && depth == 0:
 			parts = append(parts, cur.String())
 			cur.Reset()
-		} else {
+		default:
 			cur.WriteByte(ch)
 		}
 	}
@@ -1123,7 +1124,7 @@ func (s *Session) cmdDot(args string) error {
 	dv.SetProvenance(prov)
 	core.Accept(dv)
 
-	if err := os.WriteFile(fpath, []byte(dv.ToDot()), 0644); err != nil {
+	if err := os.WriteFile(fpath, []byte(dv.ToDot()), 0600); err != nil {
 		return fmt.Errorf("failed to write DOT file: %w", err)
 	}
 	_, _ = fmt.Fprintf(s.out, "  Wrote DOT to %s\n", fpath)
