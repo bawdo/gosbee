@@ -87,3 +87,46 @@ func TestBacktick(t *testing.T) {
 		})
 	}
 }
+
+func TestEscapeLikePattern(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"no wildcards", "hello", "hello"},
+		{"empty", "", ""},
+		{"percent only", "%", `\%`},
+		{"underscore only", "_", `\_`},
+		{"backslash only", `\`, `\\`},
+		{"percent at start", "%hello", `\%hello`},
+		{"percent at end", "hello%", `hello\%`},
+		{"percent in middle", "hel%lo", `hel\%lo`},
+		{"multiple percents", "a%b%c", `a\%b\%c`},
+		{"underscore at start", "_hello", `\_hello`},
+		{"underscore at end", "hello_", `hello\_`},
+		{"underscore in middle", "hel_lo", `hel\_lo`},
+		{"multiple underscores", "a_b_c", `a\_b\_c`},
+		{"mixed wildcards", "a%b_c", `a\%b\_c`},
+		{"backslash at start", `\hello`, `\\hello`},
+		{"backslash at end", `hello\`, `hello\\`},
+		{"backslash in middle", `hel\lo`, `hel\\lo`},
+		{"multiple backslashes", `a\b\c`, `a\\b\\c`},
+		{"all wildcards", `%_\`, `\%\_\\`},
+		{"complex pattern", `test%_data\file`, `test\%\_data\\file`},
+		{"injection attempt", `'; DROP TABLE users; --`, `'; DROP TABLE users; --`},
+		{"unicode", "caf\u00e9%", "caf\u00e9\\%"},
+		{"real LIKE pattern", "user_%@%.com", `user\_\%@\%.com`},
+		{"escaped backslash before wildcard", `\%`, `\\\%`},
+		{"multiple escapes", `\%\_`, `\\\%\\\_`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := EscapeLikePattern(tt.input)
+			if got != tt.want {
+				t.Errorf("EscapeLikePattern(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

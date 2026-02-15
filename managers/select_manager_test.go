@@ -959,6 +959,30 @@ func TestExceptCreatesSetOp(t *testing.T) {
 	}
 }
 
+func TestIntersectAllCreatesSetOp(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	admins := nodes.NewTable("admins")
+	m1 := NewSelectManager(users)
+	m2 := NewSelectManager(admins)
+	op := m1.IntersectAll(m2)
+	if op.Type != nodes.IntersectAll {
+		t.Errorf("expected IntersectAll, got %d", op.Type)
+	}
+}
+
+func TestExceptAllCreatesSetOp(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	admins := nodes.NewTable("admins")
+	m1 := NewSelectManager(users)
+	m2 := NewSelectManager(admins)
+	op := m1.ExceptAll(m2)
+	if op.Type != nodes.ExceptAll {
+		t.Errorf("expected ExceptAll, got %d", op.Type)
+	}
+}
+
 // --- CTE ---
 
 func TestWithAddsCTE(t *testing.T) {
