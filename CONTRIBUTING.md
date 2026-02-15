@@ -119,6 +119,21 @@ Code contributions might include:
    go tool cover -html=coverage/coverage.out
    ```
 
+6. **Pre-CI validation** (recommended before pushing):
+   ```bash
+   # Run all CI checks locally and get a success probability report
+   ./scripts/pre-ci-check.sh
+   ```
+
+   This script mimics the GitHub Actions workflow and checks:
+   - Code formatting (gofmt -s)
+   - All tests with race detector
+   - Linting (golangci-lint)
+   - Test coverage
+   - Build success
+
+   It generates a detailed report showing which checks passed/failed and the probability of CI succeeding.
+
 5. **Run linters:**
    ```bash
    go vet ./...
