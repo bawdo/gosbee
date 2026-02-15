@@ -3371,7 +3371,7 @@ func TestDotVisitGroupingSets(t *testing.T) {
 func TestParameterisedByDefault(t *testing.T) {
 	t.Parallel()
 
-	// Test that visitors enable parameterisation by default  
+	// Test that visitors enable parameterisation by default
 	users := nodes.NewTable("users")
 	query := users.Col("name").Eq(nodes.NewBindParam("Alice"))
 
