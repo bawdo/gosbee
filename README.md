@@ -1,6 +1,7 @@
-![[gosbee_with_plugins.png]]
-
 # gosbee
+---
+![gosbee with plugins](gosbee_with_plugins.png)
+
 **gosbee is a Go SQL Builder** — a powerful SQL AST (Abstract Syntax Tree) library
 inspired by Ruby's [Arel](https://github.com/rails/arel).
 
@@ -9,6 +10,7 @@ of concatenating strings, you construct a tree of nodes that is only converted
 to SQL at the last moment by a database-specific visitor. This gives you
 semantic understanding of your queries, dialect-agnostic query building, and the
 ability to transform queries through middleware before SQL generation.
+
 ## Features
 
 - 🌳 **AST-based query building** — queries are trees, not strings
