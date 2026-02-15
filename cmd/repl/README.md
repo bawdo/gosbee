@@ -341,7 +341,7 @@ library users. Commands map to manager methods:
 | `select users.id, users.name` | `m.Select(users.Col("id"), users.Col("name"))` |
 | `where users.active = true` | `m.Where(users.Col("active").Eq(true))` |
 | `join posts on users.id = posts.user_id` | `m.Join(posts).On(users.Col("id").Eq(posts.Col("user_id")))` |
-| `sql` | `m.ToSQL(visitor)` or `m.ToSQLParams(visitor)` |
+| `sql` | `m.ToSQL(visitor)` |
 | `plugin softdelete` | `m.Use(softdelete.New())` |
 
 The REPL maintains a session state (current table, query, plugins, etc.) and

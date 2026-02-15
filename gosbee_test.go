@@ -40,9 +40,9 @@ func TestParameterisedQuery(t *testing.T) {
 
 	// Enable parameterisation mode
 	visitor := gosbee.NewPostgresVisitor(gosbee.WithParams())
-	sql, params, err := query.ToSQLParams(visitor)
+	sql, params, err := query.ToSQL(visitor)
 	if err != nil {
-		t.Fatalf("ToSQLParams failed: %v", err)
+		t.Fatalf("ToSQL failed: %v", err)
 	}
 
 	if !strings.Contains(sql, "$1") || !strings.Contains(sql, "$2") {

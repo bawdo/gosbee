@@ -32,6 +32,7 @@ func buildQueryOldWay() (string, []any) {
 // AFTER: Using the convenience package
 // ============================================================
 
+/*
 import "github.com/bawdo/gosbee"
 
 func buildQueryNewWay() (string, []any, error) {
@@ -42,10 +43,11 @@ func buildQueryNewWay() (string, []any, error) {
 	sm.Where(users.Col("active").Eq(gosbee.BindParam(true)))
 
 	visitor := gosbee.NewPostgresVisitor()
-	sql, params, err := sm.ToSQLParams(visitor)
+	sql, params, err := sm.ToSQL(visitor)
 
 	return sql, params, err
 }
+*/
 
 // ============================================================
 // ADVANCED: Mix and match as needed

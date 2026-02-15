@@ -1027,22 +1027,22 @@ func (s *Session) cmdExec() error {
 		if s.insertQuery == nil {
 			return errors.New("no INSERT query defined")
 		}
-		sqlStr, params, err = s.insertQuery.ToSQLParams(pv)
+		sqlStr, params, err = s.insertQuery.ToSQL(pv)
 	case modeUpdate:
 		if s.updateQuery == nil {
 			return errors.New("no UPDATE query defined")
 		}
-		sqlStr, params, err = s.updateQuery.ToSQLParams(pv)
+		sqlStr, params, err = s.updateQuery.ToSQL(pv)
 	case modeDelete:
 		if s.deleteQuery == nil {
 			return errors.New("no DELETE query defined")
 		}
-		sqlStr, params, err = s.deleteQuery.ToSQLParams(pv)
+		sqlStr, params, err = s.deleteQuery.ToSQL(pv)
 	default:
 		if s.query == nil {
 			return errNoQuery
 		}
-		sqlStr, params, err = s.query.ToSQLParams(pv)
+		sqlStr, params, err = s.query.ToSQL(pv)
 	}
 	if err != nil {
 		return err

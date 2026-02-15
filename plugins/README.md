@@ -18,8 +18,7 @@ Manager → [Plugin 1] → [Plugin 2] → ... → Visitor → SQL string
            Transform()   Transform()         Accept()
 ```
 
-When `ToSQL()` or `ToSQLParams()` is called on any manager (SELECT, INSERT,
-UPDATE, DELETE), it:
+When `ToSQL()` is called on any manager (SELECT, INSERT, UPDATE, DELETE), it:
 
 1. Creates a shallow clone of the statement AST (protecting the original)
 2. Passes the clone through each registered transformer in order

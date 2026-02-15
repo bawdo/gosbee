@@ -31,9 +31,8 @@ query := gosbee.NewSelect(users).
     Use(myCustomPlugin)
 ```
 
-Plugins run automatically when you call `ToSQL()` or `ToSQLParams()`. The
-original AST is cloned before transformation, so the source manager is never
-mutated.
+Plugins run automatically when you call `ToSQL()`. The original AST is cloned
+before transformation, so the source manager is never mutated.
 
 ## Built-in plugins
 
@@ -171,8 +170,8 @@ query := managers.NewSelectManager(users).
 
 ### Returning an error
 
-If a transformer returns a non-nil error, `ToSQL()` and `ToSQLParams()` will
-propagate it and no SQL is generated. This is useful for policy enforcement:
+If a transformer returns a non-nil error, `ToSQL()` will propagate it and no SQL
+is generated. This is useful for policy enforcement:
 
 ```go
 func (p *MyPolicy) TransformSelect(core *nodes.SelectCore) (*nodes.SelectCore, error) {

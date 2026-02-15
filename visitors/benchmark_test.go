@@ -67,7 +67,7 @@ func BenchmarkParameterizedQuery(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		_, _, _ = m.ToSQLParams(v)
+		_, _, _ = m.ToSQL(v)
 	}
 }
 
