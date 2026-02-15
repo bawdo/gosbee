@@ -13,6 +13,66 @@ go get github.com/bawdo/gosbee
 The core library has **zero external dependencies**. Database drivers are only
 required if you use the interactive REPL (see [The REPL](#the-repl) below).
 
+## Import styles
+
+gosbee supports two import styles:
+
+### Simple imports (Recommended)
+
+Use the convenience package for cleaner code:
+
+```go
+import "github.com/bawdo/gosbee"
+
+users := gosbee.NewTable("users")
+query := gosbee.NewSelect(users)
+visitor := gosbee.NewPostgresVisitor()
+```
+
+**Pros:** Shorter imports, cleaner code, easier to get started
+**Best for:** Most users, especially those new to gosbee
+
+### Explicit imports (Advanced)
+
+Import subpackages directly for full control:
+
+```go
+import (
+    "github.com/bawdo/gosbee/managers"
+    "github.com/bawdo/gosbee/nodes"
+    "github.com/bawdo/gosbee/visitors"
+)
+
+users := nodes.NewTable("users")
+query := managers.NewSelectManager(users)
+visitor := visitors.NewPostgresVisitor()
+```
+
+**Pros:** Explicit about which package each type comes from, access to advanced features
+**Best for:** Library developers, advanced usage, when you need access to all node types
+
+### Mixing both approaches
+
+You can combine both styles — use the convenience package for common operations and import subpackages for advanced features:
+
+```go
+import (
+    "github.com/bawdo/gosbee"
+    "github.com/bawdo/gosbee/nodes"  // For advanced node types
+)
+
+users := gosbee.NewTable("users")
+query := gosbee.NewSelect(users)
+
+// Advanced: window functions from nodes package
+query.Select(
+    nodes.NewWindowFunction("row_number", nil).
+        Over(nodes.NewWindow().PartitionBy(users.Col("department"))),
+)
+```
+
+**Examples in this guide use the simple import style.** For the explicit style, simply replace `gosbee.NewTable()` with `nodes.NewTable()`, `gosbee.NewSelect()` with `managers.NewSelectManager()`, etc.
+
 ## Core concepts
 
 gosbee has three layers:
@@ -34,25 +94,23 @@ package main
 import (
     "fmt"
 
-    "github.com/bawdo/gosbee/managers"
-    "github.com/bawdo/gosbee/nodes"
-    "github.com/bawdo/gosbee/visitors"
+    "github.com/bawdo/gosbee"
 )
 
 func main() {
     // 1. Define tables and columns
-    users := nodes.NewTable("users")
+    users := gosbee.NewTable("users")
 
     // 2. Build a SELECT query
-    query := managers.NewSelectManager(users).
+    query := gosbee.NewSelect(users).
         Select(users.Col("id"), users.Col("name"), users.Col("email")).
-        Where(users.Col("status").Eq("active")).
+        Where(users.Col("status").Eq(gosbee.Literal("active"))).
         Order(users.Col("name").Asc()).
         Limit(10)
 
     // 3. Render SQL for your database
-    v := visitors.NewPostgresVisitor()
-    sql, err := query.ToSQL(v)
+    visitor := gosbee.NewPostgresVisitor()
+    sql, err := query.ToSQL(visitor)
     if err != nil {
         panic(err)
     }
@@ -74,8 +132,8 @@ For details on switching between PostgreSQL, MySQL, and SQLite visitors, see the
 Tables and their columns are the foundation of every query.
 
 ```go
-users := nodes.NewTable("users")
-posts := nodes.NewTable("posts")
+users := gosbee.NewTable("users")
+posts := gosbee.NewTable("posts")
 
 // Column references
 id    := users.Col("id")
@@ -86,7 +144,7 @@ email := users.Col("email")
 users.Star()
 
 // Unqualified star — *
-nodes.Star()
+gosbee.Star()
 
 // Table alias
 u := users.Alias("u")
@@ -127,8 +185,8 @@ col.NotEq(nil)                // "users"."age" IS NOT NULL
 ### Combining conditions
 
 ```go
-active := users.Col("status").Eq("active")
-adult  := users.Col("age").GtEq(18)
+active := users.Col("status").Eq(gosbee.Literal("active"))
+adult  := users.Col("age").GtEq(gosbee.Literal(18))
 
 // AND
 active.And(adult)
@@ -143,41 +201,41 @@ active.Not()
 Multiple calls to `Where()` are AND'ed together:
 
 ```go
-query := managers.NewSelectManager(users).
-    Where(users.Col("status").Eq("active")).
-    Where(users.Col("age").GtEq(18))
+query := gosbee.NewSelect(users).
+    Where(users.Col("status").Eq(gosbee.Literal("active"))).
+    Where(users.Col("age").GtEq(gosbee.Literal(18)))
 // ... WHERE "users"."status" = 'active' AND "users"."age" >= 18
 ```
 
 ## Joins
 
 ```go
-posts := nodes.NewTable("posts")
+posts := gosbee.NewTable("posts")
 
 // INNER JOIN
-query := managers.NewSelectManager(users).
+query := gosbee.NewSelect(users).
     Select(users.Col("name"), posts.Col("title")).
     Join(posts).On(users.Col("id").Eq(posts.Col("user_id")))
 
 // LEFT OUTER JOIN
-query = managers.NewSelectManager(users).
+query = gosbee.NewSelect(users).
     OuterJoin(posts).On(users.Col("id").Eq(posts.Col("user_id")))
 
 // CROSS JOIN
-query = managers.NewSelectManager(users).CrossJoin(posts)
+query = gosbee.NewSelect(users).CrossJoin(posts)
 
 // Raw SQL join
-query = managers.NewSelectManager(users).
+query = gosbee.NewSelect(users).
     StringJoin("LEFT JOIN posts ON users.id = posts.user_id")
 ```
 
 ## Ordering, grouping, and pagination
 
 ```go
-query := managers.NewSelectManager(users).
-    Select(users.Col("department"), nodes.Count(nil).As("total")).
+query := gosbee.NewSelect(users).
+    Select(users.Col("department"), gosbee.Count(gosbee.Star()).As("total")).
     Group(users.Col("department")).
-    Having(nodes.Count(nil).Gt(5)).
+    Having(gosbee.Count(gosbee.Star()).Gt(gosbee.Literal(5))).
     Order(users.Col("department").Asc()).
     Limit(20).
     Offset(40)
@@ -193,63 +251,80 @@ users.Col("name").Desc().NullsLast()
 ## Aggregate functions
 
 ```go
-nodes.Count(nil)                         // COUNT(*)
-nodes.Count(users.Col("id"))             // COUNT("users"."id")
-nodes.CountDistinct(users.Col("email"))  // COUNT(DISTINCT "users"."email")
-nodes.Sum(users.Col("total"))            // SUM(...)
-nodes.Avg(users.Col("age"))              // AVG(...)
-nodes.Min(users.Col("score"))            // MIN(...)
-nodes.Max(users.Col("score"))            // MAX(...)
+gosbee.Count(gosbee.Star())               // COUNT(*)
+gosbee.Count(users.Col("id"))             // COUNT("users"."id")
+gosbee.CountDistinct(users.Col("email"))  // COUNT(DISTINCT "users"."email")
+gosbee.Sum(users.Col("total"))            // SUM(...)
+gosbee.Avg(users.Col("age"))              // AVG(...)
+gosbee.Min(users.Col("score"))            // MIN(...)
+gosbee.Max(users.Col("score"))            // MAX(...)
 ```
 
 ## Column aliasing
 
 ```go
-query := managers.NewSelectManager(users).
+query := gosbee.NewSelect(users).
     Select(
         users.Col("id"),
         users.Col("name").As("user_name"),
-        nodes.Count(nil).As("total"),
+        gosbee.Count(gosbee.Star()).As("total"),
     )
 ```
 
 ## Named functions
 
+For advanced node types like named functions, CASE expressions, and window functions, import the `nodes` package alongside the convenience package:
+
 ```go
-nodes.Coalesce(users.Col("nickname"), "Anonymous")
+import (
+    "github.com/bawdo/gosbee"
+    "github.com/bawdo/gosbee/nodes"
+)
+
+nodes.Coalesce(users.Col("nickname"), gosbee.Literal("Anonymous"))
 nodes.Lower(users.Col("email"))
 nodes.Upper(users.Col("city"))
-nodes.Substring(users.Col("name"), 1, 3)
+nodes.Substring(users.Col("name"), gosbee.Literal(1), gosbee.Literal(3))
 nodes.Cast(users.Col("age"), "TEXT")
 
 // Arbitrary SQL functions
-nodes.NewNamedFunction("MY_FUNC", users.Col("id"), nodes.Literal(42))
+nodes.NewNamedFunction("MY_FUNC", users.Col("id"), gosbee.Literal(42))
 ```
 
 ## CASE expressions
 
 ```go
+import (
+    "github.com/bawdo/gosbee"
+    "github.com/bawdo/gosbee/nodes"
+)
+
 // Searched CASE
 caseExpr := nodes.NewCase().
-    When(users.Col("age").Lt(18), nodes.Literal("minor")).
-    When(users.Col("age").GtEq(18), nodes.Literal("adult")).
-    Else(nodes.Literal("unknown"))
+    When(users.Col("age").Lt(gosbee.Literal(18)), gosbee.Literal("minor")).
+    When(users.Col("age").GtEq(gosbee.Literal(18)), gosbee.Literal("adult")).
+    Else(gosbee.Literal("unknown"))
 
-query := managers.NewSelectManager(users).
+query := gosbee.NewSelect(users).
     Select(users.Col("name"), caseExpr.As("age_group"))
 ```
 
 ## Window functions
 
 ```go
+import (
+    "github.com/bawdo/gosbee"
+    "github.com/bawdo/gosbee/nodes"
+)
+
 def := nodes.NewWindowDef().
     Partition(users.Col("department")).
     Order(users.Col("salary").Desc())
 
-query := managers.NewSelectManager(users).
+query := gosbee.NewSelect(users).
     Select(
         users.Col("name"),
-        nodes.Sum(users.Col("salary")).Over(def).As("running_total"),
+        gosbee.Sum(users.Col("salary")).Over(def).As("running_total"),
     )
 ```
 
@@ -259,13 +334,13 @@ Use parameterised queries to guard against SQL injection when passing values to
 your database driver.
 
 ```go
-v := visitors.NewPostgresVisitor(visitors.WithParams())
+query := gosbee.NewSelect(users).
+    Where(users.Col("name").Eq(gosbee.BindParam("Alice"))).
+    Where(users.Col("age").Gt(gosbee.BindParam(18)))
 
-query := managers.NewSelectManager(users).
-    Where(users.Col("name").Eq("Alice")).
-    Where(users.Col("age").Gt(18))
-
-sql, params, err := query.ToSQLParams(v)
+// Enable parameterisation mode with WithParams()
+visitor := gosbee.NewPostgresVisitor(gosbee.WithParams())
+sql, params, err := query.ToSQLParams(visitor)
 // sql:    ... WHERE "users"."name" = $1 AND "users"."age" > $2
 // params: []any{"Alice", 18}
 
@@ -283,10 +358,10 @@ gosbee supports INSERT, UPDATE, and DELETE in addition to SELECT.
 ### INSERT
 
 ```go
-m := managers.NewInsertManager(users).
+m := gosbee.NewInsert(users).
     Columns(users.Col("name"), users.Col("email")).
-    Values("Alice", "alice@example.com").
-    Values("Bob", "bob@example.com").
+    Values(gosbee.Literal("Alice"), gosbee.Literal("alice@example.com")).
+    Values(gosbee.Literal("Bob"), gosbee.Literal("bob@example.com")).
     Returning(users.Col("id"))
 
 sql, err := m.ToSQL(v)
@@ -295,40 +370,52 @@ sql, err := m.ToSQL(v)
 ### UPDATE
 
 ```go
-m := managers.NewUpdateManager(users).
-    Set(users.Col("status"), "inactive").
+import (
+    "github.com/bawdo/gosbee"
+    "github.com/bawdo/gosbee/nodes"
+)
+
+m := gosbee.NewUpdate(users).
+    Set(users.Col("status"), gosbee.Literal("inactive")).
     Where(users.Col("last_login").Lt(nodes.NewSqlLiteral("NOW() - INTERVAL '90 days'"))).
     Returning(users.Col("id"))
 
-sql, err := m.ToSQL(v)
+visitor := gosbee.NewPostgresVisitor()
+sql, err := m.ToSQL(visitor)
 ```
 
 ### DELETE
 
 ```go
-m := managers.NewDeleteManager(users).
-    Where(users.Col("status").Eq("deleted")).
+m := gosbee.NewDelete(users).
+    Where(users.Col("status").Eq(gosbee.Literal("deleted"))).
     Returning(users.Col("id"))
 
-sql, err := m.ToSQL(v)
+visitor := gosbee.NewPostgresVisitor()
+sql, err := m.ToSQL(visitor)
 ```
 
 ### UPSERT (ON CONFLICT)
 
 ```go
-m := managers.NewInsertManager(users).
+import (
+    "github.com/bawdo/gosbee"
+    "github.com/bawdo/gosbee/nodes"
+)
+
+m := gosbee.NewInsert(users).
     Columns(users.Col("email"), users.Col("name")).
-    Values("alice@example.com", "Alice").
+    Values(gosbee.Literal("alice@example.com"), gosbee.Literal("Alice")).
     OnConflict(users.Col("email")).DoNothing()
 
 // Or DO UPDATE
-m = managers.NewInsertManager(users).
+m = gosbee.NewInsert(users).
     Columns(users.Col("email"), users.Col("name")).
-    Values("alice@example.com", "Alice").
+    Values(gosbee.Literal("alice@example.com"), gosbee.Literal("Alice")).
     OnConflict(users.Col("email")).
     DoUpdate(&nodes.AssignmentNode{
         Left:  users.Col("name"),
-        Right: nodes.Literal("Alice"),
+        Right: gosbee.Literal("Alice"),
     })
 ```
 
@@ -338,13 +425,17 @@ Plugins transform the AST before SQL is rendered — for example, automatically
 filtering soft-deleted rows or injecting access-control policies.
 
 ```go
-import "github.com/bawdo/gosbee/plugins/softdelete"
+import (
+    "github.com/bawdo/gosbee"
+    "github.com/bawdo/gosbee/plugins/softdelete"
+)
 
-query := managers.NewSelectManager(users).
+query := gosbee.NewSelect(users).
     Select(users.Star()).
     Use(softdelete.New())
 
-sql, _ := query.ToSQL(v)
+visitor := gosbee.NewPostgresVisitor()
+sql, _ := query.ToSQL(visitor)
 // SELECT "users".* FROM "users" WHERE "users"."deleted_at" IS NULL
 ```
 

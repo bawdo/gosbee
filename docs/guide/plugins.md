@@ -11,9 +11,13 @@ the `Transformer` interface and are registered on managers with `Use()`.
 Call `Use()` on any manager — SELECT, INSERT, UPDATE, or DELETE:
 
 ```go
-import "github.com/bawdo/gosbee/plugins/softdelete"
+import (
+    "github.com/bawdo/gosbee"
+    "github.com/bawdo/gosbee/plugins/softdelete"
+)
 
-query := managers.NewSelectManager(users).
+users := gosbee.NewTable("users")
+query := gosbee.NewSelect(users).
     Select(users.Star()).
     Use(softdelete.New())
 ```
@@ -21,7 +25,7 @@ query := managers.NewSelectManager(users).
 Multiple plugins can be chained. They are applied in registration order:
 
 ```go
-query := managers.NewSelectManager(users).
+query := gosbee.NewSelect(users).
     Select(users.Star()).
     Use(softdelete.New()).
     Use(myCustomPlugin)
@@ -62,13 +66,13 @@ The plugin applies to all DML operations:
 
 ```go
 // SELECT — adds WHERE "users"."deleted_at" IS NULL
-managers.NewSelectManager(users).Use(sd)
+gosbee.NewSelect(users).Use(sd)
 
 // UPDATE — adds WHERE "users"."deleted_at" IS NULL
-managers.NewUpdateManager(users).Set(users.Col("status"), "inactive").Use(sd)
+gosbee.NewUpdate(users).Set(users.Col("status"), gosbee.Literal("inactive")).Use(sd)
 
 // DELETE — adds WHERE "users"."deleted_at" IS NULL
-managers.NewDeleteManager(users).Use(sd)
+gosbee.NewDelete(users).Use(sd)
 ```
 
 When a query involves joins, the soft-delete condition is added for each joined
@@ -83,6 +87,7 @@ at query time. It supports both local policy functions and a remote OPA server.
 
 ```go
 import (
+    "github.com/bawdo/gosbee"
     "github.com/bawdo/gosbee/nodes"
     "github.com/bawdo/gosbee/plugins/opa"
 )
@@ -92,13 +97,14 @@ policy := func(tableName string) ([]nodes.Node, error) {
         return nil, errors.New("access denied to secrets table")
     }
     if tableName == "users" {
-        t := nodes.NewTable(tableName)
-        return []nodes.Node{t.Col("tenant_id").Eq(42)}, nil
+        t := gosbee.NewTable(tableName)
+        return []nodes.Node{t.Col("tenant_id").Eq(gosbee.Literal(42))}, nil
     }
     return nil, nil // no restrictions
 }
 
-query := managers.NewSelectManager(users).
+users := gosbee.NewTable("users")
+query := gosbee.NewSelect(users).
     Select(users.Star()).
     Use(opa.New(policy))
 
@@ -109,12 +115,18 @@ query := managers.NewSelectManager(users).
 #### Remote OPA server
 
 ```go
+import (
+    "github.com/bawdo/gosbee"
+    "github.com/bawdo/gosbee/plugins/opa"
+)
+
 opaPlugin := opa.NewFromServer(
     "http://localhost:8181",     // OPA server URL
     "data.authz.allow",         // policy path
 )
 
-query := managers.NewSelectManager(users).
+users := gosbee.NewTable("users")
+query := gosbee.NewSelect(users).
     Select(users.Star()).
     Use(opaPlugin)
 ```

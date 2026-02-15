@@ -8,23 +8,35 @@ visitors are provided — one for each supported database.
 
 ## Choosing a visitor
 
+**Simple import style:**
+
+```go
+import "github.com/bawdo/gosbee"
+
+// PostgreSQL — double-quoted identifiers, $1/$2 parameters
+visitor := gosbee.NewPostgresVisitor()
+
+// MySQL — backtick-quoted identifiers, ? parameters
+visitor := gosbee.NewMySQLVisitor()
+
+// SQLite — double-quoted identifiers, ? parameters
+visitor := gosbee.NewSQLiteVisitor()
+```
+
+**Explicit import style:**
+
 ```go
 import "github.com/bawdo/gosbee/visitors"
 
-// PostgreSQL — double-quoted identifiers, $1/$2 parameters
-v := visitors.NewPostgresVisitor()
-
-// MySQL — backtick-quoted identifiers, ? parameters
-v := visitors.NewMySQLVisitor()
-
-// SQLite — double-quoted identifiers, ? parameters
-v := visitors.NewSQLiteVisitor()
+visitor := visitors.NewPostgresVisitor()
+visitor := visitors.NewMySQLVisitor()
+visitor := visitors.NewSQLiteVisitor()
 ```
 
 Pass the visitor to any manager's `ToSQL` or `ToSQLParams` method:
 
 ```go
-sql, err := query.ToSQL(v)
+sql, err := query.ToSQL(visitor)
 ```
 
 ## Identifier quoting
@@ -41,16 +53,18 @@ Quoting is handled automatically — you never need to quote identifiers yoursel
 
 ## Parameterised queries
 
-Enable parameterisation by passing `WithParams()` when creating a visitor:
+Use `BindParam()` to create parameterised values and enable parameterisation with `WithParams()`:
 
 ```go
-v := visitors.NewPostgresVisitor(visitors.WithParams())
+import "github.com/bawdo/gosbee"
 
-query := managers.NewSelectManager(users).
-    Where(users.Col("name").Eq("Alice")).
-    Where(users.Col("age").Gt(18))
+query := gosbee.NewSelect(users).
+    Where(users.Col("name").Eq(gosbee.BindParam("Alice"))).
+    Where(users.Col("age").Gt(gosbee.BindParam(18)))
 
-sql, params, err := query.ToSQLParams(v)
+// Enable parameterisation mode
+visitor := gosbee.NewPostgresVisitor(gosbee.WithParams())
+sql, params, err := query.ToSQLParams(visitor)
 // sql:    SELECT ... WHERE "users"."name" = $1 AND "users"."age" > $2
 // params: []any{"Alice", 18}
 ```

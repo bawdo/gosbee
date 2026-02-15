@@ -36,6 +36,48 @@ ability to transform queries through middleware before SQL generation.
 go get github.com/bawdo/gosbee
 ```
 
+### Import Styles
+
+gosbee supports two import styles to suit different preferences:
+
+#### **Simple imports** (Recommended for most users)
+
+Use the convenience package for a cleaner import and shorter function names:
+
+```go
+import "github.com/bawdo/gosbee"
+
+users := gosbee.NewTable("users")
+query := gosbee.NewSelect(users).
+    Select(users.Col("id"), users.Col("name")).
+    Where(users.Col("active").Eq(gosbee.Literal(true)))
+
+visitor := gosbee.NewPostgresVisitor()
+sql, _ := query.ToSQL(visitor)
+```
+
+#### **Explicit imports** (Advanced usage)
+
+Import subpackages directly for full control and access to advanced features:
+
+```go
+import (
+    "github.com/bawdo/gosbee/managers"
+    "github.com/bawdo/gosbee/nodes"
+    "github.com/bawdo/gosbee/visitors"
+)
+
+users := nodes.NewTable("users")
+query := managers.NewSelectManager(users).
+    Select(users.Col("id"), users.Col("name")).
+    Where(users.Col("active").Eq(nodes.Literal(true)))
+
+visitor := visitors.NewPostgresVisitor()
+sql, _ := query.ToSQL(visitor)
+```
+
+**You can also mix both approaches** — use the convenience package for common operations and import subpackages for advanced features like window functions or custom node types.
+
 ### Basic Usage
 
 ```go
@@ -46,9 +88,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/bawdo/gosbee/managers"
-    "github.com/bawdo/gosbee/nodes"
-    "github.com/bawdo/gosbee/visitors"
+    "github.com/bawdo/gosbee"
     "github.com/jackc/pgx/v5"
 )
 
@@ -60,20 +100,20 @@ func main() {
     }
     defer conn.Close(context.Background())
 
-    // Define tables and columns
-    users := nodes.NewTable("users")
-    posts := nodes.NewTable("posts")
+    // Define tables
+    users := gosbee.NewTable("users")
+    posts := gosbee.NewTable("posts")
 
     // Build a query
-    query := managers.NewSelectManager(users).
+    query := gosbee.NewSelect(users).
         Select(users.Col("id"), users.Col("name"), posts.Col("title")).
         Join(posts).On(users.Col("id").Eq(posts.Col("user_id"))).
-        Where(users.Col("active").Eq(true)).
+        Where(users.Col("active").Eq(gosbee.Literal(true))).
         Order(posts.Col("created_at").Desc()).
         Limit(10)
 
     // Generate SQL for PostgreSQL
-    visitor := visitors.NewPostgresVisitor()
+    visitor := gosbee.NewPostgresVisitor()
     sql, err := query.ToSQL(visitor)
     if err != nil {
         panic(err)
@@ -118,9 +158,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/bawdo/gosbee/managers"
-    "github.com/bawdo/gosbee/nodes"
-    "github.com/bawdo/gosbee/visitors"
+    "github.com/bawdo/gosbee"
     "github.com/jackc/pgx/v5"
 )
 
@@ -132,15 +170,16 @@ func main() {
     }
     defer conn.Close(context.Background())
 
-    users := nodes.NewTable("users")
+    users := gosbee.NewTable("users")
 
-    // Build parameterised query
-    visitor := visitors.NewPostgresVisitor(visitors.WithParams())
-    query := managers.NewSelectManager(users).
+    // Build parameterised query using BindParam
+    query := gosbee.NewSelect(users).
         Select(users.Col("id"), users.Col("name"), users.Col("age")).
-        Where(users.Col("name").Eq("Alice")).
-        Where(users.Col("age").Gt(18))
+        Where(users.Col("name").Eq(gosbee.BindParam("Alice"))).
+        Where(users.Col("age").Gt(gosbee.BindParam(18)))
 
+    // Create visitor with parameterisation enabled
+    visitor := gosbee.NewPostgresVisitor(gosbee.WithParams())
     sql, params, err := query.ToSQLParams(visitor)
     if err != nil {
         log.Fatal(err)
@@ -176,12 +215,17 @@ func main() {
 Transform queries with plugins before SQL generation:
 
 ```go
-import "github.com/bawdo/gosbee/plugins/softdelete"
+import (
+    "github.com/bawdo/gosbee"
+    "github.com/bawdo/gosbee/plugins/softdelete"
+)
 
-query := managers.NewSelectManager(users).
+users := gosbee.NewTable("users")
+query := gosbee.NewSelect(users).
     Select(users.Star()).
     Use(softdelete.New())
 
+visitor := gosbee.NewPostgresVisitor()
 sql, _ := query.ToSQL(visitor)
 // SELECT "users".* FROM "users" WHERE "users"."deleted_at" IS NULL
 ```
