@@ -3168,3 +3168,200 @@ func TestVisitCastedWithParams(t *testing.T) {
 		t.Errorf("expected params [42], got %v", params)
 	}
 }
+
+// --- Literal type coverage ---
+
+func TestLiteralAllNumericTypes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		value    any
+		expected string
+	}{
+		{"int8", int8(42), "42"},
+		{"int16", int16(1000), "1000"},
+		{"int32", int32(100000), "100000"},
+		{"int64", int64(9223372036854775807), "9223372036854775807"},
+		{"uint", uint(42), "42"},
+		{"uint8", uint8(255), "255"},
+		{"uint16", uint16(65535), "65535"},
+		{"uint32", uint32(4294967295), "4294967295"},
+		{"uint64", uint64(18446744073709551615), "18446744073709551615"},
+		{"float32", float32(3.14), "3.14"},
+		{"float64", float64(2.718281828), "2.718281828"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			lit := nodes.Literal(tt.value)
+			v := NewPostgresVisitor()
+			sql := lit.Accept(v)
+			if sql != tt.expected {
+				t.Errorf("expected %s, got %s", tt.expected, sql)
+			}
+		})
+	}
+}
+
+// --- Validation panic tests ---
+
+func TestValidateSQLTypeNameValid(t *testing.T) {
+	t.Parallel()
+	// Should not panic
+	validateSQLTypeName("VARCHAR(255)")
+	validateSQLTypeName("DECIMAL(10, 2)")
+	validateSQLTypeName("user_defined_type")
+}
+
+func TestValidateSQLTypeNameInvalidChars(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		typeName string
+	}{
+		{"semicolon", "VARCHAR;DROP TABLE"},
+		{"single quote", "VARCHAR'"},
+		{"dash", "VARCHAR-100"},
+		{"equals", "VARCHAR=100"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("expected panic for type name %q", tt.typeName)
+				}
+			}()
+			validateSQLTypeName(tt.typeName)
+		})
+	}
+}
+
+func TestValidateSQLFunctionNameValid(t *testing.T) {
+	t.Parallel()
+	// Should not panic
+	validateSQLFunctionName("my_function")
+	validateSQLFunctionName("COUNT")
+	validateSQLFunctionName("func123")
+}
+
+func TestValidateSQLFunctionNameInvalidChars(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		functionName string
+	}{
+		{"semicolon", "func;DROP"},
+		{"single quote", "func'"},
+		{"space", "func name"},
+		{"dash", "func-name"},
+		{"parentheses", "func()"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("expected panic for function name %q", tt.functionName)
+				}
+			}()
+			validateSQLFunctionName(tt.functionName)
+		})
+	}
+}
+
+// --- UnaryMath parentheses coverage ---
+
+func TestVisitUnaryMathWithParens(t *testing.T) {
+	t.Parallel()
+	// Test that expressions needing parentheses get them
+	users := nodes.NewTable("users")
+	// a + b wrapped in unary math should have parens
+	expr := nodes.NewInfixNode(users.Col("a"), users.Col("b"), nodes.OpPlus)
+	unary := nodes.NewUnaryMathNode(expr, nodes.OpBitwiseNot)
+	testutil.AssertSQL(t, NewPostgresVisitor(), unary, `~("users"."a" + "users"."b")`)
+}
+
+func TestVisitUnaryMathNoParens(t *testing.T) {
+	t.Parallel()
+	// Simple column doesn't need parens
+	users := nodes.NewTable("users")
+	unary := nodes.NewUnaryMathNode(users.Col("flags"), nodes.OpBitwiseNot)
+	testutil.AssertSQL(t, NewPostgresVisitor(), unary, `~"users"."flags"`)
+}
+
+// --- DOT visitor window coverage ---
+
+func TestDotVisitWindowDefinitionWithFrame(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	id := users.Col("id")
+	w := &nodes.WindowDefinition{
+		Name:        "w",
+		PartitionBy: []nodes.Node{id},
+		Frame: &nodes.WindowFrame{
+			Type: nodes.FrameRows,
+		},
+	}
+	core := &nodes.SelectCore{
+		From:    users,
+		Windows: []*nodes.WindowDefinition{w},
+	}
+	dv := NewDotVisitor()
+	core.Accept(dv)
+	dot := dv.ToDot()
+	assertContains(t, dot, "WINDOW")
+	assertContains(t, dot, "ROWS")
+}
+
+func TestDotVisitWindowDefinitionRangeFrame(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	w := &nodes.WindowDefinition{
+		Name: "w",
+		Frame: &nodes.WindowFrame{
+			Type: nodes.FrameRange,
+		},
+	}
+	core := &nodes.SelectCore{
+		From:    users,
+		Windows: []*nodes.WindowDefinition{w},
+	}
+	dv := NewDotVisitor()
+	core.Accept(dv)
+	dot := dv.ToDot()
+	assertContains(t, dot, "RANGE")
+}
+
+func TestDotVisitWindowDefinitionWithOrderBy(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	created := users.Col("created_at")
+	w := &nodes.WindowDefinition{
+		Name:    "w",
+		OrderBy: []nodes.Node{created.Asc()},
+	}
+	core := &nodes.SelectCore{
+		From:    users,
+		Windows: []*nodes.WindowDefinition{w},
+	}
+	dv := NewDotVisitor()
+	core.Accept(dv)
+	dot := dv.ToDot()
+	assertContains(t, dot, "WINDOW")
+	assertContains(t, dot, "ORDER")
+}
+
+func TestDotVisitGroupingSets(t *testing.T) {
+	t.Parallel()
+	col1 := nodes.NewTable("t").Col("a")
+	col2 := nodes.NewTable("t").Col("b")
+	n := nodes.NewGroupingSets([]nodes.Node{col1, col2}, []nodes.Node{col1})
+	dv := NewDotVisitor()
+	n.Accept(dv)
+	dot := dv.ToDot()
+	assertContains(t, dot, "GROUPING SETS")
+}

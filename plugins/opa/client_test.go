@@ -1474,3 +1474,196 @@ func TestParseMasksResponseEmptyValueMeansNoMask(t *testing.T) {
 		t.Errorf("expected nil masks for empty value, got %v", masks)
 	}
 }
+
+// --- extractOperator edge cases ---
+
+func TestExtractOperatorNonRefType(t *testing.T) {
+	term := compileTerm{Type: "string", Value: "eq"}
+	_, err := extractOperator(term)
+	if err == nil {
+		t.Error("expected error for non-ref type")
+	}
+	if !strings.Contains(err.Error(), "must be ref") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestExtractOperatorEmptyParts(t *testing.T) {
+	term := compileTerm{Type: "ref", Value: []compileTerm{}}
+	_, err := extractOperator(term)
+	if err == nil {
+		t.Error("expected error for empty ref parts")
+	}
+	if !strings.Contains(err.Error(), "has no parts") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestExtractOperatorNonVarFirstPart(t *testing.T) {
+	term := compileTerm{
+		Type: "ref",
+		Value: []compileTerm{
+			{Type: "string", Value: "eq"},
+		},
+	}
+	_, err := extractOperator(term)
+	if err == nil {
+		t.Error("expected error for non-var first part")
+	}
+	if !strings.Contains(err.Error(), "must be var") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestExtractOperatorNonStringValue(t *testing.T) {
+	term := compileTerm{
+		Type: "ref",
+		Value: []compileTerm{
+			{Type: "var", Value: 123}, // number instead of string
+		},
+	}
+	_, err := extractOperator(term)
+	if err == nil {
+		t.Error("expected error for non-string var value")
+	}
+	if !strings.Contains(err.Error(), "not a string") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// --- extractColumnName edge cases ---
+
+func TestExtractColumnNameNonRefType(t *testing.T) {
+	term := compileTerm{Type: "var", Value: "x"}
+	_, err := extractColumnName(term)
+	if err == nil {
+		t.Error("expected error for non-ref type")
+	}
+	if !strings.Contains(err.Error(), "must be ref") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestExtractColumnNameEmptyParts(t *testing.T) {
+	term := compileTerm{Type: "ref", Value: []compileTerm{}}
+	_, err := extractColumnName(term)
+	if err == nil {
+		t.Error("expected error for empty ref parts")
+	}
+	if !strings.Contains(err.Error(), "has no parts") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestExtractColumnNameNoStringElement(t *testing.T) {
+	term := compileTerm{
+		Type: "ref",
+		Value: []compileTerm{
+			{Type: "var", Value: "data"},
+			{Type: "number", Value: 42},
+		},
+	}
+	_, err := extractColumnName(term)
+	if err == nil {
+		t.Error("expected error when no string-typed element exists")
+	}
+	if !strings.Contains(err.Error(), "no string-typed element") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestExtractColumnNameStringValueNotString(t *testing.T) {
+	term := compileTerm{
+		Type: "ref",
+		Value: []compileTerm{
+			{Type: "string", Value: 123}, // number instead of string
+		},
+	}
+	_, err := extractColumnName(term)
+	if err == nil {
+		t.Error("expected error for string element with non-string value")
+	}
+	if !strings.Contains(err.Error(), "not a string") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// --- isDataRef edge cases ---
+
+func TestIsDataRefNonRefType(t *testing.T) {
+	term := compileTerm{Type: "string", Value: "data"}
+	if isDataRef(term) {
+		t.Error("expected false for non-ref type")
+	}
+}
+
+func TestIsDataRefInvalidValue(t *testing.T) {
+	term := compileTerm{Type: "ref", Value: "not-a-slice"}
+	if isDataRef(term) {
+		t.Error("expected false for invalid Value type")
+	}
+}
+
+func TestIsDataRefEmptyParts(t *testing.T) {
+	term := compileTerm{Type: "ref", Value: []compileTerm{}}
+	if isDataRef(term) {
+		t.Error("expected false for empty parts")
+	}
+}
+
+func TestIsDataRefNonVarFirstPart(t *testing.T) {
+	term := compileTerm{
+		Type: "ref",
+		Value: []compileTerm{
+			{Type: "string", Value: "data"},
+		},
+	}
+	if isDataRef(term) {
+		t.Error("expected false when first part is not var")
+	}
+}
+
+func TestIsDataRefNonDataVar(t *testing.T) {
+	term := compileTerm{
+		Type: "ref",
+		Value: []compileTerm{
+			{Type: "var", Value: "input"},
+		},
+	}
+	if isDataRef(term) {
+		t.Error("expected false when var is not 'data'")
+	}
+}
+
+func TestIsDataRefValidDataRef(t *testing.T) {
+	term := compileTerm{
+		Type: "ref",
+		Value: []compileTerm{
+			{Type: "var", Value: "data"},
+			{Type: "string", Value: "users"},
+		},
+	}
+	if !isDataRef(term) {
+		t.Error("expected true for valid data ref")
+	}
+}
+
+// --- parseCompileResponse edge cases ---
+
+func TestParseCompileResponseInvalidJSON(t *testing.T) {
+	_, err := parseCompileResponse([]byte("not json"))
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}
+
+func TestParseCompileResponseEmptyResult(t *testing.T) {
+	data := []byte(`{"result":{}}`)
+	resp, err := parseCompileResponse(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Result.Queries != nil {
+		t.Error("expected nil queries for empty result")
+	}
+}
