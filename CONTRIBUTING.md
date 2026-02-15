@@ -229,7 +229,7 @@ For a complete guide, see:
 - Follow standard Go conventions ([Effective Go](https://golang.org/doc/effective_go.html))
 - Use `gofmt` for formatting (enforced by `go fmt ./...`)
 - Run `go vet ./...` before committing
-- Use Australian English in documentation and comments
+- Use Australian English in documentation and comments ;-)
 
 ### Naming Conventions
 
