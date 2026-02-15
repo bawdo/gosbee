@@ -107,6 +107,18 @@ Code contributions might include:
    go test ./...
    ```
 
+5. **Check test coverage** (optional):
+   ```bash
+   # Generate coverage report in the coverage/ directory
+   go test -coverprofile=coverage/coverage.out ./...
+
+   # View coverage in terminal
+   go tool cover -func=coverage/coverage.out
+
+   # Or open an HTML coverage report in your browser
+   go tool cover -html=coverage/coverage.out
+   ```
+
 5. **Run linters:**
    ```bash
    go vet ./...
