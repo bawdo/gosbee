@@ -52,6 +52,7 @@ go.work.sum
 
 # Local Docs
 .local_docs/
+/docs/plans
 
 # Obsidian vault files
 /docs/.obsidian

@@ -1,0 +1,36 @@
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 0.5%
+        informational: true
+        if_ci_failed: error
+
+    patch:
+      default:
+        target: 70%
+        threshold: 0.5%
+        informational: true
+        if_ci_failed: error
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+  hide_project_coverage: false
+
+ignore:
+  - "cmd/repl/**/*"           # REPL UI code harder to unit test
+  - "**/*_test.go"            # Test files themselves
+  - "**/testdata/**/*"        # Test data
+  - "**/*.pb.go"              # Generated protobuf files
+
+github_checks:
+  annotations: true

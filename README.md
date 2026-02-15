@@ -1,5 +1,10 @@
 # gosbee
----
+
+[![CI](https://github.com/bawdo/gosbee/workflows/CI/badge.svg)](https://github.com/bawdo/gosbee/actions)
+[![codecov](https://codecov.io/gh/bawdo/gosbee/graph/badge.svg?token=5QEEOYCISD)](https://codecov.io/gh/bawdo/gosbee)
+[![Go Report Card](https://goreportcard.com/badge/github.com/bawdo/gosbee)](https://goreportcard.com/report/github.com/bawdo/gosbee)
+[![GoDoc](https://pkg.go.dev/badge/github.com/bawdo/gosbee.svg)](https://pkg.go.dev/github.com/bawdo/gosbee)
+
 ![gosbee with plugins](gosbee_with_plugins.png)
 
 **gosbee is a Go SQL Builder** — a powerful SQL AST (Abstract Syntax Tree) library

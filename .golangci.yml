@@ -1,0 +1,99 @@
+run:
+  timeout: 5m
+  tests: true
+  skip-dirs:
+    - vendor
+    - testdata
+  skip-files:
+    - ".*\\.pb\\.go$"
+
+linters:
+  enable:
+    # Core linters
+    - errcheck       # Check for unchecked errors
+    - govet          # Go vet checks
+    - staticcheck    # Static analysis
+    - typecheck      # Type checking
+    - unused         # Unused code detection
+
+    # Style linters
+    - gofmt          # Ensure code is formatted
+    - goimports      # Check imports are formatted
+    - gosimple       # Simplify code suggestions
+
+    # Quality linters
+    - ineffassign    # Detect ineffectual assignments
+    - gocritic       # Comprehensive Go source code linter
+    - misspell       # Spelling mistakes
+    - unconvert      # Unnecessary type conversions
+    - unparam        # Unused function parameters
+    - whitespace     # Trailing whitespace
+
+    # Error handling
+    - errname        # Error names should end with Error
+    - errorlint      # Error wrapping best practices
+
+    # Security
+    - gosec          # Security problems
+
+  disable:
+    # Too strict for this project
+    - lll            # Line length (let code review handle this)
+    - gocyclo        # Cyclomatic complexity (too strict)
+    - gomnd          # Magic numbers (too noisy)
+    - funlen         # Function length (too strict)
+    - nestif         # Nested if statements (too strict)
+    - gocognit       # Cognitive complexity (too strict)
+    - cyclop         # Package cyclomatic complexity (too strict)
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+
+  govet:
+    enable-all: true
+    disable:
+      - shadow  # Too many false positives
+
+  staticcheck:
+    checks: ["all"]
+
+  gosec:
+    severity: medium
+    excludes:
+      - G104  # Audit errors not checked (covered by errcheck)
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - commentFormatting  # Too pedantic
+      - whyNoLint          # Not needed
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosec
+        - unparam
+
+    # Exclude known false positives
+    - text: "weak cryptographic primitive"
+      linters:
+        - gosec
+
+    # Ignore shadowing of 'err'
+    - text: "shadow: declaration of \"err\" shadows declaration"
+      linters:
+        - govet
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  # Don't hide issues that were introduced before running golangci-lint
+  new: false
