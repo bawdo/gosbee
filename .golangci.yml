@@ -1,89 +1,85 @@
-version: 2
-
+version: "2"
 run:
-  timeout: 5m
   tests: true
-
 linters:
   enable:
-    # Core linters
-    - errcheck       # Check for unchecked errors
-    - govet          # Go vet checks
-    - staticcheck    # Static analysis (includes gosimple)
-    - unused         # Unused code detection
-
-    # Quality linters
-    - ineffassign    # Detect ineffectual assignments
-    - gocritic       # Comprehensive Go source code linter
-    - misspell       # Spelling mistakes
-    - unconvert      # Unnecessary type conversions
-    - unparam        # Unused function parameters
-
-    # Error handling
-    - errname        # Error names should end with Error
-    - errorlint      # Error wrapping best practices
-
-    # Security
-    - gosec          # Security problems
-
-  disable-all: false
-
-linters-settings:
-  errcheck:
-    check-type-assertions: false
-    check-blank: false
-
-  govet:
-    enable-all: false
-    enable:
-      - atomic
-      - bools
-      - errorsas
-      - ifaceassert
-      - nilfunc
-      - printf
-      - stringintconv
-    disable:
-      - shadow
-      - fieldalignment      # Too many changes, not critical
-
-  staticcheck:
-    checks: ["all"]
-
-  gosec:
-    severity: medium
-    confidence: medium
-    excludes:
-      - G104  # Covered by errcheck
-      - G304  # File inclusion via variable (false positives in tests)
-
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-    disabled-checks:
-      - commentFormatting
-      - whyNoLint
-      - unnamedResult      # Too many changes for Phase B
-      - ifElseChain        # Not critical
-      - appendCombine      # Not critical
-
+    - errname
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - unconvert
+    - unparam
+  settings:
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+    gocritic:
+      disabled-checks:
+        - commentFormatting
+        - whyNoLint
+        - unnamedResult
+        - ifElseChain
+        - appendCombine
+        - equalFold          # Too many changes, not critical
+        - emptyStringTest    # Style preference
+        - octalLiteral       # 0600 is clearer than 0o600
+        - sprintfQuotedString # Too pedantic
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+    gosec:
+      excludes:
+        - G104
+        - G304
+      severity: medium
+      confidence: medium
+    govet:
+      enable:
+        - atomic
+        - bools
+        - errorsas
+        - ifaceassert
+        - nilfunc
+        - printf
+        - stringintconv
+      disable:
+        - shadow
+        - fieldalignment
+      enable-all: false
+    staticcheck:
+      checks:
+        - all
+        - -ST1003  # SqlLiteral naming is intentional (matches Ruby Arel)
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+          - gosec
+          - unparam
+        path: _test\.go
+    paths:
+      - .*\.pb\.go$
+      - vendor
+      - testdata
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-dirs:
-    - vendor
-    - testdata
-
-  exclude-files:
-    - ".*\\.pb\\.go$"
-
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - unparam
-        - gosec  # Exclude all gosec from tests
-
   max-issues-per-linter: 0
   max-same-issues: 0
   new: false
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
