@@ -10,15 +10,15 @@ type completionContext int
 
 const (
 	contextCommand    completionContext = iota // start of line or partial command
-	contextTableName                          // after from/join/etc
-	contextColumnRef                          // after select/where/having/group/expr
-	contextEngine                             // after engine/set_engine
-	contextPlugin                             // after plugin
-	contextPluginOff                          // after plugin off
-	contextOrderDir                           // after a column ref in order context
-	contextOperator                           // after a column ref in condition context
-	contextAliasTable                         // first arg of alias (table names only)
-	contextEditClause                         // after edit
+	contextTableName                           // after from/join/etc
+	contextColumnRef                           // after select/where/having/group/expr
+	contextEngine                              // after engine/set_engine
+	contextPlugin                              // after plugin
+	contextPluginOff                           // after plugin off
+	contextOrderDir                            // after a column ref in order context
+	contextOperator                            // after a column ref in condition context
+	contextAliasTable                          // first arg of alias (table names only)
+	contextEditClause                          // after edit
 )
 
 var editClauseNames = []string{"group", "having", "join", "order", "select", "where", "window"}

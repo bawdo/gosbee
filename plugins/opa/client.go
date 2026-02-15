@@ -331,7 +331,9 @@ func translateQueries(queries [][]compileExpression, table *nodes.Table) ([]node
 			if err != nil {
 				return nil, err
 			}
-			group = group.(interface{ And(nodes.Node) *nodes.AndNode }).And(node)
+			group = group.(interface {
+				And(nodes.Node) *nodes.AndNode
+			}).And(node)
 		}
 		groups[i] = group
 	}
@@ -339,7 +341,9 @@ func translateQueries(queries [][]compileExpression, table *nodes.Table) ([]node
 	// OR all groups together.
 	result := groups[0]
 	for i := 1; i < len(groups); i++ {
-		result = result.(interface{ Or(nodes.Node) *nodes.GroupingNode }).Or(groups[i])
+		result = result.(interface {
+			Or(nodes.Node) *nodes.GroupingNode
+		}).Or(groups[i])
 	}
 	return []nodes.Node{result}, nil
 }

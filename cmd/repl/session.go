@@ -48,13 +48,13 @@ type Session struct {
 	query        *managers.SelectManager
 	engine       string
 	visitor      nodes.Visitor
-	plugins      pluginRegistry      // enabled plugins
-	configurers  []pluginConfigurer  // all known plugins
-	opaConfig    *opaPluginRef       // OPA server config (nil when not set up)
+	plugins      pluginRegistry     // enabled plugins
+	configurers  []pluginConfigurer // all known plugins
+	opaConfig    *opaPluginRef      // OPA server config (nil when not set up)
 	parameterize bool
 	commands     []commandEntry // command registry (sorted by prefix length desc)
-	conn         *dbConn       // nil when disconnected
-	lastDSN      string        // remembers the previous DSN for reconnect
+	conn         *dbConn        // nil when disconnected
+	lastDSN      string         // remembers the previous DSN for reconnect
 	rl           *readline.Instance
 	setOps       []setOpEntry // set operation stack
 	ctes         []cteEntry   // CTE stack

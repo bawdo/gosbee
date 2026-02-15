@@ -25,27 +25,27 @@ func (s *Session) cmdOPAOff() error {
 	}
 	s.plugins.deregister("opa")
 	s.opaConfig = nil
-	_, _ = fmt.Fprintln(s.out,"  OPA disabled")
+	_, _ = fmt.Fprintln(s.out, "  OPA disabled")
 	s.rebuildQueryWithPlugins()
 	return nil
 }
 
 func (s *Session) cmdOPAStatus() {
 	if s.opaConfig == nil {
-		_, _ = fmt.Fprintln(s.out,"  OPA: off")
+		_, _ = fmt.Fprintln(s.out, "  OPA: off")
 		return
 	}
-	_, _ = fmt.Fprintln(s.out,"  OPA: on")
-	_, _ = fmt.Fprintf(s.out,"    Server: %s\n", s.opaConfig.url)
-	_, _ = fmt.Fprintf(s.out,"    Policy: %s\n", s.opaConfig.policy)
+	_, _ = fmt.Fprintln(s.out, "  OPA: on")
+	_, _ = fmt.Fprintf(s.out, "    Server: %s\n", s.opaConfig.url)
+	_, _ = fmt.Fprintf(s.out, "    Policy: %s\n", s.opaConfig.policy)
 	if s.opaConfig.dataTable != "" {
-		_, _ = fmt.Fprintf(s.out,"    Data table: %s\n", s.opaConfig.dataTable)
+		_, _ = fmt.Fprintf(s.out, "    Data table: %s\n", s.opaConfig.dataTable)
 	}
 	if len(s.opaConfig.input) > 0 {
-		_, _ = fmt.Fprintln(s.out,"    Inputs:")
+		_, _ = fmt.Fprintln(s.out, "    Inputs:")
 		s.printInputMap(s.opaConfig.input, "      ")
 	} else {
-		_, _ = fmt.Fprintln(s.out,"    Inputs: (none)")
+		_, _ = fmt.Fprintln(s.out, "    Inputs: (none)")
 	}
 	if s.query != nil {
 		client := opa.NewClient(s.opaConfig.url, s.opaConfig.policy, s.opaConfig.input)
@@ -55,9 +55,9 @@ func (s *Session) cmdOPAStatus() {
 			for _, cols := range masks {
 				maskCount += len(cols)
 			}
-			_, _ = fmt.Fprintf(s.out,"    Masks: %d column(s) masked\n", maskCount)
+			_, _ = fmt.Fprintf(s.out, "    Masks: %d column(s) masked\n", maskCount)
 		} else {
-			_, _ = fmt.Fprintln(s.out,"    Masks: none")
+			_, _ = fmt.Fprintln(s.out, "    Masks: none")
 		}
 	}
 }
@@ -71,10 +71,10 @@ func (s *Session) printInputMap(m map[string]any, indent string) {
 	for _, k := range keys {
 		v := m[k]
 		if nested, ok := v.(map[string]any); ok {
-			_, _ = fmt.Fprintf(s.out,"%s%s:\n", indent, k)
+			_, _ = fmt.Fprintf(s.out, "%s%s:\n", indent, k)
 			s.printInputMap(nested, indent+"  ")
 		} else {
-			_, _ = fmt.Fprintf(s.out,"%s%s: %v\n", indent, k, v)
+			_, _ = fmt.Fprintf(s.out, "%s%s: %v\n", indent, k, v)
 		}
 	}
 }
@@ -83,7 +83,7 @@ func (s *Session) printMasks(masks map[string]map[string]opa.MaskAction) {
 	if len(masks) == 0 {
 		return
 	}
-	_, _ = fmt.Fprintln(s.out,"    Masks:")
+	_, _ = fmt.Fprintln(s.out, "    Masks:")
 	tables := make([]string, 0, len(masks))
 	for tbl := range masks {
 		tables = append(tables, tbl)
@@ -99,7 +99,7 @@ func (s *Session) printMasks(masks map[string]map[string]opa.MaskAction) {
 		for _, col := range colNames {
 			action := cols[col]
 			if action.Replace != nil {
-				_, _ = fmt.Fprintf(s.out,"      %s.%s → replace: '%s'\n", tbl, col, action.Replace.Value)
+				_, _ = fmt.Fprintf(s.out, "      %s.%s → replace: '%s'\n", tbl, col, action.Replace.Value)
 			}
 		}
 	}
@@ -164,7 +164,7 @@ func (s *Session) opaPromptRediscover() {
 		}
 	}
 	s.opaReload()
-	_, _ = fmt.Fprintln(s.out,"  OPA plugin reloaded.")
+	_, _ = fmt.Fprintln(s.out, "  OPA plugin reloaded.")
 }
 
 func (s *Session) cmdOPAUrl(args string) error {
@@ -176,7 +176,7 @@ func (s *Session) cmdOPAUrl(args string) error {
 		return errors.New("usage: opa url <url>")
 	}
 	s.opaConfig.url = url
-	_, _ = fmt.Fprintf(s.out,"  OPA server URL set to %s\n", url)
+	_, _ = fmt.Fprintf(s.out, "  OPA server URL set to %s\n", url)
 	s.opaPromptRediscover()
 	return nil
 }
@@ -190,7 +190,7 @@ func (s *Session) cmdOPAPolicy(args string) error {
 		return errors.New("usage: opa policy <path>")
 	}
 	s.opaConfig.policy = policy
-	_, _ = fmt.Fprintf(s.out,"  OPA policy path set to %s\n", policy)
+	_, _ = fmt.Fprintf(s.out, "  OPA policy path set to %s\n", policy)
 	s.opaPromptRediscover()
 	return nil
 }
@@ -207,13 +207,13 @@ func (s *Session) cmdOPAInput(args string) error {
 	if len(parts) == 1 {
 		// Remove the key.
 		deleteNestedValue(s.opaConfig.input, key)
-		_, _ = fmt.Fprintf(s.out,"  Removed input %s\n", key)
+		_, _ = fmt.Fprintf(s.out, "  Removed input %s\n", key)
 	} else {
 		// Set/update the key.
 		valStr := strings.Join(parts[1:], " ")
 		val := parseOPAValue(valStr)
 		setNestedValue(s.opaConfig.input, key, val)
-		_, _ = fmt.Fprintf(s.out,"  Set input %s = %v\n", key, val)
+		_, _ = fmt.Fprintf(s.out, "  Set input %s = %v\n", key, val)
 	}
 	s.opaPromptRediscover()
 	return nil
@@ -237,7 +237,7 @@ func (s *Session) cmdOPAInputs() error {
 	}
 	input := map[string]any{}
 	if len(inputPaths) > 0 {
-		_, _ = fmt.Fprintf(s.out,"  Policy requires %d input(s):\n", len(inputPaths))
+		_, _ = fmt.Fprintf(s.out, "  Policy requires %d input(s):\n", len(inputPaths))
 		for _, path := range inputPaths {
 			current := getNestedValue(s.opaConfig.input, path)
 			defaultVal := ""
@@ -250,11 +250,11 @@ func (s *Session) cmdOPAInputs() error {
 			}
 		}
 	} else {
-		_, _ = fmt.Fprintln(s.out,"  No inputs required by policy")
+		_, _ = fmt.Fprintln(s.out, "  No inputs required by policy")
 	}
 	s.opaConfig.input = input
 	s.opaReload()
-	_, _ = fmt.Fprintln(s.out,"  OPA inputs updated and reloaded.")
+	_, _ = fmt.Fprintln(s.out, "  OPA inputs updated and reloaded.")
 	return nil
 }
 
@@ -277,40 +277,40 @@ func (s *Session) cmdOPAExplain(args string) error {
 		return fmt.Errorf("OPA explain: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(s.out,"  OPA explain for table %q:\n", tableName)
+	_, _ = fmt.Fprintf(s.out, "  OPA explain for table %q:\n", tableName)
 
 	if result.AccessDenied {
-		_, _ = fmt.Fprintln(s.out,"    Access denied (no matching rules)")
+		_, _ = fmt.Fprintln(s.out, "    Access denied (no matching rules)")
 		if verbose {
-			_, _ = fmt.Fprintf(s.out,"    Request:\n      %s\n", result.RequestJSON)
-			_, _ = fmt.Fprintf(s.out,"    Response:\n      %s\n", result.RawJSON)
+			_, _ = fmt.Fprintf(s.out, "    Request:\n      %s\n", result.RequestJSON)
+			_, _ = fmt.Fprintf(s.out, "    Response:\n      %s\n", result.RawJSON)
 		} else {
-			_, _ = fmt.Fprintln(s.out,"    (use 'opa explain <table> verbose' to see request/response)")
+			_, _ = fmt.Fprintln(s.out, "    (use 'opa explain <table> verbose' to see request/response)")
 		}
 		return nil
 	}
 
 	if result.UnconditionalAllow {
-		_, _ = fmt.Fprintln(s.out,"    Unconditional allow (no conditions)")
+		_, _ = fmt.Fprintln(s.out, "    Unconditional allow (no conditions)")
 		s.printMasks(result.Masks)
 		return nil
 	}
 
 	if verbose {
-		_, _ = fmt.Fprintf(s.out,"    Request:\n      %s\n", result.RequestJSON)
-		_, _ = fmt.Fprintf(s.out,"    Response:\n      %s\n", result.RawJSON)
-		_, _ = fmt.Fprintln(s.out,"    Translation:")
+		_, _ = fmt.Fprintf(s.out, "    Request:\n      %s\n", result.RequestJSON)
+		_, _ = fmt.Fprintf(s.out, "    Response:\n      %s\n", result.RawJSON)
+		_, _ = fmt.Fprintln(s.out, "    Translation:")
 		for i, tr := range result.Translations {
-			_, _ = fmt.Fprintf(s.out,"      [%d] %s(data.%s.%s, %v) → %s\n",
+			_, _ = fmt.Fprintf(s.out, "      [%d] %s(data.%s.%s, %v) → %s\n",
 				i+1, tr.Operator, tableName, tr.Column, tr.Value, tr.SQL)
 		}
 	}
 
-	_, _ = fmt.Fprintf(s.out,"    %d query(ies), %d expression(s)\n", result.QueryCount, result.ExpressionCount)
-	_, _ = fmt.Fprintln(s.out,"    Conditions:")
+	_, _ = fmt.Fprintf(s.out, "    %d query(ies), %d expression(s)\n", result.QueryCount, result.ExpressionCount)
+	_, _ = fmt.Fprintln(s.out, "    Conditions:")
 	v := s.visitor
 	for _, cond := range result.Conditions {
-		_, _ = fmt.Fprintf(s.out,"      %s\n", cond.Accept(v))
+		_, _ = fmt.Fprintf(s.out, "      %s\n", cond.Accept(v))
 	}
 	s.printMasks(result.Masks)
 	return nil
@@ -326,26 +326,26 @@ func (s *Session) cmdOPAConditions() error {
 	client := opa.NewClient(s.opaConfig.url, s.opaConfig.policy, s.opaConfig.input)
 	refs := plugins.CollectTables(s.query.Core)
 	if len(refs) == 0 {
-		_, _ = fmt.Fprintln(s.out,"  No tables in query")
+		_, _ = fmt.Fprintln(s.out, "  No tables in query")
 		return nil
 	}
-	_, _ = fmt.Fprintln(s.out,"  OPA conditions:")
+	_, _ = fmt.Fprintln(s.out, "  OPA conditions:")
 	v := s.visitor
 	for _, ref := range refs {
 		conditions, err := client.Compile(ref.Name)
 		if err != nil {
-			_, _ = fmt.Fprintf(s.out,"    %s: %v\n", ref.Name, err)
+			_, _ = fmt.Fprintf(s.out, "    %s: %v\n", ref.Name, err)
 			continue
 		}
 		if len(conditions) == 0 {
-			_, _ = fmt.Fprintf(s.out,"    %s: (unconditional allow)\n", ref.Name)
+			_, _ = fmt.Fprintf(s.out, "    %s: (unconditional allow)\n", ref.Name)
 			continue
 		}
 		parts := make([]string, len(conditions))
 		for i, c := range conditions {
 			parts[i] = c.Accept(v)
 		}
-		_, _ = fmt.Fprintf(s.out,"    %s: %s\n", ref.Name, strings.Join(parts, " AND "))
+		_, _ = fmt.Fprintf(s.out, "    %s: %s\n", ref.Name, strings.Join(parts, " AND "))
 	}
 	return nil
 }
@@ -363,7 +363,7 @@ func (s *Session) cmdOPAMasks() error {
 		return fmt.Errorf("OPA masks: %w", err)
 	}
 	if len(masks) == 0 {
-		_, _ = fmt.Fprintln(s.out,"  No masks active.")
+		_, _ = fmt.Fprintln(s.out, "  No masks active.")
 		return nil
 	}
 	tables := make([]string, 0, len(masks))
@@ -376,7 +376,7 @@ func (s *Session) cmdOPAMasks() error {
 		if len(tableMasks) == 0 {
 			continue
 		}
-		_, _ = fmt.Fprintf(s.out,"  Masks for %s:\n", tbl)
+		_, _ = fmt.Fprintf(s.out, "  Masks for %s:\n", tbl)
 		cols := make([]string, 0, len(tableMasks))
 		for col := range tableMasks {
 			cols = append(cols, col)
@@ -385,7 +385,7 @@ func (s *Session) cmdOPAMasks() error {
 		for _, col := range cols {
 			action := tableMasks[col]
 			if action.Replace != nil {
-				_, _ = fmt.Fprintf(s.out,"    %s → replace: '%s'\n", col, action.Replace.Value)
+				_, _ = fmt.Fprintf(s.out, "    %s → replace: '%s'\n", col, action.Replace.Value)
 			}
 		}
 	}
@@ -398,7 +398,7 @@ func (s *Session) cmdOPASetup() error {
 	if s.rl == nil {
 		return errors.New("opa setup requires an interactive session")
 	}
-	_, _ = fmt.Fprintln(s.out,"  OPA setup:")
+	_, _ = fmt.Fprintln(s.out, "  OPA setup:")
 	url := prompt(s.rl, "OPA server URL", "http://localhost:8181")
 	policyPath := prompt(s.rl, "Policy path (e.g. data.authz.allow)", "")
 	if policyPath == "" {
@@ -416,7 +416,7 @@ func (s *Session) cmdOPASetup() error {
 	}
 	input := map[string]any{}
 	if len(inputPaths) > 0 {
-		_, _ = fmt.Fprintf(s.out,"  Policy requires %d input(s):\n", len(inputPaths))
+		_, _ = fmt.Fprintf(s.out, "  Policy requires %d input(s):\n", len(inputPaths))
 		for _, path := range inputPaths {
 			val := prompt(s.rl, path, "")
 			if val != "" {
@@ -427,7 +427,7 @@ func (s *Session) cmdOPASetup() error {
 	s.opaConfig = &opaPluginRef{url: url, policy: policyPath, input: input, dataTable: tableName}
 	_ = configureOPA(s, "")
 	s.rebuildQueryWithPlugins()
-	_, _ = fmt.Fprintf(s.out,"  OPA enabled — policy: %s\n", policyPath)
+	_, _ = fmt.Fprintf(s.out, "  OPA enabled — policy: %s\n", policyPath)
 	return nil
 }
 

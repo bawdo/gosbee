@@ -16,9 +16,9 @@ const (
 	colorLiteral    = "#D3D3D3" // grey — literals, values
 	colorJoin       = "#77DD77" // green — joins
 	colorOrdering   = "#CDA0E0" // purple — ordering
-	colorAssignment  = "#FF6961" // red — assignments, DML
-	colorArithmetic  = "#98FB98" // mint green — arithmetic, math
-	colorFunction    = "#87CEEB" // sky blue — aggregates, functions
+	colorAssignment = "#FF6961" // red — assignments, DML
+	colorArithmetic = "#98FB98" // mint green — arithmetic, math
+	colorFunction   = "#87CEEB" // sky blue — aggregates, functions
 )
 
 // dotNode represents a single node in the DOT graph.

@@ -103,8 +103,8 @@ const (
 	ExtractHour
 	ExtractMinute
 	ExtractSecond
-	ExtractDow    // day of week
-	ExtractDoy    // day of year
+	ExtractDow // day of week
+	ExtractDoy // day of year
 	ExtractEpoch
 	ExtractQuarter
 	ExtractWeek

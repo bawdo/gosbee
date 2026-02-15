@@ -35,22 +35,22 @@ func needsParens(n nodes.Node) bool {
 
 // Operator SQL strings for ComparisonOp values.
 var comparisonOpSQL = [...]string{
-	nodes.OpEq:               "=",
-	nodes.OpNotEq:            "!=",
-	nodes.OpGt:               ">",
-	nodes.OpGtEq:             ">=",
-	nodes.OpLt:               "<",
-	nodes.OpLtEq:             "<=",
-	nodes.OpLike:             "LIKE",
-	nodes.OpNotLike:          "NOT LIKE",
-	nodes.OpRegexp:           "~",
-	nodes.OpNotRegexp:        "!~",
-	nodes.OpDistinctFrom:     "IS DISTINCT FROM",
-	nodes.OpNotDistinctFrom:  "IS NOT DISTINCT FROM",
-	nodes.OpCaseSensitiveEq:  "=",
+	nodes.OpEq:                "=",
+	nodes.OpNotEq:             "!=",
+	nodes.OpGt:                ">",
+	nodes.OpGtEq:              ">=",
+	nodes.OpLt:                "<",
+	nodes.OpLtEq:              "<=",
+	nodes.OpLike:              "LIKE",
+	nodes.OpNotLike:           "NOT LIKE",
+	nodes.OpRegexp:            "~",
+	nodes.OpNotRegexp:         "!~",
+	nodes.OpDistinctFrom:      "IS DISTINCT FROM",
+	nodes.OpNotDistinctFrom:   "IS NOT DISTINCT FROM",
+	nodes.OpCaseSensitiveEq:   "=",
 	nodes.OpCaseInsensitiveEq: "=",
-	nodes.OpContains:         "@>",
-	nodes.OpOverlaps:         "&&",
+	nodes.OpContains:          "@>",
+	nodes.OpOverlaps:          "&&",
 }
 
 // SQL keywords for JoinType values.

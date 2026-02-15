@@ -1090,11 +1090,11 @@ func TestTransformers(t *testing.T) {
 	t.Parallel()
 	users := nodes.NewTable("users")
 	m := NewSelectManager(users)
-	
+
 	// Add a transformer
 	transformer := &mockTransformer{}
 	m.Use(transformer)
-	
+
 	// Get transformers
 	transformers := m.Transformers()
 	if len(transformers) != 1 {

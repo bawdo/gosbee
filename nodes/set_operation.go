@@ -4,7 +4,7 @@ package nodes
 type SetOpType int
 
 const (
-	Union        SetOpType = iota
+	Union SetOpType = iota
 	UnionAll
 	Intersect
 	IntersectAll

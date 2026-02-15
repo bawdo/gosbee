@@ -26,26 +26,26 @@ func (s *Session) printASTMetadata(c *nodes.SelectCore) {
 		if cte.recursive {
 			kind = "WITH RECURSIVE"
 		}
-		_, _ = fmt.Fprintf(s.out,"  %s %s\n", kind, cte.name)
+		_, _ = fmt.Fprintf(s.out, "  %s %s\n", kind, cte.name)
 	}
 	for i, entry := range s.setOps {
 		from := "(none)"
 		if entry.query.Core.From != nil {
 			from = nodeSummary(entry.query.Core.From)
 		}
-		_, _ = fmt.Fprintf(s.out,"  QUERY[%d]: FROM %s %s\n", i, from, entry.opType)
+		_, _ = fmt.Fprintf(s.out, "  QUERY[%d]: FROM %s %s\n", i, from, entry.opType)
 	}
 	if c.Comment != "" {
-		_, _ = fmt.Fprintf(s.out,"  COMMENT: %s\n", c.Comment)
+		_, _ = fmt.Fprintf(s.out, "  COMMENT: %s\n", c.Comment)
 	}
 	if len(c.Hints) > 0 {
-		_, _ = fmt.Fprintf(s.out,"  HINTS: %s\n", strings.Join(c.Hints, ", "))
+		_, _ = fmt.Fprintf(s.out, "  HINTS: %s\n", strings.Join(c.Hints, ", "))
 	}
 }
 
 func (s *Session) printASTFrom(c *nodes.SelectCore) {
 	if c.From != nil {
-		_, _ = fmt.Fprintf(s.out,"  FROM:   %s\n", nodeSummary(c.From))
+		_, _ = fmt.Fprintf(s.out, "  FROM:   %s\n", nodeSummary(c.From))
 	}
 }
 
@@ -55,9 +55,9 @@ func (s *Session) printASTDistinct(c *nodes.SelectCore) {
 		for i, d := range c.DistinctOn {
 			names[i] = nodeSummary(d)
 		}
-		_, _ = fmt.Fprintf(s.out,"  DISTINCT ON: %s\n", strings.Join(names, ", "))
+		_, _ = fmt.Fprintf(s.out, "  DISTINCT ON: %s\n", strings.Join(names, ", "))
 	} else if c.Distinct {
-		_, _ = fmt.Fprintln(s.out,"  DISTINCT: true")
+		_, _ = fmt.Fprintln(s.out, "  DISTINCT: true")
 	}
 }
 
@@ -67,9 +67,9 @@ func (s *Session) printASTProjections(c *nodes.SelectCore) {
 		for i, p := range c.Projections {
 			names[i] = nodeSummary(p)
 		}
-		_, _ = fmt.Fprintf(s.out,"  SELECT: %s\n", strings.Join(names, ", "))
+		_, _ = fmt.Fprintf(s.out, "  SELECT: %s\n", strings.Join(names, ", "))
 	} else {
-		_, _ = fmt.Fprintln(s.out,"  SELECT: *")
+		_, _ = fmt.Fprintln(s.out, "  SELECT: *")
 	}
 }
 
@@ -79,13 +79,13 @@ func (s *Session) printASTJoins(c *nodes.SelectCore) {
 		if j.Lateral {
 			label = "LATERAL " + label
 		}
-		_, _ = fmt.Fprintf(s.out,"  JOIN[%d]: %s %s\n", i, label, nodeSummary(j.Right))
+		_, _ = fmt.Fprintf(s.out, "  JOIN[%d]: %s %s\n", i, label, nodeSummary(j.Right))
 	}
 }
 
 func (s *Session) printASTWheres(c *nodes.SelectCore) {
 	if len(c.Wheres) > 0 {
-		_, _ = fmt.Fprintf(s.out,"  WHERE:  %d condition(s)\n", len(c.Wheres))
+		_, _ = fmt.Fprintf(s.out, "  WHERE:  %d condition(s)\n", len(c.Wheres))
 	}
 }
 
@@ -95,13 +95,13 @@ func (s *Session) printASTGroups(c *nodes.SelectCore) {
 		for i, g := range c.Groups {
 			names[i] = nodeSummary(g)
 		}
-		_, _ = fmt.Fprintf(s.out,"  GROUP:  %s\n", strings.Join(names, ", "))
+		_, _ = fmt.Fprintf(s.out, "  GROUP:  %s\n", strings.Join(names, ", "))
 	}
 }
 
 func (s *Session) printASTHavings(c *nodes.SelectCore) {
 	if len(c.Havings) > 0 {
-		_, _ = fmt.Fprintf(s.out,"  HAVING: %d condition(s)\n", len(c.Havings))
+		_, _ = fmt.Fprintf(s.out, "  HAVING: %d condition(s)\n", len(c.Havings))
 	}
 }
 
@@ -111,7 +111,7 @@ func (s *Session) printASTWindows(c *nodes.SelectCore) {
 		for i, w := range c.Windows {
 			names[i] = w.Name
 		}
-		_, _ = fmt.Fprintf(s.out,"  WINDOW: %s\n", strings.Join(names, ", "))
+		_, _ = fmt.Fprintf(s.out, "  WINDOW: %s\n", strings.Join(names, ", "))
 	}
 }
 
@@ -135,16 +135,16 @@ func (s *Session) printASTOrders(c *nodes.SelectCore) {
 				names[i] = fmt.Sprintf("%T", o)
 			}
 		}
-		_, _ = fmt.Fprintf(s.out,"  ORDER:  %s\n", strings.Join(names, ", "))
+		_, _ = fmt.Fprintf(s.out, "  ORDER:  %s\n", strings.Join(names, ", "))
 	}
 }
 
 func (s *Session) printASTLimitOffset(c *nodes.SelectCore) {
 	if c.Limit != nil {
-		_, _ = fmt.Fprintf(s.out,"  LIMIT:  %s\n", nodeSummary(c.Limit))
+		_, _ = fmt.Fprintf(s.out, "  LIMIT:  %s\n", nodeSummary(c.Limit))
 	}
 	if c.Offset != nil {
-		_, _ = fmt.Fprintf(s.out,"  OFFSET: %s\n", nodeSummary(c.Offset))
+		_, _ = fmt.Fprintf(s.out, "  OFFSET: %s\n", nodeSummary(c.Offset))
 	}
 }
 
@@ -154,19 +154,19 @@ func (s *Session) printASTLock(c *nodes.SelectCore) {
 		if c.SkipLocked {
 			lockName += " SKIP LOCKED"
 		}
-		_, _ = fmt.Fprintf(s.out,"  LOCK:   %s\n", lockName)
+		_, _ = fmt.Fprintf(s.out, "  LOCK:   %s\n", lockName)
 	}
 }
 
 func (s *Session) printASTFooter() {
 	for _, entry := range s.plugins.entries {
-		_, _ = fmt.Fprintf(s.out,"  Plugin: %s (%s)\n", entry.name, entry.status())
+		_, _ = fmt.Fprintf(s.out, "  Plugin: %s (%s)\n", entry.name, entry.status())
 	}
 	if s.parameterize {
-		_, _ = fmt.Fprintln(s.out,"  Parameterize: on")
+		_, _ = fmt.Fprintln(s.out, "  Parameterize: on")
 	}
 	if s.conn != nil {
-		_, _ = fmt.Fprintf(s.out,"  Connected: %s (%s)\n", sanitizeDSN(s.conn.dsn), s.conn.engine)
+		_, _ = fmt.Fprintf(s.out, "  Connected: %s (%s)\n", sanitizeDSN(s.conn.dsn), s.conn.engine)
 	}
 }
 

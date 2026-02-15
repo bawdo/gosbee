@@ -4,7 +4,7 @@ package nodes
 type OrderDirection int
 
 const (
-	Asc  OrderDirection = iota
+	Asc OrderDirection = iota
 	Desc
 )
 

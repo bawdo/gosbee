@@ -496,48 +496,48 @@ func TestSelectCoreHoldsDistinct(t *testing.T) {
 // internal/testutil/stub_visitor.go.
 type stubVisitor struct{}
 
-func (sv stubVisitor) VisitTable(n *Table) string             { return n.Name }
-func (sv stubVisitor) VisitTableAlias(n *TableAlias) string   { return n.AliasName }
-func (sv stubVisitor) VisitAttribute(*Attribute) string       { return "attr" }
-func (sv stubVisitor) VisitLiteral(*LiteralNode) string       { return "lit" }
-func (sv stubVisitor) VisitStar(*StarNode) string             { return "*" }
-func (sv stubVisitor) VisitSqlLiteral(n *SqlLiteral) string   { return n.Raw }
+func (sv stubVisitor) VisitTable(n *Table) string           { return n.Name }
+func (sv stubVisitor) VisitTableAlias(n *TableAlias) string { return n.AliasName }
+func (sv stubVisitor) VisitAttribute(*Attribute) string     { return "attr" }
+func (sv stubVisitor) VisitLiteral(*LiteralNode) string     { return "lit" }
+func (sv stubVisitor) VisitStar(*StarNode) string           { return "*" }
+func (sv stubVisitor) VisitSqlLiteral(n *SqlLiteral) string { return n.Raw }
 func (sv stubVisitor) VisitComparison(n *ComparisonNode) string {
 	if n.Left == nil || n.Right == nil {
 		return "comparison"
 	}
 	return n.Left.Accept(sv) + "=?" + n.Right.Accept(sv)
 }
-func (sv stubVisitor) VisitUnary(*UnaryNode) string                    { return "unary" }
-func (sv stubVisitor) VisitAnd(*AndNode) string                        { return "and" }
-func (sv stubVisitor) VisitOr(*OrNode) string                          { return "or" }
-func (sv stubVisitor) VisitNot(*NotNode) string                        { return "not" }
-func (sv stubVisitor) VisitIn(*InNode) string                          { return "in" }
-func (sv stubVisitor) VisitBetween(*BetweenNode) string                { return "between" }
-func (sv stubVisitor) VisitGrouping(*GroupingNode) string              { return "grouping" }
-func (sv stubVisitor) VisitJoin(*JoinNode) string                      { return "join" }
-func (sv stubVisitor) VisitOrdering(*OrderingNode) string              { return "ordering" }
-func (sv stubVisitor) VisitSelectCore(*SelectCore) string              { return "select_core" }
-func (sv stubVisitor) VisitInsertStatement(*InsertStatement) string    { return "insert" }
-func (sv stubVisitor) VisitUpdateStatement(*UpdateStatement) string    { return "update" }
-func (sv stubVisitor) VisitDeleteStatement(*DeleteStatement) string    { return "delete" }
-func (sv stubVisitor) VisitAssignment(*AssignmentNode) string          { return "assign" }
-func (sv stubVisitor) VisitOnConflict(*OnConflictNode) string          { return "conflict" }
-func (sv stubVisitor) VisitInfix(*InfixNode) string                    { return "infix" }
-func (sv stubVisitor) VisitUnaryMath(*UnaryMathNode) string            { return "unary_math" }
-func (sv stubVisitor) VisitAggregate(*AggregateNode) string            { return "aggregate" }
-func (sv stubVisitor) VisitExtract(*ExtractNode) string                { return "extract" }
-func (sv stubVisitor) VisitWindowFunction(*WindowFuncNode) string      { return "window_func" }
-func (sv stubVisitor) VisitOver(*OverNode) string                      { return "over" }
-func (sv stubVisitor) VisitExists(*ExistsNode) string                  { return "exists" }
-func (sv stubVisitor) VisitSetOperation(*SetOperationNode) string      { return "set_op" }
-func (sv stubVisitor) VisitCTE(*CTENode) string                        { return "cte" }
-func (sv stubVisitor) VisitNamedFunction(*NamedFunctionNode) string    { return "named_func" }
-func (sv stubVisitor) VisitCase(*CaseNode) string                      { return "case" }
-func (sv stubVisitor) VisitGroupingSet(*GroupingSetNode) string        { return "grouping_set" }
-func (sv stubVisitor) VisitAlias(*AliasNode) string                    { return "alias" }
-func (sv stubVisitor) VisitBindParam(*BindParamNode) string            { return "bind_param" }
-func (sv stubVisitor) VisitCasted(*CastedNode) string                  { return "casted" }
+func (sv stubVisitor) VisitUnary(*UnaryNode) string                 { return "unary" }
+func (sv stubVisitor) VisitAnd(*AndNode) string                     { return "and" }
+func (sv stubVisitor) VisitOr(*OrNode) string                       { return "or" }
+func (sv stubVisitor) VisitNot(*NotNode) string                     { return "not" }
+func (sv stubVisitor) VisitIn(*InNode) string                       { return "in" }
+func (sv stubVisitor) VisitBetween(*BetweenNode) string             { return "between" }
+func (sv stubVisitor) VisitGrouping(*GroupingNode) string           { return "grouping" }
+func (sv stubVisitor) VisitJoin(*JoinNode) string                   { return "join" }
+func (sv stubVisitor) VisitOrdering(*OrderingNode) string           { return "ordering" }
+func (sv stubVisitor) VisitSelectCore(*SelectCore) string           { return "select_core" }
+func (sv stubVisitor) VisitInsertStatement(*InsertStatement) string { return "insert" }
+func (sv stubVisitor) VisitUpdateStatement(*UpdateStatement) string { return "update" }
+func (sv stubVisitor) VisitDeleteStatement(*DeleteStatement) string { return "delete" }
+func (sv stubVisitor) VisitAssignment(*AssignmentNode) string       { return "assign" }
+func (sv stubVisitor) VisitOnConflict(*OnConflictNode) string       { return "conflict" }
+func (sv stubVisitor) VisitInfix(*InfixNode) string                 { return "infix" }
+func (sv stubVisitor) VisitUnaryMath(*UnaryMathNode) string         { return "unary_math" }
+func (sv stubVisitor) VisitAggregate(*AggregateNode) string         { return "aggregate" }
+func (sv stubVisitor) VisitExtract(*ExtractNode) string             { return "extract" }
+func (sv stubVisitor) VisitWindowFunction(*WindowFuncNode) string   { return "window_func" }
+func (sv stubVisitor) VisitOver(*OverNode) string                   { return "over" }
+func (sv stubVisitor) VisitExists(*ExistsNode) string               { return "exists" }
+func (sv stubVisitor) VisitSetOperation(*SetOperationNode) string   { return "set_op" }
+func (sv stubVisitor) VisitCTE(*CTENode) string                     { return "cte" }
+func (sv stubVisitor) VisitNamedFunction(*NamedFunctionNode) string { return "named_func" }
+func (sv stubVisitor) VisitCase(*CaseNode) string                   { return "case" }
+func (sv stubVisitor) VisitGroupingSet(*GroupingSetNode) string     { return "grouping_set" }
+func (sv stubVisitor) VisitAlias(*AliasNode) string                 { return "alias" }
+func (sv stubVisitor) VisitBindParam(*BindParamNode) string         { return "bind_param" }
+func (sv stubVisitor) VisitCasted(*CastedNode) string               { return "casted" }
 
 func TestAllNodesImplementNodeInterface(t *testing.T) {
 	t.Parallel()
@@ -1910,9 +1910,9 @@ func TestNewInfixNode(t *testing.T) {
 	users := NewTable("users")
 	left := users.Col("price")
 	right := Literal(10)
-	
+
 	node := NewInfixNode(left, right, OpPlus)
-	
+
 	if node.Left != left {
 		t.Error("expected Left to be the left operand")
 	}
@@ -1922,7 +1922,7 @@ func TestNewInfixNode(t *testing.T) {
 	if node.Op != OpPlus {
 		t.Errorf("expected OpPlus, got %d", node.Op)
 	}
-	
+
 	// Verify self pointers are set for method chaining
 	cmp := node.Eq(20)
 	if cmp.Left != node {
@@ -1934,16 +1934,16 @@ func TestNewUnaryMathNode(t *testing.T) {
 	t.Parallel()
 	users := NewTable("users")
 	expr := users.Col("flags")
-	
+
 	node := NewUnaryMathNode(expr, OpBitwiseNot)
-	
+
 	if node.Expr != expr {
 		t.Error("expected Expr to be the expression")
 	}
 	if node.Op != OpBitwiseNot {
 		t.Errorf("expected OpBitwiseNot, got %d", node.Op)
 	}
-	
+
 	// Verify self pointers are set for method chaining
 	result := node.Multiply(2)
 	if result.Left != node {

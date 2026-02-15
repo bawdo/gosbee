@@ -29,7 +29,6 @@ func execSQL(t *testing.T, engine string, commands ...string) string {
 	return sql
 }
 
-
 // --- Tokenizer ---
 
 func TestTokenizeSimple(t *testing.T) {
@@ -1594,7 +1593,7 @@ func TestOPAUrlRequiresArg(t *testing.T) {
 	sess := NewSession("postgres", nil)
 	sess.opaConfig = &opaPluginRef{
 		url: "http://localhost:8181", policy: "data.authz.allow",
-		input:  map[string]any{},
+		input: map[string]any{},
 	}
 	err := sess.Execute("opa url")
 	if err == nil {
@@ -1607,7 +1606,7 @@ func TestOPAUrlUpdatesConfig(t *testing.T) {
 	sess := NewSession("postgres", nil) // non-interactive: skips rediscover prompt
 	sess.opaConfig = &opaPluginRef{
 		url: "http://localhost:8181", policy: "data.authz.allow",
-		input:  map[string]any{"subject": map[string]any{"role": "admin"}},
+		input: map[string]any{"subject": map[string]any{"role": "admin"}},
 	}
 	err := sess.Execute("opa url http://other:8181")
 	if err != nil {
@@ -1634,7 +1633,7 @@ func TestOPAPolicyRequiresArg(t *testing.T) {
 	sess := NewSession("postgres", nil)
 	sess.opaConfig = &opaPluginRef{
 		url: "http://localhost:8181", policy: "data.authz.allow",
-		input:  map[string]any{},
+		input: map[string]any{},
 	}
 	err := sess.Execute("opa policy")
 	if err == nil {
@@ -1647,7 +1646,7 @@ func TestOPAPolicyUpdatesConfig(t *testing.T) {
 	sess := NewSession("postgres", nil)
 	sess.opaConfig = &opaPluginRef{
 		url: "http://localhost:8181", policy: "data.authz.allow",
-		input:  map[string]any{},
+		input: map[string]any{},
 	}
 	err := sess.Execute("opa policy data.new.allow")
 	if err != nil {
@@ -1665,7 +1664,7 @@ func TestOPAInputSetValue(t *testing.T) {
 	sess := NewSession("postgres", nil)
 	sess.opaConfig = &opaPluginRef{
 		url: "http://localhost:8181", policy: "data.authz.allow",
-		input:  map[string]any{"subject": map[string]any{"role": "admin"}},
+		input: map[string]any{"subject": map[string]any{"role": "admin"}},
 	}
 	err := sess.Execute("opa input subject.role editor")
 	if err != nil {
@@ -1682,7 +1681,7 @@ func TestOPAInputRemoveValue(t *testing.T) {
 	sess := NewSession("postgres", nil)
 	sess.opaConfig = &opaPluginRef{
 		url: "http://localhost:8181", policy: "data.authz.allow",
-		input:  map[string]any{"subject": map[string]any{"role": "admin", "tenant": "acme"}},
+		input: map[string]any{"subject": map[string]any{"role": "admin", "tenant": "acme"}},
 	}
 	err := sess.Execute("opa input subject.role")
 	if err != nil {
@@ -1711,7 +1710,7 @@ func TestOPAInputRequiresKey(t *testing.T) {
 	sess := NewSession("postgres", nil)
 	sess.opaConfig = &opaPluginRef{
 		url: "http://localhost:8181", policy: "data.authz.allow",
-		input:  map[string]any{},
+		input: map[string]any{},
 	}
 	err := sess.Execute("opa input")
 	if err == nil {
@@ -1771,7 +1770,7 @@ func TestOPAInputParsesTypes(t *testing.T) {
 	sess := NewSession("postgres", nil)
 	sess.opaConfig = &opaPluginRef{
 		url: "http://localhost:8181", policy: "data.authz.allow",
-		input:  map[string]any{},
+		input: map[string]any{},
 	}
 	_ = sess.Execute("opa input enabled true")
 	if sess.opaConfig.input["enabled"] != true {

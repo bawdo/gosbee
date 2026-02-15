@@ -2481,8 +2481,8 @@ func TestVisitDistinctOnMultipleColumns(t *testing.T) {
 	t.Parallel()
 	users := nodes.NewTable("users")
 	core := &nodes.SelectCore{
-		From:       users,
-		DistinctOn: []nodes.Node{users.Col("dept"), users.Col("role")},
+		From:        users,
+		DistinctOn:  []nodes.Node{users.Col("dept"), users.Col("role")},
 		Projections: []nodes.Node{users.Col("name")},
 	}
 	testutil.AssertSQL(t, NewPostgresVisitor(), core,

@@ -44,7 +44,7 @@ func configureSoftdelete(s *Session, args string) error {
 			sort.Strings(pairs)
 			return strings.Join(pairs, ", ")
 		}
-		_, _ = fmt.Fprintln(s.out,"  Soft-delete enabled (per-table columns)")
+		_, _ = fmt.Fprintln(s.out, "  Soft-delete enabled (per-table columns)")
 
 	case strings.Contains(strings.ToLower(rest), " on "):
 		// Single column on specific tables: removed_at on users posts
@@ -58,19 +58,19 @@ func configureSoftdelete(s *Session, args string) error {
 		statusFn = func() string {
 			return fmt.Sprintf("column: %s, tables: %s", col, strings.Join(tableList, ", "))
 		}
-		_, _ = fmt.Fprintf(s.out,"  Soft-delete enabled (column: %s, tables: %s)\n", col, strings.Join(tableList, ", "))
+		_, _ = fmt.Fprintf(s.out, "  Soft-delete enabled (column: %s, tables: %s)\n", col, strings.Join(tableList, ", "))
 
 	case rest != "":
 		// Single custom column for all tables
 		col := strings.Fields(rest)[0]
 		opts = append(opts, softdelete.WithColumn(col))
 		statusFn = func() string { return "column: " + col }
-		_, _ = fmt.Fprintf(s.out,"  Soft-delete enabled (column: %s)\n", col)
+		_, _ = fmt.Fprintf(s.out, "  Soft-delete enabled (column: %s)\n", col)
 
 	default:
 		// No args — default column for all tables
 		statusFn = func() string { return "column: deleted_at" }
-		_, _ = fmt.Fprintln(s.out,"  Soft-delete enabled (column: deleted_at)")
+		_, _ = fmt.Fprintln(s.out, "  Soft-delete enabled (column: deleted_at)")
 	}
 
 	s.plugins.register(pluginEntry{

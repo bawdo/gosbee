@@ -901,7 +901,7 @@ func parseNotBetweenCondition(col *nodes.Attribute, tokens []string) (nodes.Node
 // combinator keyword ("and" or "or") that follows it. The last part has
 // an empty combinator.
 type exprPart struct {
-	tokens    []string
+	tokens     []string
 	combinator string // "and", "or", or ""
 }
 
@@ -1013,7 +1013,9 @@ func (s *Session) parseExpression(input string) (nodes.Node, error) {
 			if andNode == nil {
 				andNode = cond
 			} else {
-				andNode = andNode.(interface{ And(nodes.Node) *nodes.AndNode }).And(cond)
+				andNode = andNode.(interface {
+					And(nodes.Node) *nodes.AndNode
+				}).And(cond)
 			}
 		}
 		orNodes = append(orNodes, andNode)
@@ -1022,7 +1024,9 @@ func (s *Session) parseExpression(input string) (nodes.Node, error) {
 	// Chain OR groups.
 	result := orNodes[0]
 	for i := 1; i < len(orNodes); i++ {
-		result = result.(interface{ Or(nodes.Node) *nodes.GroupingNode }).Or(orNodes[i])
+		result = result.(interface {
+			Or(nodes.Node) *nodes.GroupingNode
+		}).Or(orNodes[i])
 	}
 
 	return result, nil

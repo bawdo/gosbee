@@ -4,7 +4,7 @@ package nodes
 type GroupingSetType int
 
 const (
-	Cube         GroupingSetType = iota
+	Cube GroupingSetType = iota
 	Rollup
 	GroupingSets
 )

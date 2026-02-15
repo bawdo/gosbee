@@ -463,8 +463,8 @@ func TestDotProvenanceWhere(t *testing.T) {
 	core := &nodes.SelectCore{
 		From: users,
 		Wheres: []nodes.Node{
-			users.Col("active").Eq(nodes.Literal(true)),    // user's WHERE [0]
-			users.Col("deleted_at").IsNull(),                // plugin WHERE [1]
+			users.Col("active").Eq(nodes.Literal(true)), // user's WHERE [0]
+			users.Col("deleted_at").IsNull(),            // plugin WHERE [1]
 		},
 	}
 
@@ -591,9 +591,9 @@ func TestDotProvenanceMultiplePlugins(t *testing.T) {
 	core := &nodes.SelectCore{
 		From: users,
 		Wheres: []nodes.Node{
-			users.Col("active").Eq(nodes.Literal(true)),    // user [0]
-			users.Col("deleted_at").IsNull(),                // softdelete [1]
-			users.Col("tenant_id").Eq(nodes.Literal(42)),   // opa [2]
+			users.Col("active").Eq(nodes.Literal(true)),  // user [0]
+			users.Col("deleted_at").IsNull(),             // softdelete [1]
+			users.Col("tenant_id").Eq(nodes.Literal(42)), // opa [2]
 		},
 	}
 

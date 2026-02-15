@@ -14,10 +14,10 @@ func (a Arithmetics) newInfix(op InfixOp, val any) *InfixNode {
 	return n
 }
 
-func (a Arithmetics) Plus(val any) *InfixNode      { return a.newInfix(OpPlus, val) }
-func (a Arithmetics) Minus(val any) *InfixNode     { return a.newInfix(OpMinus, val) }
-func (a Arithmetics) Multiply(val any) *InfixNode  { return a.newInfix(OpMultiply, val) }
-func (a Arithmetics) Divide(val any) *InfixNode    { return a.newInfix(OpDivide, val) }
+func (a Arithmetics) Plus(val any) *InfixNode       { return a.newInfix(OpPlus, val) }
+func (a Arithmetics) Minus(val any) *InfixNode      { return a.newInfix(OpMinus, val) }
+func (a Arithmetics) Multiply(val any) *InfixNode   { return a.newInfix(OpMultiply, val) }
+func (a Arithmetics) Divide(val any) *InfixNode     { return a.newInfix(OpDivide, val) }
 func (a Arithmetics) BitwiseAnd(val any) *InfixNode { return a.newInfix(OpBitwiseAnd, val) }
 func (a Arithmetics) BitwiseOr(val any) *InfixNode  { return a.newInfix(OpBitwiseOr, val) }
 func (a Arithmetics) BitwiseXor(val any) *InfixNode { return a.newInfix(OpBitwiseXor, val) }
