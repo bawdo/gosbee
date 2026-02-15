@@ -17,8 +17,8 @@ coverage.*
 *.coverprofile
 profile.cov
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
+# Dependency directory
+vendor/
 
 # Go workspace file
 go.work
@@ -28,5 +28,31 @@ go.work.sum
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Build output
+/bin/
+/dist/
+
+# Environment
+.env
+.env.local
+
+# Local Docs
+.local_docs/
+
+# Obsidian vault files
+/docs/.obsidian
+.obsidian
