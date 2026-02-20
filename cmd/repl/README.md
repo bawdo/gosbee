@@ -503,18 +503,64 @@ gosbee> plugin softdelete users.deleted_at, posts.removed_at
 
 ### OPA Integration
 
-Connect to an OPA server for row-level filtering and column masking:
+Connect to an OPA server for row-level filtering and column masking.
+
+The `opa` command runs an interactive setup wizard. After you enter the server
+URL, it queries `/v1/policies` and presents any policies whose package path
+contains `include`, `filter`, or `mask` as a numbered list for selection. It
+then inspects the selected policy's source to discover table names, which you
+can select with a comma-separated list. Both steps fall back to manual text
+entry if discovery returns no results.
 
 ```
 gosbee> opa
+  OPA setup:
 [Config]   OPA server URL [http://localhost:8181]:
-[Config]   Policy path: data.authz.allow
-[Config]   Table name (for data discovery): users
+  Searching for policies...
+  Found 2 matching policy(s):
+    [1] data.policies.filtering.platform.consignment.include
+    [2] data.policies.filtering.platform.shipment.filter
+[Config]   Select policy (1-2): 1
+  Inspecting policy for tables...
+  Found 2 table(s):
+    [1] consignments
+    [2] carriers
+[Config]   Select table(s) (e.g. 1,3 or leave blank for none): 1
   Policy requires 2 input(s):
 [Config]   user.id: 42
 [Config]   user.role: reader
-  OPA enabled — policy: data.authz.allow
+  OPA enabled — policy: data.policies.filtering.platform.consignment.include
+  Tables: consignments
 gosbee> sql
+```
+
+**Fallback — no matching policies found:**
+
+```
+gosbee> opa
+  OPA setup:
+[Config]   OPA server URL [http://localhost:8181]:
+  Searching for policies...
+  (no matching policies found — enter path manually)
+[Config]   Policy path (e.g. data.authz.allow): data.authz.allow
+  Inspecting policy for tables...
+  (no tables found — enter table manually)
+[Config]   Table name (for data discovery): users
+  OPA enabled — policy: data.authz.allow
+```
+
+After setup, `opa status` shows the active configuration including selected tables:
+
+```
+gosbee> opa status
+  OPA: on
+    Server: http://localhost:8181
+    Policy: data.policies.filtering.platform.consignment.include
+    Tables: consignments
+    Inputs:
+      user.id: 42
+      user.role: reader
+    Masks: none
 ```
 
 See the [OPA plugin README](../../plugins/opa/README.md) for full details on

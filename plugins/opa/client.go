@@ -972,3 +972,82 @@ func containsPolicyKeyword(s string) bool {
 
 // packageDeclPattern extracts the package path from a Rego package declaration.
 var packageDeclPattern = regexp.MustCompile(`(?m)^\s*package\s+(\S+)`)
+
+// --- Table discovery ---
+
+// tableInPattern matches "in data.<identifier>" collection iteration.
+var tableInPattern = regexp.MustCompile(`\bin\s+data\.([a-zA-Z_][a-zA-Z0-9_]*)`)
+
+// tableIndexPattern matches "data.<identifier>[" index access on a collection.
+var tableIndexPattern = regexp.MustCompile(`\bdata\.([a-zA-Z_][a-zA-Z0-9_]*)\[`)
+
+// tableFieldPattern matches "data.<identifier>.<field>" direct field access.
+// This covers partial-evaluation style policies where rows are referenced as
+// data.table.column rather than via iteration.
+var tableFieldPattern = regexp.MustCompile(`\bdata\.([a-zA-Z_][a-zA-Z0-9_]*)\.[a-zA-Z_]`)
+
+// DiscoverTables inspects the policy source for the current client's package
+// and returns the table names referenced as collections (via iteration or
+// indexing). Identifiers that match a known OPA package path segment are
+// excluded to avoid confusing sub-packages with database tables.
+// Returns nil (not an error) when the package is not found on the server.
+func (c *Client) DiscoverTables() ([]string, error) {
+	body, err := c.getJSON("/v1/policies")
+	if err != nil {
+		return nil, fmt.Errorf("opa: failed to fetch policies: %w", err)
+	}
+
+	var resp struct {
+		Result []struct {
+			Raw string `json:"raw"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("opa: failed to parse policies response: %w", err)
+	}
+
+	// Collect all known package path segments for exclusion, and find the
+	// target policy source in a single pass.
+	packageSegments := map[string]bool{}
+	targetPkg := c.packageName()
+	var targetRaw string
+
+	for _, p := range resp.Result {
+		m := packageDeclPattern.FindStringSubmatch(p.Raw)
+		if m == nil {
+			continue
+		}
+		pkgPath := m[1]
+		for _, seg := range strings.Split(pkgPath, ".") {
+			packageSegments[seg] = true
+		}
+		if pkgPath == targetPkg {
+			targetRaw = p.Raw
+		}
+	}
+
+	if targetRaw == "" {
+		return nil, nil
+	}
+
+	source := stripRegoComments(targetRaw)
+	seen := map[string]bool{}
+	for _, m := range tableInPattern.FindAllStringSubmatch(source, -1) {
+		seen[m[1]] = true
+	}
+	for _, m := range tableIndexPattern.FindAllStringSubmatch(source, -1) {
+		seen[m[1]] = true
+	}
+	for _, m := range tableFieldPattern.FindAllStringSubmatch(source, -1) {
+		seen[m[1]] = true
+	}
+
+	var tables []string
+	for name := range seen {
+		if !packageSegments[name] {
+			tables = append(tables, name)
+		}
+	}
+	slices.Sort(tables)
+	return tables, nil
+}

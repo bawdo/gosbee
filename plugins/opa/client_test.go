@@ -2183,3 +2183,249 @@ func TestDiscoverPoliciesServerError(t *testing.T) {
 		t.Fatal("expected error for server error")
 	}
 }
+
+// --- DiscoverTables ---
+
+func TestDiscoverTablesEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result": []}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	tables, err := client.DiscoverTables()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tables) != 0 {
+		t.Errorf("expected 0 tables, got %d: %v", len(tables), tables)
+	}
+}
+
+func TestDiscoverTablesPackageNotFound(t *testing.T) {
+	body := `{"result": [{
+		"id": "other/policy",
+		"raw": "package other.policy\n\nallow if { true }\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	tables, err := client.DiscoverTables()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tables) != 0 {
+		t.Errorf("expected 0 tables when package not found, got %d: %v", len(tables), tables)
+	}
+}
+
+func TestDiscoverTablesInPattern(t *testing.T) {
+	body := `{"result": [{
+		"id": "policies/filtering/platform/consignment",
+		"raw": "package policies.filtering.platform.consignment\n\ninclude if {\n    some row in data.consignments\n    row.account == input.user.account\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	tables, err := client.DiscoverTables()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tables) != 1 {
+		t.Fatalf("expected 1 table, got %d: %v", len(tables), tables)
+	}
+	if tables[0] != "consignments" {
+		t.Errorf("expected \"consignments\", got %q", tables[0])
+	}
+}
+
+func TestDiscoverTablesIndexPattern(t *testing.T) {
+	body := `{"result": [{
+		"id": "policies/filtering/platform/consignment",
+		"raw": "package policies.filtering.platform.consignment\n\ninclude if {\n    data.consignments[_].account == input.user.account\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	tables, err := client.DiscoverTables()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tables) != 1 {
+		t.Fatalf("expected 1 table, got %d: %v", len(tables), tables)
+	}
+	if tables[0] != "consignments" {
+		t.Errorf("expected \"consignments\", got %q", tables[0])
+	}
+}
+
+func TestDiscoverTablesMultipleTables(t *testing.T) {
+	body := `{"result": [{
+		"id": "policies/filtering/platform/consignment",
+		"raw": "package policies.filtering.platform.consignment\n\ninclude if {\n    some row in data.consignments\n    some leg in data.shipment_legs\n    data.carriers[_].id == row.carrier_id\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	tables, err := client.DiscoverTables()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tables) != 3 {
+		t.Fatalf("expected 3 tables, got %d: %v", len(tables), tables)
+	}
+	// Results must be sorted.
+	if tables[0] != "carriers" {
+		t.Errorf("tables[0]: expected \"carriers\", got %q", tables[0])
+	}
+	if tables[1] != "consignments" {
+		t.Errorf("tables[1]: expected \"consignments\", got %q", tables[1])
+	}
+	if tables[2] != "shipment_legs" {
+		t.Errorf("tables[2]: expected \"shipment_legs\", got %q", tables[2])
+	}
+}
+
+func TestDiscoverTablesCommentsIgnored(t *testing.T) {
+	// "data.ignored_table" appears only in a comment — must not be returned.
+	body := `{"result": [{
+		"id": "policies/filtering/platform/consignment",
+		"raw": "package policies.filtering.platform.consignment\n\n# some row in data.ignored_table\ninclude if {\n    some row in data.consignments\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	tables, err := client.DiscoverTables()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, tbl := range tables {
+		if tbl == "ignored_table" {
+			t.Errorf("comment table ref leaked into results: %v", tables)
+		}
+	}
+	if len(tables) != 1 || tables[0] != "consignments" {
+		t.Errorf("expected [consignments], got %v", tables)
+	}
+}
+
+func TestDiscoverTablesPackageSegmentsExcluded(t *testing.T) {
+	// "policies" is a segment of a known package path — it must be excluded
+	// even if data.policies is referenced in the source.
+	body := `{"result": [
+		{
+			"id": "policies/filtering/platform/consignment",
+			"raw": "package policies.filtering.platform.consignment\n\ninclude if {\n    some row in data.policies\n    some row2 in data.consignments\n}\n"
+		},
+		{
+			"id": "auth/user",
+			"raw": "package auth.user\n\nallow if { true }\n"
+		}
+	]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	tables, err := client.DiscoverTables()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, tbl := range tables {
+		if tbl == "policies" {
+			t.Errorf("known package segment leaked into results: %v", tables)
+		}
+	}
+	if len(tables) != 1 || tables[0] != "consignments" {
+		t.Errorf("expected [consignments], got %v", tables)
+	}
+}
+
+func TestDiscoverTablesFieldAccess(t *testing.T) {
+	// data.consignments accessed via direct field access (no bracket index or
+	// "in data.x" iteration). This is the common partial-evaluation style.
+	body := `{"result": [{
+		"id": "policies/filtering/platform/consignment",
+		"raw": "package policies.filtering.platform.consignment\n\ninclude if {\n    data.consignments.account_name == input.user.account_name\n    data.consignments.cd_pickup_state == input.user.region\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	tables, err := client.DiscoverTables()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tables) != 1 {
+		t.Fatalf("expected 1 table, got %d: %v", len(tables), tables)
+	}
+	if tables[0] != "consignments" {
+		t.Errorf("expected \"consignments\", got %q", tables[0])
+	}
+}
+
+func TestDiscoverTablesSomeDataFieldInCollection(t *testing.T) {
+	// "some data.table.field in collection" — data ref is the iterator variable,
+	// not the collection. Must still capture the table name.
+	body := `{"result": [{
+		"id": "policies/filtering/platform/consignment",
+		"raw": "package policies.filtering.platform.consignment\n\ninclude if {\n    some data.consignments.account_name in input.user.accounts_managed\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	tables, err := client.DiscoverTables()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tables) != 1 {
+		t.Fatalf("expected 1 table, got %d: %v", len(tables), tables)
+	}
+	if tables[0] != "consignments" {
+		t.Errorf("expected \"consignments\", got %q", tables[0])
+	}
+}
+
+func TestDiscoverTablesServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"code": "internal_error"}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	_, err := client.DiscoverTables()
+	if err == nil {
+		t.Fatal("expected error for server error")
+	}
+}

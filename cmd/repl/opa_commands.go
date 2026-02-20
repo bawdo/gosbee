@@ -13,10 +13,10 @@ import (
 
 // opaPluginRef holds OPA server configuration.
 type opaPluginRef struct {
-	url       string
-	policy    string
-	input     map[string]any
-	dataTable string // table name for data discovery (e.g. "consignments")
+	url        string
+	policy     string
+	input      map[string]any
+	dataTables []string // selected tables for this session
 }
 
 func (s *Session) cmdOPAOff() error {
@@ -38,8 +38,8 @@ func (s *Session) cmdOPAStatus() {
 	_, _ = fmt.Fprintln(s.out, "  OPA: on")
 	_, _ = fmt.Fprintf(s.out, "    Server: %s\n", s.opaConfig.url)
 	_, _ = fmt.Fprintf(s.out, "    Policy: %s\n", s.opaConfig.policy)
-	if s.opaConfig.dataTable != "" {
-		_, _ = fmt.Fprintf(s.out, "    Data table: %s\n", s.opaConfig.dataTable)
+	if len(s.opaConfig.dataTables) > 0 {
+		_, _ = fmt.Fprintf(s.out, "    Tables: %s\n", strings.Join(s.opaConfig.dataTables, ", "))
 	}
 	if len(s.opaConfig.input) > 0 {
 		_, _ = fmt.Fprintln(s.out, "    Inputs:")
@@ -228,8 +228,8 @@ func (s *Session) cmdOPAInputs() error {
 	}
 	client := opa.NewClient(s.opaConfig.url, s.opaConfig.policy, nil)
 	var dataUnknowns []string
-	if s.opaConfig.dataTable != "" {
-		dataUnknowns = append(dataUnknowns, "data."+s.opaConfig.dataTable)
+	for _, t := range s.opaConfig.dataTables {
+		dataUnknowns = append(dataUnknowns, "data."+t)
 	}
 	inputPaths, err := client.DiscoverInputs(dataUnknowns...)
 	if err != nil {
@@ -407,11 +407,15 @@ func (s *Session) cmdOPASetup() error {
 		return err
 	}
 
-	tableName := prompt(s.rl, "Table name (for data discovery)", "")
+	dataTables, err := s.selectOPATables(url, policyPath)
+	if err != nil {
+		return err
+	}
+
 	client := opa.NewClient(url, policyPath, nil)
 	var dataUnknowns []string
-	if tableName != "" {
-		dataUnknowns = append(dataUnknowns, "data."+tableName)
+	for _, t := range dataTables {
+		dataUnknowns = append(dataUnknowns, "data."+t)
 	}
 	inputPaths, err := client.DiscoverInputs(dataUnknowns...)
 	if err != nil {
@@ -427,10 +431,13 @@ func (s *Session) cmdOPASetup() error {
 			}
 		}
 	}
-	s.opaConfig = &opaPluginRef{url: url, policy: policyPath, input: input, dataTable: tableName}
+	s.opaConfig = &opaPluginRef{url: url, policy: policyPath, input: input, dataTables: dataTables}
 	_ = configureOPA(s, "")
 	s.rebuildQueryWithPlugins()
 	_, _ = fmt.Fprintf(s.out, "  OPA enabled — policy: %s\n", policyPath)
+	if len(dataTables) > 0 {
+		_, _ = fmt.Fprintf(s.out, "  Tables: %s\n", strings.Join(dataTables, ", "))
+	}
 	return nil
 }
 
@@ -464,6 +471,66 @@ func (s *Session) selectOPAPolicy(url string) (string, error) {
 		return "", err
 	}
 	return policies[idx].FullPath, nil
+}
+
+// selectOPATables discovers table names from the selected policy and prompts
+// the user to select one or more. Falls back to a manual text prompt if
+// discovery returns no tables.
+func (s *Session) selectOPATables(url, policyPath string) ([]string, error) {
+	client := opa.NewClient(url, policyPath, nil)
+	_, _ = fmt.Fprintln(s.out, "  Inspecting policy for tables...")
+	discovered, err := client.DiscoverTables()
+	if err != nil {
+		_, _ = fmt.Fprintf(s.out, "  (table discovery failed: %v — enter table manually)\n", err)
+	} else if len(discovered) == 0 {
+		_, _ = fmt.Fprintln(s.out, "  (no tables found — enter table manually)")
+	}
+
+	if err != nil || len(discovered) == 0 {
+		tableName := prompt(s.rl, "Table name (for data discovery)", "")
+		if tableName == "" {
+			return nil, nil
+		}
+		return []string{tableName}, nil
+	}
+
+	indices, err := s.selectMany("table", discovered)
+	if err != nil {
+		return nil, err
+	}
+	tables := make([]string, len(indices))
+	for i, idx := range indices {
+		tables[i] = discovered[idx]
+	}
+	return tables, nil
+}
+
+// selectMany displays a numbered list of items and prompts the user to pick
+// zero or more by comma-separated number. Returns the 0-based indices of the
+// selected items. An empty input is valid and returns an empty slice.
+func (s *Session) selectMany(label string, items []string) ([]int, error) {
+	_, _ = fmt.Fprintf(s.out, "  Found %d %s(s):\n", len(items), label)
+	for i, item := range items {
+		_, _ = fmt.Fprintf(s.out, "    [%d] %s\n", i+1, item)
+	}
+	raw := prompt(s.rl, fmt.Sprintf("Select %s(s) (e.g. 1,3 or leave blank for none)", label), "")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var indices []int
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 1 || n > len(items) {
+			return nil, fmt.Errorf("invalid selection %q (choose 1-%d)", part, len(items))
+		}
+		indices = append(indices, n-1)
+	}
+	return indices, nil
 }
 
 // selectOne displays a numbered list of items and prompts the user to pick
