@@ -249,6 +249,116 @@ func TestCompileTermRef(t *testing.T) {
 	}
 }
 
+func TestCompileTermNull(t *testing.T) {
+	jsonBody := `{
+		"result": {
+			"queries": [[{
+				"index": 0,
+				"terms": [
+					{"type": "ref", "value": [{"type": "var", "value": "neq"}]},
+					{"type": "ref", "value": [
+						{"type": "var", "value": "input"},
+						{"type": "string", "value": "user"},
+						{"type": "string", "value": "accounts_managed"}
+					]},
+					{"type": "null", "value": null}
+				]
+			}]]
+		}
+	}`
+	resp, err := parseCompileResponse([]byte(jsonBody))
+	if err != nil {
+		t.Fatalf("parse error on null term: %v", err)
+	}
+	nullTerm := resp.Result.Queries[0][0].Terms[2]
+	if nullTerm.Type != "null" {
+		t.Errorf("expected type null, got %s", nullTerm.Type)
+	}
+	if nullTerm.Value != nil {
+		t.Errorf("expected nil value, got %v", nullTerm.Value)
+	}
+}
+
+func TestCompileExpressionSingleTermForm(t *testing.T) {
+	// OPA serialises expression terms in two ways:
+	//   array form:  "terms": [{...}, {...}, {...}]  (function call)
+	//   object form: "terms": {...}                  (bare term)
+	// The object form appears in OPA compile responses when an expression
+	// is a single term, e.g. an unconditional boolean or a lone ref.
+	jsonBody := `{
+		"result": {
+			"queries": [[
+				{
+					"index": 0,
+					"terms": {
+						"type": "ref",
+						"value": [
+							{"type": "var", "value": "input"},
+							{"type": "string", "value": "user"},
+							{"type": "string", "value": "accounts_managed"}
+						]
+					}
+				},
+				{
+					"index": 1,
+					"terms": {"type": "boolean", "value": true}
+				}
+			]]
+		}
+	}`
+	resp, err := parseCompileResponse([]byte(jsonBody))
+	if err != nil {
+		t.Fatalf("parse error on single-term expression: %v", err)
+	}
+	exprs := resp.Result.Queries[0]
+	if len(exprs) != 2 {
+		t.Fatalf("expected 2 expressions, got %d", len(exprs))
+	}
+	// First expression: single ref term should be wrapped in a slice.
+	if len(exprs[0].Terms) != 1 {
+		t.Fatalf("expr[0]: expected 1 term, got %d", len(exprs[0].Terms))
+	}
+	if exprs[0].Terms[0].Type != "ref" {
+		t.Errorf("expr[0].Terms[0]: expected type ref, got %s", exprs[0].Terms[0].Type)
+	}
+	// Second expression: boolean true term.
+	if len(exprs[1].Terms) != 1 {
+		t.Fatalf("expr[1]: expected 1 term, got %d", len(exprs[1].Terms))
+	}
+	if exprs[1].Terms[0].Type != "boolean" {
+		t.Errorf("expr[1].Terms[0]: expected type boolean, got %s", exprs[1].Terms[0].Type)
+	}
+}
+
+func TestExtractInputPathsFromSingleTermExpression(t *testing.T) {
+	// A single-term expression that is an input ref should be discovered.
+	resp := &compileResponse{
+		Result: compileResult{
+			Queries: [][]compileExpression{
+				{
+					{
+						Index: 0,
+						Terms: []compileTerm{
+							{
+								Type: "ref",
+								Value: []compileTerm{
+									{Type: "var", Value: "input"},
+									{Type: "string", Value: "user"},
+									{Type: "string", Value: "accounts_managed"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	paths := extractInputPaths(resp)
+	if len(paths) != 1 || paths[0] != "user.accounts_managed" {
+		t.Errorf("expected [user.accounts_managed], got %v", paths)
+	}
+}
+
 // --- Mask parsing ---
 
 func TestParseMasksReplace(t *testing.T) {
@@ -912,7 +1022,7 @@ func TestClientCompileNormalizesDataPrefix(t *testing.T) {
 
 func TestDiscoverInputs(t *testing.T) {
 	// OPA response with refs to input.subject.role and input.subject.tenant_id.
-	respBody := `{
+	compileBody := `{
 		"result": {
 			"queries": [[
 				{
@@ -948,7 +1058,13 @@ func TestDiscoverInputs(t *testing.T) {
 		}
 	}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify the request sends unknowns=["input"].
+		w.WriteHeader(http.StatusOK)
+		if r.Method == http.MethodGet {
+			// Static analysis request — no matching policy.
+			_, _ = w.Write([]byte(`{"result": []}`))
+			return
+		}
+		// Compile request.
 		body, _ := io.ReadAll(r.Body)
 		var req compileRequest
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -957,13 +1073,11 @@ func TestDiscoverInputs(t *testing.T) {
 		if len(req.Unknowns) != 1 || req.Unknowns[0] != "input" {
 			t.Errorf("expected unknowns [input], got %v", req.Unknowns)
 		}
-		// Input should be an empty object for DiscoverInputs.
 		inputMap, ok := req.Input.(map[string]any)
 		if !ok || len(inputMap) != 0 {
 			t.Errorf("expected empty input object, got %v", req.Input)
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(respBody))
+		_, _ = w.Write([]byte(compileBody))
 	}))
 	defer srv.Close()
 
@@ -975,7 +1089,6 @@ func TestDiscoverInputs(t *testing.T) {
 	if len(paths) != 2 {
 		t.Fatalf("expected 2 paths, got %d: %v", len(paths), paths)
 	}
-	// Results should be sorted.
 	if paths[0] != "subject.role" {
 		t.Errorf("paths[0]: expected 'subject.role', got %q", paths[0])
 	}
@@ -985,7 +1098,7 @@ func TestDiscoverInputs(t *testing.T) {
 }
 
 func TestDiscoverInputsWithDataUnknowns(t *testing.T) {
-	respBody := `{
+	compileBody := `{
 		"result": {
 			"queries": [[
 				{
@@ -1021,6 +1134,11 @@ func TestDiscoverInputsWithDataUnknowns(t *testing.T) {
 		}
 	}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"result": []}`))
+			return
+		}
 		body, _ := io.ReadAll(r.Body)
 		var req compileRequest
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -1029,8 +1147,7 @@ func TestDiscoverInputsWithDataUnknowns(t *testing.T) {
 		if len(req.Unknowns) != 2 || req.Unknowns[0] != "input" || req.Unknowns[1] != "data.consignments" {
 			t.Errorf("expected unknowns [input data.consignments], got %v", req.Unknowns)
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(respBody))
+		_, _ = w.Write([]byte(compileBody))
 	}))
 	defer srv.Close()
 
@@ -1053,6 +1170,10 @@ func TestDiscoverInputsWithDataUnknowns(t *testing.T) {
 func TestDiscoverInputsNoInputs(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"result": []}`))
+			return
+		}
 		_, _ = w.Write([]byte(`{"result": {"queries": [[]]}}`))
 	}))
 	defer srv.Close()
@@ -1072,6 +1193,137 @@ func TestDiscoverInputsServerUnreachable(t *testing.T) {
 	_, err := client.DiscoverInputs()
 	if err == nil {
 		t.Fatal("expected error for unreachable server")
+	}
+}
+
+func TestPackageName(t *testing.T) {
+	tests := []struct {
+		policyPath string
+		expected   string
+	}{
+		{"data.authz.allow", "authz"},
+		{"data.app.allow", "app"},
+		{"data.policies.filtering.platform.consignment.include", "policies.filtering.platform.consignment"},
+	}
+	for _, tt := range tests {
+		client := NewClient("http://localhost", tt.policyPath, nil)
+		got := client.packageName()
+		if got != tt.expected {
+			t.Errorf("packageName(%q) = %q, want %q", tt.policyPath, got, tt.expected)
+		}
+	}
+}
+
+func TestDiscoverInputsFromSource(t *testing.T) {
+	// Policy source with input.user.accounts_managed in a mask rule and
+	// input.user.role in an include rule. Comments must be ignored.
+	policiesBody := `{
+		"result": [{
+			"id": "policies/filtering/platform/consignment",
+			"raw": "package policies.filtering.platform.consignment\n\n# This is a comment: input.user.ignored\ninclude if { input.user.role == \"superadmin\" }\n\nmasks.consignments.cd_delivery_state.replace.value := {} if {\n    input.user.accounts_managed != null\n    some data.consignments.account_name in input.user.accounts_managed\n}\n"
+		}]
+	}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(policiesBody))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	paths, err := client.discoverInputsFromSource()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// "user.ignored" must not appear (it was in a comment).
+	for _, p := range paths {
+		if p == "user.ignored" {
+			t.Errorf("comment input ref leaked into results: %v", paths)
+		}
+	}
+	foundRole := false
+	foundManaged := false
+	for _, p := range paths {
+		if p == "user.role" {
+			foundRole = true
+		}
+		if p == "user.accounts_managed" {
+			foundManaged = true
+		}
+	}
+	if !foundRole {
+		t.Errorf("expected user.role in paths, got %v", paths)
+	}
+	if !foundManaged {
+		t.Errorf("expected user.accounts_managed in paths, got %v", paths)
+	}
+}
+
+func TestDiscoverInputsMasksInputs(t *testing.T) {
+	// Include rule references input.user.role (discovered via compile API).
+	// Mask rule references input.user.accounts_managed (discovered via
+	// static analysis of policy source — compile API is unreliable here
+	// because OPA returns unconditional allow for partial objects with
+	// default rules, and 'some x in unknown' produces no useful residuals).
+	includeCompileBody := `{
+		"result": {
+			"queries": [[
+				{
+					"index": 0,
+					"terms": [
+						{"type": "ref", "value": [{"type": "var", "value": "eq"}]},
+						{"type": "ref", "value": [
+							{"type": "var", "value": "input"},
+							{"type": "string", "value": "user"},
+							{"type": "string", "value": "role"}
+						]},
+						{"type": "string", "value": "reader"}
+					]
+				}
+			]]
+		}
+	}`
+
+	policiesBody := `{
+		"result": [{
+			"id": "policies/filtering/platform/consignment",
+			"raw": "package policies.filtering.platform.consignment\n\ndefault masks.consignments.cd_delivery_state.replace.value := \"<MASKED>\"\n\nmasks.consignments.cd_delivery_state.replace.value := {} if {\n    input.user.accounts_managed != null\n    some data.consignments.account_name in input.user.accounts_managed\n}\n"
+		}]
+	}`
+
+	postCount := 0
+	getCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if r.Method == http.MethodGet {
+			getCount++
+			_, _ = w.Write([]byte(policiesBody))
+			return
+		}
+		postCount++
+		_, _ = w.Write([]byte(includeCompileBody))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.policies.filtering.platform.consignment.include", nil)
+	paths, err := client.DiscoverInputs("data.consignments")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if postCount != 1 {
+		t.Errorf("expected 1 POST (compile for include rule), got %d", postCount)
+	}
+	if getCount != 1 {
+		t.Errorf("expected 1 GET (policies for static analysis), got %d", getCount)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("expected 2 paths, got %d: %v", len(paths), paths)
+	}
+	if paths[0] != "user.accounts_managed" {
+		t.Errorf("paths[0]: expected 'user.accounts_managed', got %q", paths[0])
+	}
+	if paths[1] != "user.role" {
+		t.Errorf("paths[1]: expected 'user.role', got %q", paths[1])
 	}
 }
 
@@ -1449,6 +1701,24 @@ func TestMasksDataPath(t *testing.T) {
 		got := client.masksDataPath()
 		if got != tt.expected {
 			t.Errorf("masksDataPath(%q) = %q, want %q", tt.policyPath, got, tt.expected)
+		}
+	}
+}
+
+func TestMasksPolicyPath(t *testing.T) {
+	tests := []struct {
+		policyPath string
+		expected   string
+	}{
+		{"data.authz.allow", "data.authz.masks"},
+		{"data.app.allow", "data.app.masks"},
+		{"data.policies.filtering.platform.consignment.include", "data.policies.filtering.platform.consignment.masks"},
+	}
+	for _, tt := range tests {
+		client := NewClient("http://localhost", tt.policyPath, nil)
+		got := client.masksPolicyPath()
+		if got != tt.expected {
+			t.Errorf("masksPolicyPath(%q) = %q, want %q", tt.policyPath, got, tt.expected)
 		}
 	}
 }

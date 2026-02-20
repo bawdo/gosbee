@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -40,6 +41,26 @@ func NewClient(baseURL, policyPath string, input map[string]any) *Client {
 		input:      input,
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
+}
+
+// getJSON sends a GET request to the given path and returns the response body.
+// Returns an error if the request fails or returns a non-200 status code.
+func (c *Client) getJSON(path string) ([]byte, error) {
+	resp, err := c.httpClient.Get(c.baseURL + path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+	return body, nil
 }
 
 // postJSON sends a POST request with JSON body to the given path and returns
@@ -75,8 +96,40 @@ type compileResult struct {
 }
 
 type compileExpression struct {
-	Index int           `json:"index"`
-	Terms []compileTerm `json:"terms"`
+	Index int
+	Terms []compileTerm
+}
+
+// UnmarshalJSON handles the polymorphic "terms" field in OPA compile
+// responses. OPA serialises expression terms in two forms:
+//   - array:  "terms": [{...}, {...}, ...]  — function call expression
+//   - object: "terms": {...}               — bare term (single ref, boolean, etc.)
+//
+// The object form is normalised into a one-element slice.
+func (ce *compileExpression) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Index int             `json:"index"`
+		Terms json.RawMessage `json:"terms"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	ce.Index = raw.Index
+	if len(raw.Terms) == 0 {
+		return nil
+	}
+	if raw.Terms[0] == '[' {
+		if err := json.Unmarshal(raw.Terms, &ce.Terms); err != nil {
+			return fmt.Errorf("opa: failed to unmarshal expression terms array: %w", err)
+		}
+	} else {
+		var term compileTerm
+		if err := json.Unmarshal(raw.Terms, &term); err != nil {
+			return fmt.Errorf("opa: failed to unmarshal expression term: %w", err)
+		}
+		ce.Terms = []compileTerm{term}
+	}
+	return nil
 }
 
 type compileTerm struct {
@@ -136,6 +189,8 @@ func (ct *compileTerm) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("opa: failed to unmarshal ref value: %w", err)
 		}
 		ct.Value = terms
+	case "null":
+		ct.Value = nil
 	default:
 		return fmt.Errorf("opa: unknown term type %q", raw.Type)
 	}
@@ -410,6 +465,81 @@ func (c *Client) CompileWithMasks(tableName string) (*CompileResult, error) {
 
 // --- Data API: masks ---
 
+// packageName returns the Rego package name for the policy, e.g.
+// "policies.filtering.platform.consignment".
+func (c *Client) packageName() string {
+	path := strings.TrimPrefix(c.policyPath, "data.")
+	if idx := strings.LastIndex(path, "."); idx >= 0 {
+		return path[:idx]
+	}
+	return path
+}
+
+// inputPathPattern matches bare input.xxx.yyy references in Rego source.
+var inputPathPattern = regexp.MustCompile(`\binput\.([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)`)
+
+// stripRegoComments removes Rego line comments (everything from # to end of
+// line) to avoid false positives when scanning for input references.
+func stripRegoComments(source string) string {
+	lines := strings.Split(source, "\n")
+	for i, line := range lines {
+		if idx := strings.Index(line, "#"); idx >= 0 {
+			lines[i] = line[:idx]
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// discoverInputsFromSource fetches the raw policy source from OPA's policies
+// API and extracts all input.* references via regex. This is more reliable
+// than the compile API for mask rules because OPA's partial evaluator returns
+// unconditional allow for partial objects with default rules, and 'some x in
+// unknown_collection' produces no useful residuals.
+func (c *Client) discoverInputsFromSource() ([]string, error) {
+	body, err := c.getJSON("/v1/policies")
+	if err != nil {
+		return nil, fmt.Errorf("opa: failed to fetch policies: %w", err)
+	}
+
+	var resp struct {
+		Result []struct {
+			Raw string `json:"raw"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("opa: failed to parse policies response: %w", err)
+	}
+
+	packageDecl := "package " + c.packageName()
+	seen := map[string]bool{}
+	for _, p := range resp.Result {
+		if !strings.Contains(p.Raw, packageDecl) {
+			continue
+		}
+		source := stripRegoComments(p.Raw)
+		for _, m := range inputPathPattern.FindAllStringSubmatch(source, -1) {
+			seen[m[1]] = true
+		}
+	}
+
+	paths := make([]string, 0, len(seen))
+	for p := range seen {
+		paths = append(paths, p)
+	}
+	slices.Sort(paths)
+	return paths, nil
+}
+
+// masksPolicyPath returns the Rego data path for the masks rule, e.g.
+// "data.policies.filtering.platform.consignment.masks".
+func (c *Client) masksPolicyPath() string {
+	path := strings.TrimPrefix(c.policyPath, "data.")
+	if idx := strings.LastIndex(path, "."); idx >= 0 {
+		path = path[:idx]
+	}
+	return "data." + path + ".masks"
+}
+
 // masksDataPath returns the Data API URL path for the masks rule.
 // Given policyPath "data.policies.filtering.platform.consignment.include",
 // it returns "policies/filtering/platform/consignment/masks".
@@ -669,33 +799,64 @@ func extractInputPaths(resp *compileResponse) []string {
 	return paths
 }
 
-// DiscoverInputs calls the OPA Compile API with unknowns=["input"] to discover
-// which input fields a policy references. Additional data paths (e.g.
-// "data.consignments") can be passed so that rules referencing those paths
-// also produce residuals, exposing all required input fields.
-func (c *Client) DiscoverInputs(dataUnknowns ...string) ([]string, error) {
-	unknowns := []string{"input"}
-	unknowns = append(unknowns, dataUnknowns...)
+// compileAndExtractInputPaths sends a single compile request and returns the
+// input paths found in the residual queries.
+func (c *Client) compileAndExtractInputPaths(query string, unknowns []string) ([]string, error) {
 	reqBody := compileRequest{
-		Query:    c.policyPath + " == true",
+		Query:    query,
 		Input:    map[string]any{},
 		Unknowns: unknowns,
 	}
-
 	data, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("opa: failed to marshal compile request: %w", err)
 	}
-
 	body, err := c.postJSON("/v1/compile", data)
 	if err != nil {
 		return nil, fmt.Errorf("opa: compile request failed: %w", err)
 	}
-
 	parsed, err := parseCompileResponse(body)
 	if err != nil {
 		return nil, err
 	}
-
 	return extractInputPaths(parsed), nil
+}
+
+// DiscoverInputs calls the OPA Compile API to discover which input fields a
+// policy references, including both filter rules and mask rules. Additional
+// data paths (e.g. "data.consignments") can be passed so that rules
+// referencing those paths also produce residuals, exposing all required input
+// fields.
+func (c *Client) DiscoverInputs(dataUnknowns ...string) ([]string, error) {
+	unknowns := []string{"input"}
+	unknowns = append(unknowns, dataUnknowns...)
+	seen := map[string]bool{}
+
+	// Collect inputs from the filter/include rule.
+	filterPaths, err := c.compileAndExtractInputPaths(c.policyPath+" == true", unknowns)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range filterPaths {
+		seen[p] = true
+	}
+
+	// Also collect inputs from mask rules via static analysis of the policy
+	// source. The compile API is unreliable for masks because:
+	//   1. Default rules make the masks document always-defined → no residuals.
+	//   2. 'some x in unknown_collection' produces no useful residuals.
+	sourcePaths, err := c.discoverInputsFromSource()
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range sourcePaths {
+		seen[p] = true
+	}
+
+	paths := make([]string, 0, len(seen))
+	for p := range seen {
+		paths = append(paths, p)
+	}
+	slices.Sort(paths)
+	return paths, nil
 }
