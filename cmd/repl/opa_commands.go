@@ -393,17 +393,20 @@ func (s *Session) cmdOPAMasks() error {
 }
 
 // cmdOPASetup runs the interactive OPA setup wizard: prompts for server URL,
-// policy path, and table name, then discovers and prompts for input fields.
+// discovers available policies for selection (with manual fallback), prompts
+// for a table name, then discovers and prompts for input fields.
 func (s *Session) cmdOPASetup() error {
 	if s.rl == nil {
 		return errors.New("opa setup requires an interactive session")
 	}
 	_, _ = fmt.Fprintln(s.out, "  OPA setup:")
 	url := prompt(s.rl, "OPA server URL", "http://localhost:8181")
-	policyPath := prompt(s.rl, "Policy path (e.g. data.authz.allow)", "")
-	if policyPath == "" {
-		return errors.New("policy path is required")
+
+	policyPath, err := s.selectOPAPolicy(url)
+	if err != nil {
+		return err
 	}
+
 	tableName := prompt(s.rl, "Table name (for data discovery)", "")
 	client := opa.NewClient(url, policyPath, nil)
 	var dataUnknowns []string
@@ -429,6 +432,53 @@ func (s *Session) cmdOPASetup() error {
 	s.rebuildQueryWithPlugins()
 	_, _ = fmt.Fprintf(s.out, "  OPA enabled — policy: %s\n", policyPath)
 	return nil
+}
+
+// selectOPAPolicy discovers available policies from the OPA server and prompts
+// the user to select one. Falls back to a manual text prompt if discovery
+// fails or returns no matching policies.
+func (s *Session) selectOPAPolicy(url string) (string, error) {
+	client := opa.NewClient(url, "data.placeholder", nil)
+	_, _ = fmt.Fprintln(s.out, "  Searching for policies...")
+	policies, err := client.DiscoverPolicies()
+	if err != nil {
+		_, _ = fmt.Fprintf(s.out, "  (policy discovery failed: %v — enter path manually)\n", err)
+	} else if len(policies) == 0 {
+		_, _ = fmt.Fprintln(s.out, "  (no matching policies found — enter path manually)")
+	}
+
+	if err != nil || len(policies) == 0 {
+		policyPath := prompt(s.rl, "Policy path (e.g. data.authz.allow)", "")
+		if policyPath == "" {
+			return "", errors.New("policy path is required")
+		}
+		return policyPath, nil
+	}
+
+	paths := make([]string, len(policies))
+	for i, p := range policies {
+		paths[i] = p.FullPath
+	}
+	idx, err := s.selectOne("policy", paths)
+	if err != nil {
+		return "", err
+	}
+	return policies[idx].FullPath, nil
+}
+
+// selectOne displays a numbered list of items and prompts the user to pick
+// one by number. Returns the 0-based index of the selected item.
+func (s *Session) selectOne(label string, items []string) (int, error) {
+	_, _ = fmt.Fprintf(s.out, "  Found %d matching %s(s):\n", len(items), label)
+	for i, item := range items {
+		_, _ = fmt.Fprintf(s.out, "    [%d] %s\n", i+1, item)
+	}
+	raw := prompt(s.rl, fmt.Sprintf("Select %s (1-%d)", label, len(items)), "1")
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n < 1 || n > len(items) {
+		return 0, fmt.Errorf("invalid selection %q (choose 1-%d)", raw, len(items))
+	}
+	return n - 1, nil
 }
 
 func parseOPAValue(s string) any {

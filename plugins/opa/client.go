@@ -860,3 +860,115 @@ func (c *Client) DiscoverInputs(dataUnknowns ...string) ([]string, error) {
 	slices.Sort(paths)
 	return paths, nil
 }
+
+// --- Policy discovery ---
+
+// PolicyInfo describes a single queryable policy rule discovered on the OPA server.
+type PolicyInfo struct {
+	PackagePath string // e.g. "policies.filtering.platform.consignment"
+	RuleName    string // e.g. "include"
+	FullPath    string // e.g. "data.policies.filtering.platform.consignment.include"
+}
+
+// policyKeywords are the substrings we look for in a package path to identify
+// it as a filtering, include, or masking policy.
+var policyKeywords = []string{"include", "filter", "mask"}
+
+// regoKeywords are top-level Rego keywords that should not be treated as rule
+// names when scanning policy source.
+var regoKeywords = map[string]bool{
+	"package": true,
+	"import":  true,
+	"default": true,
+}
+
+// topLevelRulePattern matches an identifier at the start of a line followed
+// by whitespace, '{', or '[' — the three ways a top-level Rego rule can begin.
+// Partial rules (e.g. masks.table.col := ...) are excluded because the
+// identifier would be followed by '.' rather than a matched character.
+var topLevelRulePattern = regexp.MustCompile(`(?m)^([a-z_][a-zA-Z0-9_]*)[\s\{\[]`)
+
+// extractRuleNames returns the unique top-level rule names found in the Rego
+// source, excluding Rego keywords (package, import, default).
+func extractRuleNames(source string) []string {
+	source = stripRegoComments(source)
+	seen := map[string]bool{}
+	for _, m := range topLevelRulePattern.FindAllStringSubmatch(source, -1) {
+		name := m[1]
+		if !regoKeywords[name] {
+			seen[name] = true
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for n := range seen {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// DiscoverPolicies queries the OPA server's policies list and returns all
+// policies whose package path contains "include", "filter", or "mask" as a
+// substring. One PolicyInfo is returned per top-level rule found within each
+// qualifying package. Results are sorted by FullPath.
+func (c *Client) DiscoverPolicies() ([]PolicyInfo, error) {
+	body, err := c.getJSON("/v1/policies")
+	if err != nil {
+		return nil, fmt.Errorf("opa: failed to fetch policies: %w", err)
+	}
+
+	var resp struct {
+		Result []struct {
+			Raw string `json:"raw"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("opa: failed to parse policies response: %w", err)
+	}
+
+	var results []PolicyInfo
+	for _, p := range resp.Result {
+		m := packageDeclPattern.FindStringSubmatch(p.Raw)
+		if m == nil {
+			continue
+		}
+		pkgPath := m[1]
+
+		if !containsPolicyKeyword(pkgPath) {
+			continue
+		}
+
+		for _, ruleName := range extractRuleNames(p.Raw) {
+			results = append(results, PolicyInfo{
+				PackagePath: pkgPath,
+				RuleName:    ruleName,
+				FullPath:    "data." + pkgPath + "." + ruleName,
+			})
+		}
+	}
+
+	slices.SortFunc(results, func(a, b PolicyInfo) int {
+		if a.FullPath < b.FullPath {
+			return -1
+		}
+		if a.FullPath > b.FullPath {
+			return 1
+		}
+		return 0
+	})
+	return results, nil
+}
+
+// containsPolicyKeyword returns true if s contains any of the policy keywords
+// ("include", "filter", "mask") as a substring.
+func containsPolicyKeyword(s string) bool {
+	for _, kw := range policyKeywords {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// packageDeclPattern extracts the package path from a Rego package declaration.
+var packageDeclPattern = regexp.MustCompile(`(?m)^\s*package\s+(\S+)`)

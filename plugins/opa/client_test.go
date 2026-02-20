@@ -1937,3 +1937,249 @@ func TestParseCompileResponseEmptyResult(t *testing.T) {
 		t.Error("expected nil queries for empty result")
 	}
 }
+
+// --- DiscoverPolicies ---
+
+func TestDiscoverPoliciesEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result": []}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.app.allow", nil)
+	policies, err := client.DiscoverPolicies()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(policies) != 0 {
+		t.Errorf("expected 0 policies, got %d: %v", len(policies), policies)
+	}
+}
+
+func TestDiscoverPoliciesNoMatchingPackage(t *testing.T) {
+	body := `{"result": [{
+		"id": "auth/user",
+		"raw": "package auth.user\n\nallow if {\n    input.user.role == \"admin\"\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.app.allow", nil)
+	policies, err := client.DiscoverPolicies()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(policies) != 0 {
+		t.Errorf("expected 0 policies for non-matching package, got %d: %v", len(policies), policies)
+	}
+}
+
+func TestDiscoverPoliciesFilterKeyword(t *testing.T) {
+	body := `{"result": [{
+		"id": "policies/filtering/platform/consignment",
+		"raw": "package policies.filtering.platform.consignment\n\ninclude if {\n    input.user.role == \"reader\"\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.app.allow", nil)
+	policies, err := client.DiscoverPolicies()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(policies) != 1 {
+		t.Fatalf("expected 1 policy, got %d: %v", len(policies), policies)
+	}
+	if policies[0].PackagePath != "policies.filtering.platform.consignment" {
+		t.Errorf("PackagePath: got %q, want %q", policies[0].PackagePath, "policies.filtering.platform.consignment")
+	}
+	if policies[0].RuleName != "include" {
+		t.Errorf("RuleName: got %q, want %q", policies[0].RuleName, "include")
+	}
+	if policies[0].FullPath != "data.policies.filtering.platform.consignment.include" {
+		t.Errorf("FullPath: got %q, want %q", policies[0].FullPath, "data.policies.filtering.platform.consignment.include")
+	}
+}
+
+func TestDiscoverPoliciesIncludeKeyword(t *testing.T) {
+	body := `{"result": [{
+		"id": "policies/include/platform/shipment",
+		"raw": "package policies.include.platform.shipment\n\nallow if {\n    input.user.role == \"admin\"\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.app.allow", nil)
+	policies, err := client.DiscoverPolicies()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(policies) != 1 {
+		t.Fatalf("expected 1 policy, got %d: %v", len(policies), policies)
+	}
+	if policies[0].FullPath != "data.policies.include.platform.shipment.allow" {
+		t.Errorf("FullPath: got %q, want %q", policies[0].FullPath, "data.policies.include.platform.shipment.allow")
+	}
+}
+
+func TestDiscoverPoliciesMaskKeyword(t *testing.T) {
+	body := `{"result": [{
+		"id": "policies/masking/platform/user",
+		"raw": "package policies.masking.platform.user\n\nmask if {\n    input.user.role != \"admin\"\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.app.allow", nil)
+	policies, err := client.DiscoverPolicies()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(policies) != 1 {
+		t.Fatalf("expected 1 policy, got %d: %v", len(policies), policies)
+	}
+	if policies[0].FullPath != "data.policies.masking.platform.user.mask" {
+		t.Errorf("FullPath: got %q, want %q", policies[0].FullPath, "data.policies.masking.platform.user.mask")
+	}
+}
+
+func TestDiscoverPoliciesMultipleRulesInPackage(t *testing.T) {
+	body := `{"result": [{
+		"id": "policies/filtering/platform/consignment",
+		"raw": "package policies.filtering.platform.consignment\n\ninclude if {\n    input.user.role == \"reader\"\n}\n\nfilter if {\n    input.user.role == \"admin\"\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.app.allow", nil)
+	policies, err := client.DiscoverPolicies()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(policies) != 2 {
+		t.Fatalf("expected 2 policies for package with 2 rules, got %d: %v", len(policies), policies)
+	}
+	// Results should be sorted by FullPath.
+	if policies[0].FullPath != "data.policies.filtering.platform.consignment.filter" {
+		t.Errorf("policies[0].FullPath: got %q, want %q", policies[0].FullPath, "data.policies.filtering.platform.consignment.filter")
+	}
+	if policies[1].FullPath != "data.policies.filtering.platform.consignment.include" {
+		t.Errorf("policies[1].FullPath: got %q, want %q", policies[1].FullPath, "data.policies.filtering.platform.consignment.include")
+	}
+}
+
+func TestDiscoverPoliciesMixedPackages(t *testing.T) {
+	body := `{"result": [
+		{
+			"id": "auth/user",
+			"raw": "package auth.user\n\nallow if {\n    input.user.role == \"admin\"\n}\n"
+		},
+		{
+			"id": "policies/filtering/platform/consignment",
+			"raw": "package policies.filtering.platform.consignment\n\ninclude if {\n    input.user.role == \"reader\"\n}\n"
+		}
+	]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.app.allow", nil)
+	policies, err := client.DiscoverPolicies()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(policies) != 1 {
+		t.Fatalf("expected 1 matching policy, got %d: %v", len(policies), policies)
+	}
+	if policies[0].PackagePath != "policies.filtering.platform.consignment" {
+		t.Errorf("unexpected PackagePath: %q", policies[0].PackagePath)
+	}
+}
+
+func TestDiscoverPoliciesSortedByFullPath(t *testing.T) {
+	body := `{"result": [
+		{
+			"id": "policies/filtering/platform/shipment",
+			"raw": "package policies.filtering.platform.shipment\n\ninclude if { true }\n"
+		},
+		{
+			"id": "policies/filtering/platform/consignment",
+			"raw": "package policies.filtering.platform.consignment\n\ninclude if { true }\n"
+		}
+	]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.app.allow", nil)
+	policies, err := client.DiscoverPolicies()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(policies) != 2 {
+		t.Fatalf("expected 2 policies, got %d", len(policies))
+	}
+	if policies[0].FullPath > policies[1].FullPath {
+		t.Errorf("results not sorted: %q > %q", policies[0].FullPath, policies[1].FullPath)
+	}
+}
+
+func TestDiscoverPoliciesDefaultRuleExcluded(t *testing.T) {
+	// "default" keyword lines should not produce rule entries.
+	body := `{"result": [{
+		"id": "policies/filtering/platform/consignment",
+		"raw": "package policies.filtering.platform.consignment\n\ndefault include := false\n\ninclude if {\n    input.user.role == \"reader\"\n}\n"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.app.allow", nil)
+	policies, err := client.DiscoverPolicies()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should be exactly 1: the real include rule, not the default declaration.
+	if len(policies) != 1 {
+		t.Fatalf("expected 1 policy (default keyword must be excluded), got %d: %v", len(policies), policies)
+	}
+	if policies[0].RuleName != "include" {
+		t.Errorf("RuleName: got %q, want %q", policies[0].RuleName, "include")
+	}
+}
+
+func TestDiscoverPoliciesServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"code": "internal_error"}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "data.app.allow", nil)
+	_, err := client.DiscoverPolicies()
+	if err == nil {
+		t.Fatal("expected error for server error")
+	}
+}
