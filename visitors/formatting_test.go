@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/bawdo/gosbee/internal/testutil"
+	"github.com/bawdo/gosbee/managers"
 	"github.com/bawdo/gosbee/nodes"
 )
 
@@ -77,4 +78,44 @@ func TestFormattingVisitorParamsNilWhenInnerNotParameterizer(t *testing.T) {
 	if got := p.Params(); got != nil {
 		t.Errorf("expected nil params, got %v", got)
 	}
+}
+
+func TestFormattingSelectSingleColumn(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("id"))
+
+	want := "SELECT \"users\".\"id\"\nFROM \"users\""
+	testutil.AssertSQL(t, fmtPG(), m.Core, want)
+}
+
+func TestFormattingSelectMultiColumn(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("id"), users.Col("name"), users.Col("email"))
+
+	want := "SELECT \"users\".\"id\"\n\t,\"users\".\"name\"\n\t,\"users\".\"email\"\nFROM \"users\""
+	testutil.AssertSQL(t, fmtPG(), m.Core, want)
+}
+
+func TestFormattingSelectStar(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	// No explicit projections — should default to *
+
+	want := "SELECT *\nFROM \"users\""
+	testutil.AssertSQL(t, fmtPG(), m.Core, want)
+}
+
+func TestFormattingSelectMySQLQuoting(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("id"), users.Col("name"))
+
+	want := "SELECT `users`.`id`\n\t,`users`.`name`\nFROM `users`"
+	testutil.AssertSQL(t, fmtMySQL(), m.Core, want)
 }

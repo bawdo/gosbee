@@ -1,13 +1,16 @@
 package visitors
 
-import "github.com/bawdo/gosbee/nodes"
+import (
+	"strings"
 
-// FormattingVisitor wraps any nodes.Visitor (dialect visitor) and will
-// eventually produce human-readable multi-line SQL. For now, it delegates
-// all methods to the inner visitor. The structural override methods
-// (VisitSelectCore, VisitSetOperation, VisitInsertStatement,
-// VisitUpdateStatement, VisitDeleteStatement) are temporary stubs that
-// also delegate — these will be replaced in future tasks.
+	"github.com/bawdo/gosbee/nodes"
+)
+
+// FormattingVisitor wraps any nodes.Visitor (dialect visitor) and produces
+// human-readable multi-line SQL. VisitSelectCore is a real implementation;
+// VisitSetOperation, VisitInsertStatement, VisitUpdateStatement, and
+// VisitDeleteStatement are still temporary stubs that delegate to the inner
+// visitor and will be replaced in future tasks.
 type FormattingVisitor struct {
 	inner nodes.Visitor
 }
@@ -172,32 +175,198 @@ func (f *FormattingVisitor) VisitCasted(node *nodes.CastedNode) string {
 
 // --- Structural override stubs (temporary — will be replaced in later tasks) ---
 
-// VisitSelectCore — stub, replaced in Task 3.
-// When implementing: call child nodes via node.Accept(f), not node.Accept(f.inner).
+// VisitSelectCore renders a SELECT statement in multi-line formatted style.
+// Projections use leading-comma continuation; all major clauses begin on a
+// new line. Child expressions are rendered via f.inner (dialect-specific).
 func (f *FormattingVisitor) VisitSelectCore(node *nodes.SelectCore) string {
-	return f.inner.VisitSelectCore(node) // temporary — replaced in Task 3
+	var sb strings.Builder
+
+	// WITH / WITH RECURSIVE
+	if len(node.CTEs) > 0 {
+		hasRecursive := false
+		for _, cte := range node.CTEs {
+			if cte.Recursive {
+				hasRecursive = true
+				break
+			}
+		}
+		if hasRecursive {
+			sb.WriteString("WITH RECURSIVE ")
+		} else {
+			sb.WriteString("WITH ")
+		}
+		for i, cte := range node.CTEs {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(cte.Accept(f))
+		}
+		sb.WriteString("\n")
+	}
+
+	// Comment / Hints
+	if node.Comment != "" {
+		sb.WriteString("/* ")
+		sb.WriteString(strings.ReplaceAll(node.Comment, "*/", "* /"))
+		sb.WriteString(" */\n")
+	}
+
+	// SELECT keyword
+	sb.WriteString("SELECT")
+
+	// Hints (optimizer hints after SELECT keyword)
+	if len(node.Hints) > 0 {
+		sb.WriteString(" /*+ ")
+		for i, h := range node.Hints {
+			if i > 0 {
+				sb.WriteString(" ")
+			}
+			sb.WriteString(strings.ReplaceAll(h, "*/", "* /"))
+		}
+		sb.WriteString(" */")
+	}
+
+	// DISTINCT / DISTINCT ON
+	if len(node.DistinctOn) > 0 {
+		sb.WriteString(" DISTINCT ON (")
+		for i, c := range node.DistinctOn {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			sb.WriteString(c.Accept(f.inner))
+		}
+		sb.WriteString(")")
+	} else if node.Distinct {
+		sb.WriteString(" DISTINCT")
+	}
+
+	// Projections — leading-comma style
+	if len(node.Projections) == 0 {
+		sb.WriteString(" *")
+	} else {
+		sb.WriteString(" ")
+		sb.WriteString(node.Projections[0].Accept(f.inner))
+		for _, p := range node.Projections[1:] {
+			sb.WriteString("\n\t,")
+			sb.WriteString(p.Accept(f.inner))
+		}
+	}
+
+	// FROM
+	if node.From != nil {
+		sb.WriteString("\nFROM ")
+		sb.WriteString(node.From.Accept(f.inner))
+	}
+
+	// JOINs
+	for _, j := range node.Joins {
+		sb.WriteString("\n")
+		sb.WriteString(j.Accept(f.inner))
+	}
+
+	// WHERE
+	if len(node.Wheres) > 0 {
+		sb.WriteString("\nWHERE ")
+		sb.WriteString(node.Wheres[0].Accept(f.inner))
+		for _, w := range node.Wheres[1:] {
+			sb.WriteString("\n\tAND ")
+			sb.WriteString(w.Accept(f.inner))
+		}
+	}
+
+	// GROUP BY — leading-comma style
+	if len(node.Groups) > 0 {
+		sb.WriteString("\nGROUP BY ")
+		sb.WriteString(node.Groups[0].Accept(f.inner))
+		for _, g := range node.Groups[1:] {
+			sb.WriteString("\n\t,")
+			sb.WriteString(g.Accept(f.inner))
+		}
+	}
+
+	// HAVING
+	if len(node.Havings) > 0 {
+		sb.WriteString("\nHAVING ")
+		sb.WriteString(node.Havings[0].Accept(f.inner))
+		for _, h := range node.Havings[1:] {
+			sb.WriteString("\n\tAND ")
+			sb.WriteString(h.Accept(f.inner))
+		}
+	}
+
+	// WINDOW
+	if len(node.Windows) > 0 {
+		sb.WriteString("\nWINDOW ")
+		for i, w := range node.Windows {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			// Render the window name using the inner visitor for correct quoting,
+			// then the parenthesised definition via RenderWindowDef.
+			sb.WriteString(nodes.NewTable(w.Name).Accept(f.inner))
+			sb.WriteString(" AS ")
+			sb.WriteString(RenderWindowDef(f.inner, &nodes.WindowDefinition{
+				PartitionBy: w.PartitionBy,
+				OrderBy:     w.OrderBy,
+				Frame:       w.Frame,
+			}))
+		}
+	}
+
+	// ORDER BY — leading-comma style
+	if len(node.Orders) > 0 {
+		sb.WriteString("\nORDER BY ")
+		sb.WriteString(node.Orders[0].Accept(f.inner))
+		for _, o := range node.Orders[1:] {
+			sb.WriteString("\n\t,")
+			sb.WriteString(o.Accept(f.inner))
+		}
+	}
+
+	// LIMIT
+	if node.Limit != nil {
+		sb.WriteString("\nLIMIT ")
+		sb.WriteString(node.Limit.Accept(f.inner))
+	}
+
+	// OFFSET
+	if node.Offset != nil {
+		sb.WriteString("\nOFFSET ")
+		sb.WriteString(node.Offset.Accept(f.inner))
+	}
+
+	// Locking
+	if node.Lock != nodes.NoLock {
+		sb.WriteString("\n")
+		sb.WriteString(lockModeSQL[node.Lock])
+		if node.SkipLocked {
+			sb.WriteString(" SKIP LOCKED")
+		}
+	}
+
+	return sb.String()
 }
 
-// VisitSetOperation — stub, replaced in Task 3.
+// VisitSetOperation — stub, will be replaced in Task 8.
 // When implementing: call child nodes via node.Accept(f), not node.Accept(f.inner).
 func (f *FormattingVisitor) VisitSetOperation(node *nodes.SetOperationNode) string {
-	return f.inner.VisitSetOperation(node) // temporary — replaced in Task 3
+	return f.inner.VisitSetOperation(node) // temporary — replaced in Task 8
 }
 
-// VisitInsertStatement — stub, replaced in Task 3.
+// VisitInsertStatement — stub, will be replaced in Task 9.
 // When implementing: call child nodes via node.Accept(f), not node.Accept(f.inner).
 func (f *FormattingVisitor) VisitInsertStatement(node *nodes.InsertStatement) string {
-	return f.inner.VisitInsertStatement(node) // temporary — replaced in Task 3
+	return f.inner.VisitInsertStatement(node) // temporary — replaced in Task 9
 }
 
-// VisitUpdateStatement — stub, replaced in Task 3.
+// VisitUpdateStatement — stub, will be replaced in Task 9.
 // When implementing: call child nodes via node.Accept(f), not node.Accept(f.inner).
 func (f *FormattingVisitor) VisitUpdateStatement(node *nodes.UpdateStatement) string {
-	return f.inner.VisitUpdateStatement(node) // temporary — replaced in Task 3
+	return f.inner.VisitUpdateStatement(node) // temporary — replaced in Task 9
 }
 
-// VisitDeleteStatement — stub, replaced in Task 3.
+// VisitDeleteStatement — stub, will be replaced in Task 9.
 // When implementing: call child nodes via node.Accept(f), not node.Accept(f.inner).
 func (f *FormattingVisitor) VisitDeleteStatement(node *nodes.DeleteStatement) string {
-	return f.inner.VisitDeleteStatement(node) // temporary — replaced in Task 3
+	return f.inner.VisitDeleteStatement(node) // temporary — replaced in Task 9
 }
