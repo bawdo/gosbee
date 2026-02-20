@@ -805,8 +805,10 @@ func validateSQLFunctionName(name string) {
 	}
 }
 
-// renderWindowDef renders a window definition as SQL: (PARTITION BY ... ORDER BY ... ROWS/RANGE ...)
-func (b *baseVisitor) renderWindowDef(w *nodes.WindowDefinition) string {
+// RenderWindowDef renders a window definition as a SQL parenthesised expression.
+// Exported so FormattingVisitor and any future visitor can reuse it without
+// duplicating logic. Pass the active dialect visitor for correct quoting.
+func RenderWindowDef(v nodes.Visitor, w *nodes.WindowDefinition) string {
 	if w == nil {
 		return "()"
 	}
@@ -817,7 +819,7 @@ func (b *baseVisitor) renderWindowDef(w *nodes.WindowDefinition) string {
 		sb.WriteString("PARTITION BY ")
 		parts := make([]string, len(w.PartitionBy))
 		for i, p := range w.PartitionBy {
-			parts[i] = p.Accept(b.outer)
+			parts[i] = p.Accept(v)
 		}
 		sb.WriteString(strings.Join(parts, ", "))
 		needSpace = true
@@ -829,7 +831,7 @@ func (b *baseVisitor) renderWindowDef(w *nodes.WindowDefinition) string {
 		sb.WriteString("ORDER BY ")
 		orders := make([]string, len(w.OrderBy))
 		for i, o := range w.OrderBy {
-			orders[i] = o.Accept(b.outer)
+			orders[i] = o.Accept(v)
 		}
 		sb.WriteString(strings.Join(orders, ", "))
 		needSpace = true
@@ -838,10 +840,45 @@ func (b *baseVisitor) renderWindowDef(w *nodes.WindowDefinition) string {
 		if needSpace {
 			sb.WriteString(" ")
 		}
-		sb.WriteString(b.renderFrame(w.Frame))
+		sb.WriteString(renderFrameSQL(v, w.Frame))
 	}
 	sb.WriteString(")")
 	return sb.String()
+}
+
+// renderFrameSQL renders a window frame clause. Package-private; used by
+// RenderWindowDef and baseVisitor.renderFrame.
+func renderFrameSQL(v nodes.Visitor, f *nodes.WindowFrame) string {
+	var sb strings.Builder
+	sb.WriteString(frameTypeSQL[f.Type])
+	if f.End != nil {
+		sb.WriteString(" BETWEEN ")
+		sb.WriteString(renderBoundSQL(v, f.Start))
+		sb.WriteString(" AND ")
+		sb.WriteString(renderBoundSQL(v, *f.End))
+	} else {
+		sb.WriteString(" ")
+		sb.WriteString(renderBoundSQL(v, f.Start))
+	}
+	return sb.String()
+}
+
+// renderBoundSQL renders a single frame bound. Package-private.
+func renderBoundSQL(v nodes.Visitor, fb nodes.FrameBound) string {
+	switch fb.Type {
+	case nodes.BoundUnboundedPreceding:
+		return "UNBOUNDED PRECEDING"
+	case nodes.BoundPreceding:
+		return fb.Offset.Accept(v) + " PRECEDING"
+	case nodes.BoundCurrentRow:
+		return "CURRENT ROW"
+	case nodes.BoundFollowing:
+		return fb.Offset.Accept(v) + " FOLLOWING"
+	case nodes.BoundUnboundedFollowing:
+		return "UNBOUNDED FOLLOWING"
+	default:
+		return ""
+	}
 }
 
 // Frame type SQL keywords.
@@ -850,38 +887,19 @@ var frameTypeSQL = [...]string{
 	nodes.FrameRange: "RANGE",
 }
 
+// renderWindowDef renders a window definition as SQL: (PARTITION BY ... ORDER BY ... ROWS/RANGE ...)
+func (b *baseVisitor) renderWindowDef(w *nodes.WindowDefinition) string {
+	return RenderWindowDef(b.outer, w)
+}
+
 // renderFrame renders a window frame as SQL.
 func (b *baseVisitor) renderFrame(f *nodes.WindowFrame) string {
-	var sb strings.Builder
-	sb.WriteString(frameTypeSQL[f.Type])
-	if f.End != nil {
-		sb.WriteString(" BETWEEN ")
-		sb.WriteString(b.renderBound(f.Start))
-		sb.WriteString(" AND ")
-		sb.WriteString(b.renderBound(*f.End))
-	} else {
-		sb.WriteString(" ")
-		sb.WriteString(b.renderBound(f.Start))
-	}
-	return sb.String()
+	return renderFrameSQL(b.outer, f)
 }
 
 // renderBound renders a single frame bound as SQL.
 func (b *baseVisitor) renderBound(fb nodes.FrameBound) string {
-	switch fb.Type {
-	case nodes.BoundUnboundedPreceding:
-		return "UNBOUNDED PRECEDING"
-	case nodes.BoundPreceding:
-		return fb.Offset.Accept(b.outer) + " PRECEDING"
-	case nodes.BoundCurrentRow:
-		return "CURRENT ROW"
-	case nodes.BoundFollowing:
-		return fb.Offset.Accept(b.outer) + " FOLLOWING"
-	case nodes.BoundUnboundedFollowing:
-		return "UNBOUNDED FOLLOWING"
-	default:
-		return ""
-	}
+	return renderBoundSQL(b.outer, fb)
 }
 
 func (b *baseVisitor) VisitSelectCore(n *nodes.SelectCore) string {

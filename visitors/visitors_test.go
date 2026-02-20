@@ -3433,3 +3433,25 @@ func TestWithoutParamsDisablesParameterisation(t *testing.T) {
 		t.Errorf("expected no params, got %v", params)
 	}
 }
+
+func TestRenderWindowDefEmpty(t *testing.T) {
+	t.Parallel()
+	got := RenderWindowDef(NewPostgresVisitor(WithoutParams()), nil)
+	if got != "()" {
+		t.Errorf("expected (), got %s", got)
+	}
+}
+
+func TestRenderWindowDefPartitionAndOrder(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	w := &nodes.WindowDefinition{
+		PartitionBy: []nodes.Node{users.Col("dept")},
+		OrderBy:     []nodes.Node{&nodes.OrderingNode{Expr: users.Col("salary"), Direction: nodes.Desc}},
+	}
+	got := RenderWindowDef(NewPostgresVisitor(WithoutParams()), w)
+	want := `(PARTITION BY "users"."dept" ORDER BY "users"."salary" DESC)`
+	if got != want {
+		t.Errorf("expected:\n  %s\ngot:\n  %s", want, got)
+	}
+}
