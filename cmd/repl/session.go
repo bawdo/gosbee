@@ -775,17 +775,34 @@ func (s *Session) cleanupCTEs() {
 
 // buildSetOperationChain chains set operations left-to-right into a single node.
 // Returns nil if there are no set operations.
+// LIMIT, OFFSET, and ORDER BY on the last query's core are lifted to the
+// outermost SetOperationNode so they apply to the combined result, not just
+// the last subquery. A shallow copy of the last core is used to avoid
+// mutating the session state.
 func (s *Session) buildSetOperationChain() nodes.Node {
 	if len(s.setOps) == 0 {
 		return nil
 	}
+
+	// Capture outer modifiers from the last query before stripping them.
+	outerLimit := s.query.Core.Limit
+	outerOffset := s.query.Core.Offset
+	outerOrders := s.query.Core.Orders
+
+	// Shallow-copy the last core with the outer modifiers zeroed out so they
+	// don't appear inside the subquery's parentheses.
+	lastCore := *s.query.Core
+	lastCore.Limit = nil
+	lastCore.Offset = nil
+	lastCore.Orders = nil
+
 	var finalNode nodes.Node = s.setOps[0].query.Core
 	for i := 0; i < len(s.setOps); i++ {
 		var right nodes.Node
 		if i+1 < len(s.setOps) {
 			right = s.setOps[i+1].query.Core
 		} else {
-			right = s.query.Core
+			right = &lastCore
 		}
 		finalNode = &nodes.SetOperationNode{
 			Left:  finalNode,
@@ -793,6 +810,13 @@ func (s *Session) buildSetOperationChain() nodes.Node {
 			Type:  s.setOps[i].opType,
 		}
 	}
+
+	// Apply the lifted modifiers to the outermost set operation node.
+	outer := finalNode.(*nodes.SetOperationNode)
+	outer.Limit = outerLimit
+	outer.Offset = outerOffset
+	outer.Orders = outerOrders
+
 	return finalNode
 }
 
@@ -1055,7 +1079,19 @@ func (s *Session) cmdExec() error {
 		if s.query == nil {
 			return errNoQuery
 		}
-		sqlStr, params, err = s.query.ToSQL(pv)
+		s.attachCTEs()
+		defer s.cleanupCTEs()
+		if finalNode := s.buildSetOperationChain(); finalNode != nil {
+			if p, ok := pv.(nodes.Parameterizer); ok {
+				p.Reset()
+			}
+			sqlStr = finalNode.Accept(pv)
+			if p, ok := pv.(nodes.Parameterizer); ok {
+				params = p.Params()
+			}
+		} else {
+			sqlStr, params, err = s.query.ToSQL(pv)
+		}
 	}
 	if err != nil {
 		return err

@@ -33,10 +33,14 @@ func (t SetOpType) String() string {
 }
 
 // SetOperationNode represents a set operation between two queries.
+// Orders, Limit, and Offset apply to the entire result of the set operation.
 type SetOperationNode struct {
-	Left  Node
-	Right Node
-	Type  SetOpType
+	Left   Node
+	Right  Node
+	Type   SetOpType
+	Orders []Node // ORDER BY for the combined result
+	Limit  Node   // LIMIT for the combined result
+	Offset Node   // OFFSET for the combined result
 }
 
 func (n *SetOperationNode) Accept(v Visitor) string { return v.VisitSetOperation(n) }

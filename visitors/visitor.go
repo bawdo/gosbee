@@ -649,6 +649,9 @@ func (b *baseVisitor) VisitSetOperation(n *nodes.SetOperationNode) string {
 	sb.WriteString(" (")
 	sb.WriteString(n.Right.Accept(b.outer))
 	sb.WriteString(")")
+	b.writeClause(&sb, " ORDER BY ", n.Orders, ", ")
+	b.writeNodeClause(&sb, " LIMIT ", n.Limit)
+	b.writeNodeClause(&sb, " OFFSET ", n.Offset)
 	return sb.String()
 }
 

@@ -3876,6 +3876,73 @@ func TestSetOpResetClearsStack(t *testing.T) {
 	}
 }
 
+func TestUnionLimitAppliesOutside(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from users")
+	_ = sess.Execute("union all")
+	_ = sess.Execute("from users")
+	_ = sess.Execute("limit 10")
+	out, err := sess.Exec("sql")
+	if err != nil {
+		t.Fatalf("sql failed: %v", err)
+	}
+	// LIMIT must appear after the closing paren of the last subquery.
+	// It must NOT appear inside either subquery's parentheses.
+	parenClose := strings.LastIndex(out, ")")
+	limitIdx := strings.Index(out, "LIMIT")
+	if limitIdx < 0 {
+		t.Fatalf("expected LIMIT in output, got: %s", out)
+	}
+	if limitIdx <= parenClose {
+		t.Errorf("LIMIT appears inside subquery parens; expected it after the closing ')': %s", out)
+	}
+}
+
+func TestUnionOrderByAppliesOutside(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from users")
+	_ = sess.Execute("union all")
+	_ = sess.Execute("from users")
+	_ = sess.Execute("order users.name asc")
+	out, err := sess.Exec("sql")
+	if err != nil {
+		t.Fatalf("sql failed: %v", err)
+	}
+	parenClose := strings.LastIndex(out, ")")
+	orderIdx := strings.Index(out, "ORDER BY")
+	if orderIdx < 0 {
+		t.Fatalf("expected ORDER BY in output, got: %s", out)
+	}
+	if orderIdx <= parenClose {
+		t.Errorf("ORDER BY appears inside subquery parens; expected it after the closing ')': %s", out)
+	}
+}
+
+func TestUnionSQLUsesFullChain(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from users")
+	_ = sess.Execute("where users.active = true")
+	_ = sess.Execute("union all")
+	_ = sess.Execute("from users")
+	_ = sess.Execute("where users.role = 'admin'")
+	out, err := sess.Exec("sql")
+	if err != nil {
+		t.Fatalf("sql failed: %v", err)
+	}
+	if !strings.Contains(out, "UNION ALL") {
+		t.Errorf("expected UNION ALL in sql output, got: %s", out)
+	}
+	if !strings.Contains(out, `"users"."active"`) {
+		t.Errorf("expected first subquery condition in sql output, got: %s", out)
+	}
+	if !strings.Contains(out, `"users"."role"`) {
+		t.Errorf("expected second subquery condition in sql output, got: %s", out)
+	}
+}
+
 // --- CTEs ---
 
 func TestWithCTE(t *testing.T) {

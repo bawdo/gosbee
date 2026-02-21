@@ -347,7 +347,8 @@ func (f *FormattingVisitor) VisitSelectCore(node *nodes.SelectCore) string {
 }
 
 // VisitSetOperation renders each leg of a set operation in parentheses with
-// the operator keyword on its own line between them.
+// the operator keyword on its own line between them. Any ORDER BY, LIMIT, or
+// OFFSET on the node apply to the combined result and are rendered afterwards.
 func (f *FormattingVisitor) VisitSetOperation(n *nodes.SetOperationNode) string {
 	var sb strings.Builder
 	sb.WriteString("(\n")
@@ -357,6 +358,22 @@ func (f *FormattingVisitor) VisitSetOperation(n *nodes.SetOperationNode) string 
 	sb.WriteString("\n(\n")
 	sb.WriteString(n.Right.Accept(f))
 	sb.WriteString("\n)")
+	if len(n.Orders) > 0 {
+		sb.WriteString("\nORDER BY ")
+		sb.WriteString(n.Orders[0].Accept(f.inner))
+		for _, o := range n.Orders[1:] {
+			sb.WriteString("\n\t,")
+			sb.WriteString(o.Accept(f.inner))
+		}
+	}
+	if n.Limit != nil {
+		sb.WriteString("\nLIMIT ")
+		sb.WriteString(n.Limit.Accept(f.inner))
+	}
+	if n.Offset != nil {
+		sb.WriteString("\nOFFSET ")
+		sb.WriteString(n.Offset.Accept(f.inner))
+	}
 	return sb.String()
 }
 
