@@ -2246,6 +2246,75 @@ func TestEditEntryQueryLabels(t *testing.T) {
 	}
 }
 
+// --- buildAllEditEntries / CTE editing ---
+
+func TestBuildAllEditEntriesWithCTEIncludesWhereInCTE(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	// Build CTE: SELECT * FROM consignments WHERE billed_total > 500
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("where consignments.billed_total > 500")
+	_ = sess.Execute("with large_consignments")
+	// Build outer query
+	_ = sess.Execute("from large_consignments")
+	_ = sess.Execute("select large_consignments.account_name, large_consignments.billed_total")
+	_ = sess.Execute("order by large_consignments.billed_total desc")
+	_ = sess.Execute("limit 10")
+
+	// edit where should find the WHERE clause inside the CTE.
+	entries := sess.buildAllEditEntries("where")
+	if len(entries) == 0 {
+		t.Fatal("expected WHERE entries from CTE, got none")
+	}
+	if entries[0].clauseType != "where" {
+		t.Errorf("expected clauseType 'where', got %q", entries[0].clauseType)
+	}
+	if entries[0].queryLabel == "" {
+		t.Error("expected non-empty queryLabel for CTE entry")
+	}
+}
+
+func TestBuildAllEditEntriesWithCTEQueryIdx(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("where consignments.billed_total > 500")
+	_ = sess.Execute("with large_consignments")
+	_ = sess.Execute("from large_consignments")
+
+	entries := sess.buildAllEditEntries("where")
+	if len(entries) == 0 {
+		t.Fatal("expected entries")
+	}
+	// CTE entry must have a queryIdx <= -2 (distinct from -1 and >=0).
+	for _, e := range entries {
+		if e.queryIdx == -1 || e.queryIdx >= 0 {
+			t.Errorf("expected CTE queryIdx <= -2, got %d", e.queryIdx)
+		}
+	}
+}
+
+func TestRemoveEntryFromCTEWhere(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("where consignments.billed_total > 500")
+	_ = sess.Execute("with large_consignments")
+	_ = sess.Execute("from large_consignments")
+	_ = sess.Execute("select large_consignments.account_name")
+
+	entries := sess.buildAllEditEntries("where")
+	if len(entries) == 0 {
+		t.Fatal("expected WHERE entry from CTE")
+	}
+	sess.removeEntry(entries[0])
+
+	// CTE's Wheres should now be empty.
+	if len(sess.ctes[0].query.Core.Wheres) != 0 {
+		t.Fatalf("expected 0 wheres in CTE after removal, got %d", len(sess.ctes[0].query.Core.Wheres))
+	}
+}
+
 func TestEditRequiresQuery(t *testing.T) {
 	t.Parallel()
 	sess := NewSession("postgres", nil)

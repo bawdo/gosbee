@@ -1569,31 +1569,53 @@ func (s *Session) buildEditEntries(filter string) []editEntry {
 }
 
 // buildAllEditEntries returns editable entries from every query in the set-operation
-// chain (all setOps entries plus the current query). When no set operations are
-// present it behaves identically to buildEditEntries.
+// chain and any CTEs (all ctes entries, all setOps entries, plus the current query).
+// When neither CTEs nor set operations are present it behaves identically to
+// buildEditEntries (no query labels).
 func (s *Session) buildAllEditEntries(filter string) []editEntry {
-	if len(s.setOps) == 0 {
+	hasCTEs := len(s.ctes) > 0
+	hasSetOps := len(s.setOps) > 0
+
+	if !hasCTEs && !hasSetOps {
 		return s.buildEditEntries(filter)
 	}
-	total := len(s.setOps) + 1
+
 	var all []editEntry
-	for i, so := range s.setOps {
-		label := fmt.Sprintf("Query %d of %d (%s)", i+1, total, so.opType)
-		all = append(all, s.buildEditEntriesFor(filter, so.query, i, label)...)
+
+	// Include CTE subqueries first. queryIdx = -(i+2) keeps CTE indices
+	// distinct from the current query (-1) and set-op indices (>=0).
+	for i, cte := range s.ctes {
+		label := fmt.Sprintf("CTE %q", cte.name)
+		all = append(all, s.buildEditEntriesFor(filter, cte.query, -(i+2), label)...)
 	}
-	currentLabel := fmt.Sprintf("Query %d of %d [current]", total, total)
-	all = append(all, s.buildEditEntriesFor(filter, s.query, -1, currentLabel)...)
+
+	if hasSetOps {
+		total := len(s.setOps) + 1
+		for i, so := range s.setOps {
+			label := fmt.Sprintf("Query %d of %d (%s)", i+1, total, so.opType)
+			all = append(all, s.buildEditEntriesFor(filter, so.query, i, label)...)
+		}
+		currentLabel := fmt.Sprintf("Query %d of %d [current]", total, total)
+		all = append(all, s.buildEditEntriesFor(filter, s.query, -1, currentLabel)...)
+	} else {
+		all = append(all, s.buildEditEntriesFor(filter, s.query, -1, "Main query [current]")...)
+	}
+
 	return all
 }
 
 // managerForIdx returns the SelectManager for a given queryIdx.
 // An idx of -1 refers to the current query (s.query); non-negative values
-// refer to s.setOps[idx].
+// refer to s.setOps[idx]; values <= -2 refer to s.ctes[(-idx)-2].
 func (s *Session) managerForIdx(idx int) *managers.SelectManager {
-	if idx < 0 {
+	if idx == -1 {
 		return s.query
 	}
-	return s.setOps[idx].query
+	if idx >= 0 {
+		return s.setOps[idx].query
+	}
+	// CTE index: queryIdx = -(cteIndex + 2)
+	return s.ctes[(-idx)-2].query
 }
 
 func (s *Session) removeEntry(entry editEntry) {
