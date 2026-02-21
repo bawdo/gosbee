@@ -4012,6 +4012,35 @@ func TestUnionSQLUsesFullChain(t *testing.T) {
 	}
 }
 
+func TestThreeWayUnion(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from users")
+	_ = sess.Execute("where users.active = true")
+	_ = sess.Execute("union")
+	_ = sess.Execute("from users")
+	_ = sess.Execute("where users.role = 'admin'")
+	_ = sess.Execute("union all")
+	_ = sess.Execute("from users")
+	_ = sess.Execute("where users.status = 'premium'")
+	out, err := sess.Exec("sql")
+	if err != nil {
+		t.Fatalf("sql failed: %v", err)
+	}
+	if !strings.Contains(out, "UNION ALL") {
+		t.Errorf("expected UNION ALL in output, got: %s", out)
+	}
+	if !strings.Contains(out, `"users"."active"`) {
+		t.Errorf("expected first subquery condition in output, got: %s", out)
+	}
+	if !strings.Contains(out, `"users"."role"`) {
+		t.Errorf("expected second subquery condition in output, got: %s", out)
+	}
+	if !strings.Contains(out, `"users"."status"`) {
+		t.Errorf("expected third subquery condition in output, got: %s", out)
+	}
+}
+
 // --- CTEs ---
 
 func TestWithCTE(t *testing.T) {

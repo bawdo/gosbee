@@ -2672,6 +2672,23 @@ func TestVisitExceptAll(t *testing.T) {
 		`(SELECT * FROM "users") EXCEPT ALL (SELECT * FROM "admins")`)
 }
 
+func TestVisitSetOperationWithOrderByLimitOffset(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	left := &nodes.SelectCore{From: users}
+	right := &nodes.SelectCore{From: nodes.NewTable("admins")}
+	op := &nodes.SetOperationNode{
+		Left:   left,
+		Right:  right,
+		Type:   nodes.Union,
+		Orders: []nodes.Node{users.Col("id").Asc()},
+		Limit:  nodes.Literal(10),
+		Offset: nodes.Literal(5),
+	}
+	testutil.AssertSQL(t, NewPostgresVisitor(WithoutParams()), op,
+		`(SELECT * FROM "users") UNION (SELECT * FROM "admins") ORDER BY "users"."id" ASC LIMIT 10 OFFSET 5`)
+}
+
 // --- CTE ---
 
 func TestVisitCTE(t *testing.T) {
