@@ -6,6 +6,7 @@
 # Usage: ./.local_docs/pre-ci-check.sh
 
 set -e
+set -o pipefail
 
 # Colours for output
 RED='\033[0;31m'
