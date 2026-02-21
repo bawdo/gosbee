@@ -3,7 +3,10 @@
 # Pre-CI Validation Script
 # Mimics GitHub Actions CI workflow to predict build success probability
 #
-# Usage: ./.local_docs/pre-ci-check.sh
+# Usage: ./scripts/pre-ci-check.sh [--fix gofmt]
+#
+# Options:
+#   --fix gofmt   Auto-fix formatting issues with gofmt -s -w before checking
 
 set -e
 set -o pipefail
@@ -22,6 +25,10 @@ TOTAL_CHECKS=0
 PASSED_CHECKS=0
 COVERAGE=""
 COVERAGE_DELTA=""
+FORMAT_FAILED=false
+
+# Fix mode flags
+FIX_GOFMT=false
 
 # Helper functions
 print_header() {
@@ -99,6 +106,17 @@ check_dependencies() {
 # Check 3: gofmt formatting
 check_formatting() {
     print_header "Check 3: Code Formatting (gofmt -s)"
+
+    if [ "$FIX_GOFMT" = true ]; then
+        print_step "Auto-fixing formatting with gofmt -s -w ..."
+        FIXED=$(gofmt -s -l . 2>&1 | grep -v '^\.git' | grep -v '^\.obsidian' || true)
+        if [ -n "$FIXED" ]; then
+            gofmt -s -w .
+            echo -e "${YELLOW}⚠ Fixed formatting in:${NC}"
+            echo "$FIXED" | sed 's/^/  /'
+        fi
+    fi
+
     print_step "Checking code formatting..."
 
     # Run gofmt -s and capture any files that need formatting
@@ -108,10 +126,10 @@ check_formatting() {
         record_result "Code Formatting" "PASS" ""
         echo -e "${GREEN}✓ All files are properly formatted${NC}"
     else
+        FORMAT_FAILED=true
         record_result "Code Formatting" "FAIL" "Files need formatting"
         echo -e "${RED}✗ The following files need formatting:${NC}"
         echo "$UNFORMATTED" | sed 's/^/  /'
-        echo -e "\n${YELLOW}Run: gofmt -s -w .${NC}"
         return 1
     fi
 }
@@ -307,6 +325,12 @@ generate_report() {
         done
     fi
 
+    if [ "$FORMAT_FAILED" = true ]; then
+        echo ""
+        echo -e "${YELLOW}Tip: re-run with --fix gofmt to auto-fix formatting:${NC}"
+        echo -e "  ${BLUE}./scripts/pre-ci-check.sh --fix gofmt${NC}"
+    fi
+
     echo ""
     echo "Detailed logs saved in: coverage/pre-ci-*.txt  (checks 1–8)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -314,9 +338,26 @@ generate_report() {
 
 # Main execution
 main() {
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --fix)
+                case "$2" in
+                    gofmt) FIX_GOFMT=true; shift 2 ;;
+                    *) echo -e "${RED}Unknown --fix target: $2${NC}"; echo "Usage: $0 [--fix gofmt]"; exit 1 ;;
+                esac
+                ;;
+            *) echo -e "${RED}Unknown option: $1${NC}"; echo "Usage: $0 [--fix gofmt]"; exit 1 ;;
+        esac
+    done
+
     echo -e "${BLUE}"
     echo "╔════════════════════════════════════════════════════════════════════╗"
+    if [ "$FIX_GOFMT" = true ]; then
+    echo "║              Pre-CI Validation Script  [--fix gofmt]              ║"
+    else
     echo "║                     Pre-CI Validation Script                      ║"
+    fi
     echo "║                  Mimicking GitHub Actions Workflow                ║"
     echo "╚════════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"

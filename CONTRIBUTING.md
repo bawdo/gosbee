@@ -123,6 +123,9 @@ Code contributions might include:
    ```bash
    # Run all CI checks locally and get a success probability report
    ./scripts/pre-ci-check.sh
+
+   # Auto-fix gofmt formatting issues, then re-run all checks
+   ./scripts/pre-ci-check.sh --fix gofmt
    ```
 
    This script mimics the GitHub Actions workflow and runs 8 checks:
@@ -131,7 +134,7 @@ Code contributions might include:
    |---|-------|------|
    | 1 | Go version compatibility | `go` |
    | 2 | Dependency download | `go mod download` |
-   | 3 | Code formatting | `gofmt -s` |
+   | 3 | Code formatting | `gofmt -s` (auto-fixable via `--fix gofmt`) |
    | 4 | Tests with race detector | `go test -race` |
    | 5 | Linting | `golangci-lint` |
    | 6 | Test coverage (target: 80%) | `go test -coverprofile` |
