@@ -4744,3 +4744,150 @@ func TestGenerateSQLStillReturnsFlatOutput(t *testing.T) {
 		t.Errorf("GenerateSQL should return flat SQL, got:\n%s", flat)
 	}
 }
+
+// --- editPromptLabel ---
+
+func TestEditPromptLabel(t *testing.T) {
+	t.Parallel()
+	clauses := []string{"select", "where", "join", "order", "group", "having", "window"}
+	for _, ct := range clauses {
+		label := editPromptLabel(ct)
+		if label == "" {
+			t.Errorf("editPromptLabel(%q) returned empty string", ct)
+		}
+	}
+	// Unknown clause type should still return a non-empty default.
+	label := editPromptLabel("unknown")
+	if label == "" {
+		t.Error("editPromptLabel(\"unknown\") returned empty string, expected default")
+	}
+}
+
+// --- displayEditEntries ---
+
+func TestDisplayEditEntries_SingleQueryFiltered(t *testing.T) {
+	t.Parallel()
+	entries := []editEntry{
+		{clauseType: "where", index: 0, display: "foo > 1", queryIdx: -1, queryLabel: ""},
+	}
+	var buf bytes.Buffer
+	displayEditEntries(&buf, entries, true)
+	out := buf.String()
+	if !strings.Contains(out, "[1]") {
+		t.Errorf("expected \"[1]\" in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "WHERE") {
+		t.Errorf("expected \"WHERE\" in output, got:\n%s", out)
+	}
+}
+
+func TestDisplayEditEntries_MultiQuery(t *testing.T) {
+	t.Parallel()
+	entries := []editEntry{
+		{clauseType: "where", index: 0, display: "a > 1", queryIdx: -1, queryLabel: "Query 1 of 2 (UNION ALL)"},
+		{clauseType: "where", index: 0, display: "b < 5", queryIdx: 0, queryLabel: "Query 2 of 2 (UNION ALL)"},
+	}
+	var buf bytes.Buffer
+	displayEditEntries(&buf, entries, true)
+	out := buf.String()
+	if !strings.Contains(out, "Query 1 of 2") {
+		t.Errorf("expected \"Query 1 of 2\" in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Query 2 of 2") {
+		t.Errorf("expected \"Query 2 of 2\" in output, got:\n%s", out)
+	}
+}
+
+// --- cmdAST for DML modes ---
+
+func TestCmdASTInsert(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	sess.out = io.Discard
+	for _, cmd := range []string{
+		"insert into users",
+		"columns users.name",
+		"values 'alice'",
+		"returning users.id",
+	} {
+		if err := sess.Execute(cmd); err != nil {
+			t.Fatalf("Execute(%q) failed: %v", cmd, err)
+		}
+	}
+	out, err := sess.Exec("ast")
+	if err != nil {
+		t.Fatalf("Exec(\"ast\") failed: %v", err)
+	}
+	if !strings.Contains(out, "INSERT") && !strings.Contains(out, "INTO") {
+		t.Errorf("expected \"INSERT\" or \"INTO\" in ast output, got:\n%s", out)
+	}
+}
+
+func TestCmdASTUpdate(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	sess.out = io.Discard
+	for _, cmd := range []string{
+		"update users",
+		"set users.name = 'bob'",
+		"where users.id = 1",
+	} {
+		if err := sess.Execute(cmd); err != nil {
+			t.Fatalf("Execute(%q) failed: %v", cmd, err)
+		}
+	}
+	out, err := sess.Exec("ast")
+	if err != nil {
+		t.Fatalf("Exec(\"ast\") failed: %v", err)
+	}
+	if !strings.Contains(out, "UPDATE") {
+		t.Errorf("expected \"UPDATE\" in ast output, got:\n%s", out)
+	}
+}
+
+func TestCmdASTDelete(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	sess.out = io.Discard
+	for _, cmd := range []string{
+		"delete from users",
+		"where users.id = 1",
+	} {
+		if err := sess.Execute(cmd); err != nil {
+			t.Fatalf("Execute(%q) failed: %v", cmd, err)
+		}
+	}
+	out, err := sess.Exec("ast")
+	if err != nil {
+		t.Fatalf("Exec(\"ast\") failed: %v", err)
+	}
+	if !strings.Contains(out, "DELETE") {
+		t.Errorf("expected \"DELETE\" in ast output, got:\n%s", out)
+	}
+}
+
+// --- cmdTables ---
+
+func TestCmdTables(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	sess.out = io.Discard
+	for _, cmd := range []string{
+		"from users",
+		"from consignments",
+	} {
+		if err := sess.Execute(cmd); err != nil {
+			t.Fatalf("Execute(%q) failed: %v", cmd, err)
+		}
+	}
+	out, err := sess.Exec("tables")
+	if err != nil {
+		t.Fatalf("Exec(\"tables\") failed: %v", err)
+	}
+	if !strings.Contains(out, "users") {
+		t.Errorf("expected \"users\" in tables output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "consignments") {
+		t.Errorf("expected \"consignments\" in tables output, got:\n%s", out)
+	}
+}

@@ -435,3 +435,133 @@ func TestFormattingDelete(t *testing.T) {
 		t.Errorf("expected RETURNING on own line, got:\n%s", got)
 	}
 }
+
+func TestFormattingSetOperationWithOrderByAndLimit(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+
+	left := managers.NewSelectManager(users)
+	left.Select(users.Col("id"))
+
+	right := managers.NewSelectManager(users)
+	right.Select(users.Col("id"))
+	right.Where(users.Col("active").Eq(nodes.Literal(true)))
+
+	op := &nodes.SetOperationNode{
+		Left:  left.Core,
+		Right: right.Core,
+		Type:  nodes.Union,
+		Orders: []nodes.Node{
+			&nodes.OrderingNode{Expr: users.Col("name"), Direction: nodes.Asc},
+		},
+		Limit:  nodes.Literal(10),
+		Offset: nodes.Literal(5),
+	}
+
+	got := op.Accept(fmtPG())
+	if !strings.Contains(got, "\nORDER BY ") {
+		t.Errorf("expected ORDER BY in set operation output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\nLIMIT 10") {
+		t.Errorf("expected LIMIT 10 in set operation output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\nOFFSET 5") {
+		t.Errorf("expected OFFSET 5 in set operation output, got:\n%s", got)
+	}
+}
+
+func TestFormattingSetOperationWithMultipleOrders(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+
+	left := managers.NewSelectManager(users)
+	left.Select(users.Col("id"))
+
+	right := managers.NewSelectManager(users)
+	right.Select(users.Col("id"))
+
+	op := &nodes.SetOperationNode{
+		Left:  left.Core,
+		Right: right.Core,
+		Type:  nodes.Intersect,
+		Orders: []nodes.Node{
+			&nodes.OrderingNode{Expr: users.Col("name"), Direction: nodes.Asc},
+			&nodes.OrderingNode{Expr: users.Col("id"), Direction: nodes.Desc},
+		},
+	}
+
+	got := op.Accept(fmtPG())
+	if !strings.Contains(got, "\nORDER BY ") {
+		t.Errorf("expected ORDER BY in set operation output, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\n\t,") {
+		t.Errorf("expected leading-comma continuation in ORDER BY, got:\n%s", got)
+	}
+}
+
+func TestFormattingInsertMultipleReturning(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewInsertManager(users)
+	m.Columns(users.Col("name"), users.Col("email"))
+	m.Values("alice", "alice@example.com")
+	m.Returning(users.Col("id"), users.Col("name"))
+
+	got := m.Statement.Accept(fmtPG())
+	if !strings.Contains(got, "\nRETURNING ") {
+		t.Errorf("expected RETURNING on own line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\n\t,") {
+		t.Errorf("expected leading-comma continuation for second RETURNING column, got:\n%s", got)
+	}
+}
+
+func TestFormattingUpdateReturning(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewUpdateManager(users)
+	m.Set(users.Col("name"), "bob")
+	m.Where(users.Col("id").Eq(nodes.Literal(42)))
+	m.Returning(users.Col("id"))
+
+	got := m.Statement.Accept(fmtPG())
+	if !strings.Contains(got, "\nWHERE ") {
+		t.Errorf("expected WHERE on own line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\nRETURNING ") {
+		t.Errorf("expected RETURNING on own line, got:\n%s", got)
+	}
+}
+
+func TestFormattingUpdateMultipleWhere(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewUpdateManager(users)
+	m.Set(users.Col("name"), "carol")
+	m.Where(users.Col("active").Eq(nodes.Literal(true)))
+	m.Where(users.Col("age").Gt(nodes.Literal(21)))
+
+	got := m.Statement.Accept(fmtPG())
+	if !strings.Contains(got, "\nWHERE ") {
+		t.Errorf("expected WHERE on own line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\n\tAND ") {
+		t.Errorf("expected AND continuation for second WHERE condition, got:\n%s", got)
+	}
+}
+
+func TestFormattingDeleteMultipleWhere(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewDeleteManager(users)
+	m.Where(users.Col("active").Eq(nodes.Literal(false)))
+	m.Where(users.Col("age").Lt(nodes.Literal(18)))
+
+	got := m.Statement.Accept(fmtPG())
+	if !strings.Contains(got, "\nWHERE ") {
+		t.Errorf("expected WHERE on own line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\n\tAND ") {
+		t.Errorf("expected AND continuation for second WHERE condition, got:\n%s", got)
+	}
+}
