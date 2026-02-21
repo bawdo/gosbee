@@ -1468,24 +1468,28 @@ type editEntry struct {
 	clauseType string // "select", "where", "join", "order", "group", "having", "window"
 	index      int    // index into the corresponding Core slice
 	display    string // rendered SQL fragment
+	queryIdx   int    // -1 = s.query; >=0 = s.setOps[queryIdx]
+	queryLabel string // non-empty when displaying multiple queries (e.g. "Query 1 of 2 (UNION ALL)")
 }
 
-func (s *Session) buildEditEntries(filter string) []editEntry {
-	if s.query == nil {
+// buildEditEntriesFor collects editable entries from a specific query manager,
+// tagging each with queryIdx and queryLabel for multi-query display.
+func (s *Session) buildEditEntriesFor(filter string, q *managers.SelectManager, queryIdx int, queryLabel string) []editEntry {
+	if q == nil {
 		return nil
 	}
-	core := s.query.Core
+	core := q.Core
 	v := s.visitor
 	var entries []editEntry
 
 	if filter == "" || filter == "select" {
 		for i, p := range core.Projections {
-			entries = append(entries, editEntry{clauseType: "select", index: i, display: p.Accept(v)})
+			entries = append(entries, editEntry{clauseType: "select", index: i, display: p.Accept(v), queryIdx: queryIdx, queryLabel: queryLabel})
 		}
 	}
 	if filter == "" || filter == "where" {
 		for i, w := range core.Wheres {
-			entries = append(entries, editEntry{clauseType: "where", index: i, display: w.Accept(v)})
+			entries = append(entries, editEntry{clauseType: "where", index: i, display: w.Accept(v), queryIdx: queryIdx, queryLabel: queryLabel})
 		}
 	}
 	if filter == "" || filter == "join" {
@@ -1494,34 +1498,70 @@ func (s *Session) buildEditEntries(filter string) []editEntry {
 			if j.On != nil {
 				label += " ON " + j.On.Accept(v)
 			}
-			entries = append(entries, editEntry{clauseType: "join", index: i, display: label})
+			entries = append(entries, editEntry{clauseType: "join", index: i, display: label, queryIdx: queryIdx, queryLabel: queryLabel})
 		}
 	}
 	if filter == "" || filter == "order" {
 		for i, o := range core.Orders {
-			entries = append(entries, editEntry{clauseType: "order", index: i, display: o.Accept(v)})
+			entries = append(entries, editEntry{clauseType: "order", index: i, display: o.Accept(v), queryIdx: queryIdx, queryLabel: queryLabel})
 		}
 	}
 	if filter == "" || filter == "group" {
 		for i, g := range core.Groups {
-			entries = append(entries, editEntry{clauseType: "group", index: i, display: g.Accept(v)})
+			entries = append(entries, editEntry{clauseType: "group", index: i, display: g.Accept(v), queryIdx: queryIdx, queryLabel: queryLabel})
 		}
 	}
 	if filter == "" || filter == "having" {
 		for i, h := range core.Havings {
-			entries = append(entries, editEntry{clauseType: "having", index: i, display: h.Accept(v)})
+			entries = append(entries, editEntry{clauseType: "having", index: i, display: h.Accept(v), queryIdx: queryIdx, queryLabel: queryLabel})
 		}
 	}
 	if filter == "" || filter == "window" {
 		for i, w := range core.Windows {
-			entries = append(entries, editEntry{clauseType: "window", index: i, display: w.Name})
+			entries = append(entries, editEntry{clauseType: "window", index: i, display: w.Name, queryIdx: queryIdx, queryLabel: queryLabel})
 		}
 	}
 	return entries
 }
 
+// buildEditEntries returns editable entries for the current (last) query only.
+func (s *Session) buildEditEntries(filter string) []editEntry {
+	if s.query == nil {
+		return nil
+	}
+	return s.buildEditEntriesFor(filter, s.query, -1, "")
+}
+
+// buildAllEditEntries returns editable entries from every query in the set-operation
+// chain (all setOps entries plus the current query). When no set operations are
+// present it behaves identically to buildEditEntries.
+func (s *Session) buildAllEditEntries(filter string) []editEntry {
+	if len(s.setOps) == 0 {
+		return s.buildEditEntries(filter)
+	}
+	total := len(s.setOps) + 1
+	var all []editEntry
+	for i, so := range s.setOps {
+		label := fmt.Sprintf("Query %d of %d (%s)", i+1, total, so.opType)
+		all = append(all, s.buildEditEntriesFor(filter, so.query, i, label)...)
+	}
+	currentLabel := fmt.Sprintf("Query %d of %d [current]", total, total)
+	all = append(all, s.buildEditEntriesFor(filter, s.query, -1, currentLabel)...)
+	return all
+}
+
+// managerForIdx returns the SelectManager for a given queryIdx.
+// An idx of -1 refers to the current query (s.query); non-negative values
+// refer to s.setOps[idx].
+func (s *Session) managerForIdx(idx int) *managers.SelectManager {
+	if idx < 0 {
+		return s.query
+	}
+	return s.setOps[idx].query
+}
+
 func (s *Session) removeEntry(entry editEntry) {
-	core := s.query.Core
+	core := s.managerForIdx(entry.queryIdx).Core
 	switch entry.clauseType {
 	case "select":
 		core.Projections = append(core.Projections[:entry.index], core.Projections[entry.index+1:]...)
@@ -1541,7 +1581,7 @@ func (s *Session) removeEntry(entry editEntry) {
 }
 
 func (s *Session) editEntryValue(entry editEntry, newValue string) error {
-	core := s.query.Core
+	core := s.managerForIdx(entry.queryIdx).Core
 	switch entry.clauseType {
 	case "select":
 		parts := strings.Split(newValue, ",")
@@ -1639,6 +1679,66 @@ func displayEditEntries(w io.Writer, entries []editEntry, filtered bool) {
 	if len(entries) == 0 {
 		return
 	}
+
+	// Detect multi-query mode: any entry carries a query label.
+	multiQuery := false
+	for _, e := range entries {
+		if e.queryLabel != "" {
+			multiQuery = true
+			break
+		}
+	}
+
+	if multiQuery {
+		// Group entries by queryIdx, preserving order of first appearance.
+		type queryGroup struct {
+			label   string
+			entries []editEntry
+		}
+		var groups []queryGroup
+		idxToGroup := map[int]int{} // queryIdx -> index in groups
+		for _, e := range entries {
+			gi, ok := idxToGroup[e.queryIdx]
+			if !ok {
+				gi = len(groups)
+				idxToGroup[e.queryIdx] = gi
+				groups = append(groups, queryGroup{label: e.queryLabel})
+			}
+			groups[gi].entries = append(groups[gi].entries, e)
+		}
+		num := 1
+		for _, g := range groups {
+			_, _ = fmt.Fprintf(w, "    %s:\n", g.label)
+			if filtered {
+				if len(g.entries) > 0 {
+					_, _ = fmt.Fprintf(w, "      %s:\n", editClauseLabels[g.entries[0].clauseType])
+					for _, e := range g.entries {
+						_, _ = fmt.Fprintf(w, "        [%d] %s\n", num, e.display)
+						num++
+					}
+				}
+			} else {
+				byType := map[string][]editEntry{}
+				for _, e := range g.entries {
+					byType[e.clauseType] = append(byType[e.clauseType], e)
+				}
+				for _, ct := range editClauseOrder {
+					_, _ = fmt.Fprintf(w, "      %s:\n", editClauseLabels[ct])
+					if group2, ok := byType[ct]; ok {
+						for _, e := range group2 {
+							_, _ = fmt.Fprintf(w, "        [%d] %s\n", num, e.display)
+							num++
+						}
+					} else {
+						_, _ = fmt.Fprintln(w, "        (empty)")
+					}
+				}
+			}
+		}
+		return
+	}
+
+	// Single-query mode: existing behaviour.
 	if filtered {
 		for i, e := range entries {
 			if i == 0 {
@@ -1702,7 +1802,7 @@ func (s *Session) cmdEdit(args string) error {
 		return errors.New("edit requires an interactive session")
 	}
 
-	entries := s.buildEditEntries(filter)
+	entries := s.buildAllEditEntries(filter)
 	if len(entries) == 0 {
 		if filter != "" {
 			_, _ = fmt.Fprintf(s.out, "  %s:\n    (empty)\n", editClauseLabels[filter])
@@ -1766,7 +1866,7 @@ func (s *Session) cmdEdit(args string) error {
 		}
 
 		// Rebuild entries after modification.
-		entries = s.buildEditEntries(filter)
+		entries = s.buildAllEditEntries(filter)
 		if len(entries) == 0 {
 			_, _ = fmt.Fprintln(s.out, "  No more entries")
 			break

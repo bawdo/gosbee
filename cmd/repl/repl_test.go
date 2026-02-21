@@ -2075,6 +2075,177 @@ func TestEditIntegrationRemoveAndVerifySQL(t *testing.T) {
 	}
 }
 
+// --- buildAllEditEntries / multi-query (UNION) editing ---
+
+func TestBuildAllEditEntriesNoSetOps(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from users")
+	_ = sess.Execute("select users.id, users.name")
+	_ = sess.Execute("where users.age > 10")
+	entries := sess.buildAllEditEntries("")
+	// No set ops — behaves identically to buildEditEntries.
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+	for _, e := range entries {
+		if e.queryLabel != "" {
+			t.Errorf("expected empty queryLabel for single query, got %q", e.queryLabel)
+		}
+	}
+}
+
+func TestBuildAllEditEntriesWithUnionAll(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("select consignments.account_name")
+	_ = sess.Execute("where consignments.marketplace_id = 'AU'")
+	_ = sess.Execute("union all")
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("select consignments.account_name")
+	_ = sess.Execute("where consignments.marketplace_id = 'US'")
+
+	entries := sess.buildAllEditEntries("")
+	// 1 select + 1 where from each query = 4 total.
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 entries, got %d", len(entries))
+	}
+
+	// First two entries belong to the first query (setOps[0]).
+	if entries[0].queryIdx != 0 {
+		t.Errorf("expected queryIdx=0 for first query entry, got %d", entries[0].queryIdx)
+	}
+	if entries[0].queryLabel == "" {
+		t.Error("expected non-empty queryLabel in multi-query mode")
+	}
+
+	// Last two entries belong to the current query (queryIdx=-1).
+	if entries[2].queryIdx != -1 {
+		t.Errorf("expected queryIdx=-1 for current query entry, got %d", entries[2].queryIdx)
+	}
+}
+
+func TestBuildAllEditEntriesFilteredWithUnion(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("where consignments.marketplace_id = 'AU'")
+	_ = sess.Execute("union all")
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("where consignments.marketplace_id = 'US'")
+
+	entries := sess.buildAllEditEntries("where")
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 where entries across both queries, got %d", len(entries))
+	}
+	for _, e := range entries {
+		if e.clauseType != "where" {
+			t.Errorf("expected where, got %s", e.clauseType)
+		}
+	}
+}
+
+func TestRemoveEntryFromUnionFirstQuery(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("select consignments.account_name, consignments.marketplace_id")
+	_ = sess.Execute("where consignments.marketplace_id = 'AU'")
+	_ = sess.Execute("union all")
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("select consignments.account_name, consignments.marketplace_id")
+	_ = sess.Execute("where consignments.marketplace_id = 'US'")
+
+	// Remove the WHERE from the first query.
+	entries := sess.buildAllEditEntries("where")
+	// entries[0] is the AU condition (first query), entries[1] is the US condition (current).
+	sess.removeEntry(entries[0])
+
+	if len(sess.setOps[0].query.Core.Wheres) != 0 {
+		t.Fatalf("expected 0 wheres in first query after removal, got %d", len(sess.setOps[0].query.Core.Wheres))
+	}
+	// Current query's WHERE should be untouched.
+	if len(sess.query.Core.Wheres) != 1 {
+		t.Fatalf("expected 1 where in current query, got %d", len(sess.query.Core.Wheres))
+	}
+
+	// Use Exec("sql") to get the full UNION SQL for verification.
+	sql, err := sess.Exec("sql")
+	if err != nil {
+		t.Fatalf("sql command failed: %v", err)
+	}
+	if strings.Contains(sql, "'AU'") {
+		t.Errorf("expected AU condition removed from SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "'US'") {
+		t.Errorf("expected US condition to remain in SQL, got: %s", sql)
+	}
+}
+
+func TestEditEntryValueInUnionFirstQuery(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("where consignments.marketplace_id = 'AU'")
+	_ = sess.Execute("union all")
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("where consignments.marketplace_id = 'US'")
+
+	entries := sess.buildAllEditEntries("where")
+	// Edit the WHERE in the first query from AU to NZ.
+	err := sess.editEntryValue(entries[0], "consignments.marketplace_id = 'NZ'")
+	if err != nil {
+		t.Fatalf("editEntryValue failed: %v", err)
+	}
+
+	// Verify the first query's core was updated directly.
+	if len(sess.setOps[0].query.Core.Wheres) != 1 {
+		t.Fatalf("expected 1 where in first query, got %d", len(sess.setOps[0].query.Core.Wheres))
+	}
+
+	// Use Exec("sql") to get the full UNION SQL for verification.
+	sql, err := sess.Exec("sql")
+	if err != nil {
+		t.Fatalf("sql command failed: %v", err)
+	}
+	if !strings.Contains(sql, "'NZ'") {
+		t.Errorf("expected NZ in first query SQL, got: %s", sql)
+	}
+	if strings.Contains(sql, "'AU'") {
+		t.Errorf("expected AU replaced in SQL, got: %s", sql)
+	}
+	if !strings.Contains(sql, "'US'") {
+		t.Errorf("expected US condition unchanged in SQL, got: %s", sql)
+	}
+}
+
+func TestEditEntryQueryLabels(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("where consignments.marketplace_id = 'AU'")
+	_ = sess.Execute("union all")
+	_ = sess.Execute("from consignments")
+	_ = sess.Execute("where consignments.marketplace_id = 'US'")
+
+	entries := sess.buildAllEditEntries("")
+	if len(entries) == 0 {
+		t.Fatal("expected entries")
+	}
+	for _, e := range entries {
+		if e.queryLabel == "" {
+			t.Errorf("expected non-empty queryLabel in multi-query mode for entry %+v", e)
+		}
+	}
+	// The current query (queryIdx=-1) should have "[current]" in its label.
+	for _, e := range entries {
+		if e.queryIdx == -1 && !strings.Contains(e.queryLabel, "[current]") {
+			t.Errorf("expected [current] in label for s.query entry, got %q", e.queryLabel)
+		}
+	}
+}
+
 func TestEditRequiresQuery(t *testing.T) {
 	t.Parallel()
 	sess := NewSession("postgres", nil)
