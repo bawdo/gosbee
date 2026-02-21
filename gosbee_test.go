@@ -136,6 +136,37 @@ func TestMultipleDialects(t *testing.T) {
 	}
 }
 
+// TestRemainingAggregates covers Sum, Min, Max, and CountDistinct wrappers.
+func TestRemainingAggregates(t *testing.T) {
+	t.Parallel()
+	users := gosbee.NewTable("users")
+	v := gosbee.NewPostgresVisitor(gosbee.WithoutParams())
+
+	cases := []struct {
+		name     string
+		agg      gosbee.Node
+		contains string
+	}{
+		{"Sum", gosbee.Sum(users.Col("amount")), "SUM("},
+		{"Min", gosbee.Min(users.Col("price")), "MIN("},
+		{"Max", gosbee.Max(users.Col("price")), "MAX("},
+		{"CountDistinct", gosbee.CountDistinct(users.Col("id")), "COUNT(DISTINCT"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := gosbee.NewSelect(users)
+			m.Select(tc.agg)
+			sql, _, err := m.ToSQL(v)
+			if err != nil {
+				t.Fatalf("ToSQL failed: %v", err)
+			}
+			if !strings.Contains(sql, tc.contains) {
+				t.Errorf("expected %q in SQL, got: %s", tc.contains, sql)
+			}
+		})
+	}
+}
+
 // TestDMLOperations demonstrates INSERT, UPDATE, DELETE
 func TestDMLOperations(t *testing.T) {
 	users := gosbee.NewTable("users")

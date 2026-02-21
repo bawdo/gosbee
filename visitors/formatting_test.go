@@ -565,3 +565,163 @@ func TestFormattingDeleteMultipleWhere(t *testing.T) {
 		t.Errorf("expected AND continuation for second WHERE condition, got:\n%s", got)
 	}
 }
+
+// --- VisitSelectCore uncovered branches ---
+
+func TestFormattingComment(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("id"))
+	m.Comment("my query")
+
+	got := m.Core.Accept(fmtPG())
+	if !strings.Contains(got, "/* my query */") {
+		t.Errorf("expected comment in SQL, got:\n%s", got)
+	}
+}
+
+func TestFormattingHintSingle(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("id"))
+	m.Hint("INDEX_SCAN(users)")
+
+	got := m.Core.Accept(fmtPG())
+	if !strings.Contains(got, "/*+ INDEX_SCAN(users) */") {
+		t.Errorf("expected hint in SQL, got:\n%s", got)
+	}
+}
+
+func TestFormattingHintMultiple(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("id"))
+	m.Hint("INDEX_SCAN(users)")
+	m.Hint("NO_HASH_JOIN")
+
+	got := m.Core.Accept(fmtPG())
+	if !strings.Contains(got, "INDEX_SCAN(users) NO_HASH_JOIN") {
+		t.Errorf("expected multiple hints in SQL, got:\n%s", got)
+	}
+}
+
+func TestFormattingDistinctOn(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("id"), users.Col("email"))
+	m.DistinctOn(users.Col("email"))
+
+	got := m.Core.Accept(fmtPG())
+	if !strings.Contains(got, "DISTINCT ON (") {
+		t.Errorf("expected DISTINCT ON in SQL, got:\n%s", got)
+	}
+}
+
+func TestFormattingHaving(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("dept"), nodes.NewAggregateNode(nodes.AggCount, nil))
+	m.Group(users.Col("dept"))
+	m.Having(nodes.NewAggregateNode(nodes.AggCount, nil).Gt(nodes.Literal(5)))
+
+	got := m.Core.Accept(fmtPG())
+	if !strings.Contains(got, "\nHAVING ") {
+		t.Errorf("expected HAVING on own line, got:\n%s", got)
+	}
+}
+
+func TestFormattingHavingMultiple(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("dept"), nodes.NewAggregateNode(nodes.AggCount, nil))
+	m.Group(users.Col("dept"))
+	m.Having(nodes.NewAggregateNode(nodes.AggCount, nil).Gt(nodes.Literal(5)))
+	m.Having(nodes.NewAggregateNode(nodes.AggCount, nil).Lt(nodes.Literal(100)))
+
+	got := m.Core.Accept(fmtPG())
+	if !strings.Contains(got, "\nHAVING ") {
+		t.Errorf("expected HAVING on own line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\n\tAND ") {
+		t.Errorf("expected AND continuation in HAVING, got:\n%s", got)
+	}
+}
+
+func TestFormattingWindow(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("id"))
+	m.Window(nodes.NewWindowDef("w").Partition(users.Col("dept")))
+
+	got := m.Core.Accept(fmtPG())
+	if !strings.Contains(got, "\nWINDOW ") {
+		t.Errorf("expected WINDOW on own line, got:\n%s", got)
+	}
+	if !strings.Contains(got, `"w" AS`) {
+		t.Errorf("expected window name in SQL, got:\n%s", got)
+	}
+}
+
+func TestFormattingSkipLocked(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("id"))
+	m.Core.Lock = nodes.ForUpdate
+	m.Core.SkipLocked = true
+
+	got := m.Core.Accept(fmtPG())
+	if !strings.Contains(got, "SKIP LOCKED") {
+		t.Errorf("expected SKIP LOCKED in SQL, got:\n%s", got)
+	}
+}
+
+func TestFormattingWithRecursive(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	cteQuery := managers.NewSelectManager(users)
+	cteQuery.Select(users.Col("id"), users.Col("manager_id"))
+
+	hierarchy := nodes.NewTable("hierarchy")
+	main := managers.NewSelectManager(hierarchy)
+	main.Select(hierarchy.Col("id"))
+	main.WithRecursive("hierarchy", cteQuery.Core)
+
+	got := main.Core.Accept(fmtPG())
+	if !strings.Contains(got, "WITH RECURSIVE ") {
+		t.Errorf("expected WITH RECURSIVE in SQL, got:\n%s", got)
+	}
+}
+
+func TestFormattingMultipleCTEs(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	orders := nodes.NewTable("orders")
+
+	cte1 := managers.NewSelectManager(users)
+	cte1.Select(users.Col("id"))
+
+	cte2 := managers.NewSelectManager(orders)
+	cte2.Select(orders.Col("user_id"))
+
+	active := nodes.NewTable("active")
+	main := managers.NewSelectManager(active)
+	main.Select(active.Col("id"))
+	main.With("active", cte1.Core)
+	main.With("ordered", cte2.Core)
+
+	got := main.Core.Accept(fmtPG())
+	if !strings.HasPrefix(got, "WITH ") {
+		t.Errorf("expected WITH prefix, got:\n%s", got)
+	}
+	if !strings.Contains(got, "active") || !strings.Contains(got, "ordered") {
+		t.Errorf("expected both CTEs in SQL, got:\n%s", got)
+	}
+}
