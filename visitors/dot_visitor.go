@@ -220,24 +220,24 @@ func (dv *DotVisitor) ToDot() string {
 	// Non-clustered nodes.
 	for _, n := range dv.nodes {
 		if !clustered[n.id] {
-			sb.WriteString(fmt.Sprintf("  %s [label=\"%s\", fillcolor=\"%s\"];\n",
-				n.id, escapeLabel(n.label), n.color))
+			fmt.Fprintf(&sb, "  %s [label=\"%s\", fillcolor=\"%s\"];\n",
+				n.id, escapeLabel(n.label), n.color)
 		}
 	}
 
 	// Clusters.
 	for i, c := range dv.clusters {
-		sb.WriteString(fmt.Sprintf("  subgraph cluster_%d_%s {\n", i, c.name))
-		sb.WriteString(fmt.Sprintf("    label=\"%s\";\n", c.name))
+		fmt.Fprintf(&sb, "  subgraph cluster_%d_%s {\n", i, c.name)
+		fmt.Fprintf(&sb, "    label=\"%s\";\n", c.name)
 		sb.WriteString("    style=dashed;\n")
-		sb.WriteString(fmt.Sprintf("    color=\"%s\";\n", c.color))
+		fmt.Fprintf(&sb, "    color=\"%s\";\n", c.color)
 		sb.WriteString("    fontname=\"Helvetica\";\n")
 		for _, id := range c.nodeIDs {
 			// Find the node to get its label and color.
 			for _, n := range dv.nodes {
 				if n.id == id {
-					sb.WriteString(fmt.Sprintf("    %s [label=\"%s\", fillcolor=\"%s\"];\n",
-						n.id, escapeLabel(n.label), n.color))
+					fmt.Fprintf(&sb, "    %s [label=\"%s\", fillcolor=\"%s\"];\n",
+						n.id, escapeLabel(n.label), n.color)
 					break
 				}
 			}
@@ -248,9 +248,9 @@ func (dv *DotVisitor) ToDot() string {
 	// Edges.
 	for _, e := range dv.edges {
 		if e.label != "" {
-			sb.WriteString(fmt.Sprintf("  %s -> %s [label=\"%s\"];\n", e.from, e.to, e.label))
+			fmt.Fprintf(&sb, "  %s -> %s [label=\"%s\"];\n", e.from, e.to, e.label)
 		} else {
-			sb.WriteString(fmt.Sprintf("  %s -> %s;\n", e.from, e.to))
+			fmt.Fprintf(&sb, "  %s -> %s;\n", e.from, e.to)
 		}
 	}
 

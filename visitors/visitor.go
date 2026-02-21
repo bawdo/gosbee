@@ -847,7 +847,7 @@ func RenderWindowDef(v nodes.Visitor, w *nodes.WindowDefinition) string {
 }
 
 // renderFrameSQL renders a window frame clause. Package-private; used by
-// RenderWindowDef and baseVisitor.renderFrame.
+// RenderWindowDef.
 func renderFrameSQL(v nodes.Visitor, f *nodes.WindowFrame) string {
 	var sb strings.Builder
 	sb.WriteString(frameTypeSQL[f.Type])
@@ -890,16 +890,6 @@ var frameTypeSQL = [...]string{
 // renderWindowDef renders a window definition as SQL: (PARTITION BY ... ORDER BY ... ROWS/RANGE ...)
 func (b *baseVisitor) renderWindowDef(w *nodes.WindowDefinition) string {
 	return RenderWindowDef(b.outer, w)
-}
-
-// renderFrame renders a window frame as SQL.
-func (b *baseVisitor) renderFrame(f *nodes.WindowFrame) string {
-	return renderFrameSQL(b.outer, f)
-}
-
-// renderBound renders a single frame bound as SQL.
-func (b *baseVisitor) renderBound(fb nodes.FrameBound) string {
-	return renderBoundSQL(b.outer, fb)
 }
 
 func (b *baseVisitor) VisitSelectCore(n *nodes.SelectCore) string {
