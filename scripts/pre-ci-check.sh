@@ -19,6 +19,8 @@ declare -a RESULTS
 declare -a FAILURES
 TOTAL_CHECKS=0
 PASSED_CHECKS=0
+COVERAGE=""
+COVERAGE_DELTA=""
 
 # Helper functions
 print_header() {
@@ -172,9 +174,24 @@ check_coverage() {
     # Mimic CI coverage command
     COVERPKG=$(go list ./... | grep -v testutil | tr '\n' ',' | sed 's/,$//')
 
+    # Load previous coverage if available
+    local PREV_COVERAGE=""
+    local COVERAGE_STORE="coverage/.last-coverage"
+    if [ -f "$COVERAGE_STORE" ]; then
+        PREV_COVERAGE=$(cat "$COVERAGE_STORE")
+    fi
+
     if go test -race -coverprofile=coverage/pre-ci-coverage.out -covermode=atomic -coverpkg="$COVERPKG" ./... 2>&1 | tee coverage/pre-ci-coverage.txt; then
         # Calculate coverage percentage
         COVERAGE=$(go tool cover -func=coverage/pre-ci-coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+
+        # Persist for next run
+        echo "$COVERAGE" > "$COVERAGE_STORE"
+
+        # Compute delta from previous run
+        if [ -n "$PREV_COVERAGE" ]; then
+            COVERAGE_DELTA=$(echo "scale=1; $COVERAGE - $PREV_COVERAGE" | bc)
+        fi
 
         record_result "Coverage Generation" "PASS" ""
         echo -e "${GREEN}✓ Coverage report generated${NC}"
@@ -210,6 +227,28 @@ check_build() {
     fi
 }
 
+# Check 8: Vulnerability scan
+check_vulnerability_scan() {
+    print_header "Check 8: Vulnerability Scan (govulncheck)"
+    print_step "Running govulncheck..."
+
+    if ! command -v govulncheck &> /dev/null; then
+        record_result "Vulnerability Scan" "FAIL" "govulncheck not installed"
+        echo -e "${RED}✗ govulncheck is not installed${NC}"
+        echo -e "${YELLOW}Install: go install golang.org/x/vuln/cmd/govulncheck@latest${NC}"
+        return 1
+    fi
+
+    if govulncheck ./... 2>&1 | tee coverage/pre-ci-vuln.txt; then
+        record_result "Vulnerability Scan" "PASS" ""
+        echo -e "${GREEN}✓ No vulnerabilities found${NC}"
+    else
+        record_result "Vulnerability Scan" "FAIL" "Vulnerabilities detected"
+        echo -e "${RED}✗ Vulnerability scan failed${NC}"
+        return 1
+    fi
+}
+
 # Generate summary report
 generate_report() {
     print_header "CI Readiness Report"
@@ -227,6 +266,21 @@ generate_report() {
     echo -e "  Total checks: $TOTAL_CHECKS"
     echo -e "  Passed: ${GREEN}$PASSED_CHECKS${NC}"
     echo -e "  Failed: ${RED}$((TOTAL_CHECKS - PASSED_CHECKS))${NC}"
+    if [ -n "$COVERAGE" ]; then
+        if [ -n "$COVERAGE_DELTA" ]; then
+            local DELTA_DISPLAY
+            if (( $(echo "$COVERAGE_DELTA > 0" | bc -l) )); then
+                DELTA_DISPLAY="${GREEN}(+${COVERAGE_DELTA}%)${NC}"
+            elif (( $(echo "$COVERAGE_DELTA < 0" | bc -l) )); then
+                DELTA_DISPLAY="${RED}(${COVERAGE_DELTA}%)${NC}"
+            else
+                DELTA_DISPLAY="${NC}(no change)"
+            fi
+            echo -e "  Coverage: ${BLUE}${COVERAGE}%${NC} ${DELTA_DISPLAY}"
+        else
+            echo -e "  Coverage: ${BLUE}${COVERAGE}%${NC} (first run)"
+        fi
+    fi
 
     # Calculate success probability
     SUCCESS_RATE=$(echo "scale=0; ($PASSED_CHECKS * 100) / $TOTAL_CHECKS" | bc)
@@ -253,7 +307,7 @@ generate_report() {
     fi
 
     echo ""
-    echo "Detailed logs saved in: coverage/pre-ci-*.txt"
+    echo "Detailed logs saved in: coverage/pre-ci-*.txt  (checks 1–8)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
@@ -276,6 +330,7 @@ main() {
     check_linting || true
     check_coverage || true
     check_build || true
+    check_vulnerability_scan || true
 
     # Generate final report
     generate_report

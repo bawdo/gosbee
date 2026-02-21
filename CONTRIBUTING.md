@@ -125,14 +125,32 @@ Code contributions might include:
    ./scripts/pre-ci-check.sh
    ```
 
-   This script mimics the GitHub Actions workflow and checks:
-   - Code formatting (gofmt -s)
-   - All tests with race detector
-   - Linting (golangci-lint)
-   - Test coverage
-   - Build success
+   This script mimics the GitHub Actions workflow and runs 8 checks:
 
-   It generates a detailed report showing which checks passed/failed and the probability of CI succeeding.
+   | # | Check | Tool |
+   |---|-------|------|
+   | 1 | Go version compatibility | `go` |
+   | 2 | Dependency download | `go mod download` |
+   | 3 | Code formatting | `gofmt -s` |
+   | 4 | Tests with race detector | `go test -race` |
+   | 5 | Linting | `golangci-lint` |
+   | 6 | Test coverage (target: 80%) | `go test -coverprofile` |
+   | 7 | Build | `go build` |
+   | 8 | Vulnerability scan | `govulncheck` |
+
+   It generates a CI readiness report showing which checks passed/failed, the
+   overall success probability, and coverage trend (delta from the previous run).
+   Detailed logs are saved to `coverage/pre-ci-*.txt`.
+
+   **Dependencies**
+
+   The following tools must be installed for all checks to run:
+
+   | Tool | Install |
+   |------|---------|
+   | `golangci-lint` | `brew install golangci-lint` |
+   | `govulncheck` | `go install golang.org/x/vuln/cmd/govulncheck@latest` |
+   | `bc` | Pre-installed on macOS and Linux |
 
 5. **Run linters:**
    ```bash
