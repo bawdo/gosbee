@@ -2172,7 +2172,19 @@ func TestOPAMaskingExpandsStar(t *testing.T) {
 	s.rebuildQueryWithPlugins()
 
 	sql, _ := s.Exec("sql")
-	testutil.AssertEqual(t, strings.TrimSpace(sql), `SELECT "consignments"."id", "consignments"."account_name", '<MASKED>' AS "billed_total" FROM "consignments";`)
+	// The sql command uses FormattingVisitor, so output is multi-line.
+	got := strings.TrimSpace(sql)
+	wantContains := []string{
+		`"consignments"."id"`,
+		`"consignments"."account_name"`,
+		`'<MASKED>' AS "billed_total"`,
+		`FROM "consignments"`,
+	}
+	for _, want := range wantContains {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected sql output to contain %q, got:\n%s", want, got)
+		}
+	}
 }
 
 // --- opa masks command ---
@@ -4368,5 +4380,60 @@ func TestCompleterIncludesNewFunctions(t *testing.T) {
 		if !found {
 			t.Errorf("expected %q in functionNames", fn)
 		}
+	}
+}
+
+// captureSQL executes commands against a session and captures the sql command output.
+func captureSQL(t *testing.T, engine string, commands ...string) string {
+	t.Helper()
+	sess := NewSession(engine, nil)
+	var buf bytes.Buffer
+	sess.out = &buf
+	for _, cmd := range commands {
+		if err := sess.Execute(cmd); err != nil {
+			t.Fatalf("command %q failed: %v", cmd, err)
+		}
+	}
+	return buf.String()
+}
+
+func TestSQLCommandFormatsMultiColumn(t *testing.T) {
+	t.Parallel()
+	out := captureSQL(t, "postgres",
+		"from users",
+		"select users.id, users.name, users.email",
+		"sql",
+	)
+	// Each column after the first should be on its own line with leading comma.
+	// indentSQL prefixes each line with two spaces, so the continuation pattern is \n  \t,
+	if !strings.Contains(out, "\n  \t,") {
+		t.Errorf("expected leading-comma continuation in sql output, got:\n%s", out)
+	}
+}
+
+func TestSQLCommandFormatsWhere(t *testing.T) {
+	t.Parallel()
+	out := captureSQL(t, "postgres",
+		"from users",
+		"select users.id",
+		"where users.active = true",
+		"where users.age > 18",
+		"sql",
+	)
+	// indentSQL prefixes each line with two spaces, so the AND continuation is \n  \tAND
+	if !strings.Contains(out, "\n  \tAND ") {
+		t.Errorf("expected AND continuation in WHERE, got:\n%s", out)
+	}
+}
+
+func TestGenerateSQLStillReturnsFlatOutput(t *testing.T) {
+	t.Parallel()
+	// GenerateSQL must remain flat (used by exec and tests)
+	flat := execSQL(t, "postgres",
+		"from users",
+		"select users.id, users.name",
+	)
+	if strings.Contains(flat, "\n") {
+		t.Errorf("GenerateSQL should return flat SQL, got:\n%s", flat)
 	}
 }

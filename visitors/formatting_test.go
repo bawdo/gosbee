@@ -252,3 +252,186 @@ func TestFormattingForUpdate(t *testing.T) {
 		t.Errorf("expected FOR UPDATE on own line, got:\n%s", got)
 	}
 }
+
+func TestFormattingCTE(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	active := managers.NewSelectManager(users)
+	active.Select(users.Col("id"))
+	active.Where(users.Col("active").Eq(nodes.Literal(true)))
+
+	cteTable := nodes.NewTable("active_users")
+	main := managers.NewSelectManager(cteTable)
+	main.Select(cteTable.Col("id"))
+	main.With("active_users", active.Core)
+
+	got := main.Core.Accept(fmtPG())
+	if !strings.HasPrefix(got, "WITH ") {
+		t.Errorf("expected WITH prefix, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\nSELECT ") {
+		t.Errorf("expected SELECT on own line after WITH, got:\n%s", got)
+	}
+}
+
+func TestFormattingFullQuery(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("id"), users.Col("name"), users.Col("email"))
+	m.Join(posts, nodes.InnerJoin).On(posts.Col("user_id").Eq(users.Col("id")))
+	m.Where(users.Col("active").Eq(nodes.Literal(true)))
+	m.Where(users.Col("age").Gt(nodes.Literal(18)))
+	m.Group(users.Col("id"), users.Col("name"))
+	m.Order(
+		&nodes.OrderingNode{Expr: users.Col("name"), Direction: nodes.Asc},
+		&nodes.OrderingNode{Expr: users.Col("id"), Direction: nodes.Desc},
+	)
+	m.Limit(10)
+	m.Offset(5)
+
+	want := strings.Join([]string{
+		`SELECT "users"."id"`,
+		`	,"users"."name"`,
+		`	,"users"."email"`,
+		`FROM "users"`,
+		`INNER JOIN "posts" ON "posts"."user_id" = "users"."id"`,
+		`WHERE "users"."active" = TRUE`,
+		`	AND "users"."age" > 18`,
+		`GROUP BY "users"."id"`,
+		`	,"users"."name"`,
+		`ORDER BY "users"."name" ASC`,
+		`	,"users"."id" DESC`,
+		`LIMIT 10`,
+		`OFFSET 5`,
+	}, "\n")
+
+	testutil.AssertSQL(t, fmtPG(), m.Core, want)
+}
+
+func TestFormattingSetOperation(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+
+	left := managers.NewSelectManager(users)
+	left.Select(users.Col("id"))
+	left.Where(users.Col("active").Eq(nodes.Literal(true)))
+
+	right := managers.NewSelectManager(users)
+	right.Select(users.Col("id"))
+	right.Where(users.Col("role").Eq(nodes.Literal("admin")))
+
+	op := &nodes.SetOperationNode{
+		Left:  left.Core,
+		Right: right.Core,
+		Type:  nodes.UnionAll,
+	}
+
+	got := op.Accept(fmtPG())
+	if !strings.Contains(got, "UNION ALL") {
+		t.Errorf("expected UNION ALL, got:\n%s", got)
+	}
+	// Each leg should be wrapped in parens on separate lines
+	if !strings.HasPrefix(got, "(") {
+		t.Errorf("expected output to start with (, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\nUNION ALL\n") {
+		t.Errorf("expected UNION ALL on own line, got:\n%s", got)
+	}
+}
+
+func TestFormattingDistinct(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users)
+	m.Select(users.Col("name"))
+	m.Distinct()
+
+	got := m.Core.Accept(fmtPG())
+	if !strings.Contains(got, "SELECT DISTINCT ") {
+		t.Errorf("expected SELECT DISTINCT, got:\n%s", got)
+	}
+}
+
+func TestFormattingInsert(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewInsertManager(users)
+	m.Columns(users.Col("name"), users.Col("email"))
+	m.Values("alice", "alice@example.com")
+	m.Returning(users.Col("id"))
+
+	got := m.Statement.Accept(fmtPG())
+	if !strings.HasPrefix(got, "INSERT INTO") {
+		t.Errorf("expected INSERT INTO prefix, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\nVALUES") {
+		t.Errorf("expected VALUES on own line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\nRETURNING") {
+		t.Errorf("expected RETURNING on own line, got:\n%s", got)
+	}
+}
+
+func TestFormattingInsertColumnsAreUnqualified(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewInsertManager(users)
+	m.Columns(users.Col("name"), users.Col("email"))
+	m.Values("alice", "alice@example.com")
+
+	got := m.Statement.Accept(fmtPG())
+	// Column list must not include table qualifier in the column list position
+	valuesIdx := strings.Index(got, "VALUES")
+	nameIdx := strings.Index(got, `"users"."name"`)
+	if nameIdx >= 0 && (valuesIdx < 0 || nameIdx < valuesIdx) {
+		t.Errorf("INSERT column list must not include table qualifier, got:\n%s", got)
+	}
+	// Should have bare quoted names in column list
+	if !strings.Contains(got, `("name", "email")`) {
+		t.Errorf("expected bare column names in INSERT column list, got:\n%s", got)
+	}
+}
+
+func TestFormattingUpdate(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewUpdateManager(users)
+	m.Set(users.Col("name"), "alice")
+	m.Set(users.Col("email"), "alice@example.com")
+	m.Where(users.Col("id").Eq(nodes.Literal(1)))
+
+	got := m.Statement.Accept(fmtPG())
+	if !strings.HasPrefix(got, "UPDATE") {
+		t.Errorf("expected UPDATE prefix, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\nSET ") {
+		t.Errorf("expected SET on own line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\n\t,") {
+		t.Errorf("expected leading-comma in SET, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\nWHERE ") {
+		t.Errorf("expected WHERE on own line, got:\n%s", got)
+	}
+}
+
+func TestFormattingDelete(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := managers.NewDeleteManager(users)
+	m.Where(users.Col("id").Eq(nodes.Literal(1)))
+	m.Returning(users.Col("id"))
+
+	got := m.Statement.Accept(fmtPG())
+	if !strings.HasPrefix(got, "DELETE FROM") {
+		t.Errorf("expected DELETE FROM prefix, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\nWHERE ") {
+		t.Errorf("expected WHERE on own line, got:\n%s", got)
+	}
+	if !strings.Contains(got, "\nRETURNING") {
+		t.Errorf("expected RETURNING on own line, got:\n%s", got)
+	}
+}

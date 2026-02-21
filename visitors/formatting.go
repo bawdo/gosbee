@@ -7,10 +7,9 @@ import (
 )
 
 // FormattingVisitor wraps any nodes.Visitor (dialect visitor) and produces
-// human-readable multi-line SQL. VisitSelectCore is a real implementation;
-// VisitSetOperation, VisitInsertStatement, VisitUpdateStatement, and
-// VisitDeleteStatement are still temporary stubs that delegate to the inner
-// visitor and will be replaced in future tasks.
+// human-readable multi-line SQL. VisitSelectCore, VisitSetOperation,
+// VisitInsertStatement, VisitUpdateStatement, and VisitDeleteStatement are
+// real implementations that render each major clause on its own line.
 type FormattingVisitor struct {
 	inner nodes.Visitor
 }
@@ -173,7 +172,7 @@ func (f *FormattingVisitor) VisitCasted(node *nodes.CastedNode) string {
 	return f.inner.VisitCasted(node)
 }
 
-// --- Structural override stubs (temporary — will be replaced in later tasks) ---
+// --- Structural overrides ---
 
 // VisitSelectCore renders a SELECT statement in multi-line formatted style.
 // Projections use leading-comma continuation; all major clauses begin on a
@@ -347,26 +346,149 @@ func (f *FormattingVisitor) VisitSelectCore(node *nodes.SelectCore) string {
 	return sb.String()
 }
 
-// VisitSetOperation — stub, will be replaced in Task 8.
-// When implementing: call child nodes via node.Accept(f), not node.Accept(f.inner).
-func (f *FormattingVisitor) VisitSetOperation(node *nodes.SetOperationNode) string {
-	return f.inner.VisitSetOperation(node) // temporary — replaced in Task 8
+// VisitSetOperation renders each leg of a set operation in parentheses with
+// the operator keyword on its own line between them.
+func (f *FormattingVisitor) VisitSetOperation(n *nodes.SetOperationNode) string {
+	var sb strings.Builder
+	sb.WriteString("(\n")
+	sb.WriteString(n.Left.Accept(f))
+	sb.WriteString("\n)\n")
+	sb.WriteString(setOpTypeSQL[n.Type])
+	sb.WriteString("\n(\n")
+	sb.WriteString(n.Right.Accept(f))
+	sb.WriteString("\n)")
+	return sb.String()
 }
 
-// VisitInsertStatement — stub, will be replaced in Task 9.
-// When implementing: call child nodes via node.Accept(f), not node.Accept(f.inner).
-func (f *FormattingVisitor) VisitInsertStatement(node *nodes.InsertStatement) string {
-	return f.inner.VisitInsertStatement(node) // temporary — replaced in Task 9
+// VisitInsertStatement renders INSERT with each major clause on its own line.
+func (f *FormattingVisitor) VisitInsertStatement(n *nodes.InsertStatement) string {
+	var sb strings.Builder
+	sb.WriteString("INSERT INTO ")
+	sb.WriteString(n.Into.Accept(f.inner))
+
+	if len(n.Columns) > 0 {
+		sb.WriteString(" (")
+		for i, c := range n.Columns {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			attr := c.(*nodes.Attribute)
+			sb.WriteString(nodes.NewTable(attr.Name).Accept(f.inner))
+		}
+		sb.WriteString(")")
+	}
+
+	if n.Select != nil {
+		sb.WriteString("\n")
+		sb.WriteString(n.Select.Accept(f))
+	} else if len(n.Values) > 0 {
+		sb.WriteString("\nVALUES ")
+		rows := make([]string, len(n.Values))
+		for i, row := range n.Values {
+			vals := make([]string, len(row))
+			for j, v := range row {
+				vals[j] = v.Accept(f.inner)
+			}
+			rows[i] = "(" + strings.Join(vals, ", ") + ")"
+		}
+		sb.WriteString(strings.Join(rows, ", "))
+	}
+
+	if n.OnConflict != nil {
+		sb.WriteString("\n")
+		sb.WriteString(n.OnConflict.Accept(f.inner))
+	}
+
+	if len(n.Returning) > 0 {
+		sb.WriteString("\nRETURNING ")
+		for i, r := range n.Returning {
+			if i == 0 {
+				sb.WriteString(r.Accept(f.inner))
+			} else {
+				sb.WriteString("\n\t,")
+				sb.WriteString(r.Accept(f.inner))
+			}
+		}
+	}
+
+	return sb.String()
 }
 
-// VisitUpdateStatement — stub, will be replaced in Task 9.
-// When implementing: call child nodes via node.Accept(f), not node.Accept(f.inner).
-func (f *FormattingVisitor) VisitUpdateStatement(node *nodes.UpdateStatement) string {
-	return f.inner.VisitUpdateStatement(node) // temporary — replaced in Task 9
+// VisitUpdateStatement renders UPDATE with each clause on its own line and
+// leading-comma style for multiple SET assignments.
+func (f *FormattingVisitor) VisitUpdateStatement(n *nodes.UpdateStatement) string {
+	var sb strings.Builder
+	sb.WriteString("UPDATE ")
+	sb.WriteString(n.Table.Accept(f.inner))
+
+	if len(n.Assignments) > 0 {
+		sb.WriteString("\nSET ")
+		for i, a := range n.Assignments {
+			if i == 0 {
+				sb.WriteString(a.Accept(f.inner))
+			} else {
+				sb.WriteString("\n\t,")
+				sb.WriteString(a.Accept(f.inner))
+			}
+		}
+	}
+
+	if len(n.Wheres) > 0 {
+		sb.WriteString("\nWHERE ")
+		for i, w := range n.Wheres {
+			if i == 0 {
+				sb.WriteString(w.Accept(f.inner))
+			} else {
+				sb.WriteString("\n\tAND ")
+				sb.WriteString(w.Accept(f.inner))
+			}
+		}
+	}
+
+	if len(n.Returning) > 0 {
+		sb.WriteString("\nRETURNING ")
+		for i, r := range n.Returning {
+			if i == 0 {
+				sb.WriteString(r.Accept(f.inner))
+			} else {
+				sb.WriteString("\n\t,")
+				sb.WriteString(r.Accept(f.inner))
+			}
+		}
+	}
+
+	return sb.String()
 }
 
-// VisitDeleteStatement — stub, will be replaced in Task 9.
-// When implementing: call child nodes via node.Accept(f), not node.Accept(f.inner).
-func (f *FormattingVisitor) VisitDeleteStatement(node *nodes.DeleteStatement) string {
-	return f.inner.VisitDeleteStatement(node) // temporary — replaced in Task 9
+// VisitDeleteStatement renders DELETE FROM with each clause on its own line.
+func (f *FormattingVisitor) VisitDeleteStatement(n *nodes.DeleteStatement) string {
+	var sb strings.Builder
+	sb.WriteString("DELETE FROM ")
+	sb.WriteString(n.From.Accept(f.inner))
+
+	if len(n.Wheres) > 0 {
+		sb.WriteString("\nWHERE ")
+		for i, w := range n.Wheres {
+			if i == 0 {
+				sb.WriteString(w.Accept(f.inner))
+			} else {
+				sb.WriteString("\n\tAND ")
+				sb.WriteString(w.Accept(f.inner))
+			}
+		}
+	}
+
+	if len(n.Returning) > 0 {
+		sb.WriteString("\nRETURNING ")
+		for i, r := range n.Returning {
+			if i == 0 {
+				sb.WriteString(r.Accept(f.inner))
+			} else {
+				sb.WriteString("\n\t,")
+				sb.WriteString(r.Accept(f.inner))
+			}
+		}
+	}
+
+	return sb.String()
 }
