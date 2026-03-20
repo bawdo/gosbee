@@ -384,8 +384,7 @@ this approach to SQL query building.
 ## Project Status
 
 gosbee has achieved **100% feature parity** with Ruby Arel's core SQL features.
-The library is under active development with ~1096 tests covering all major
-functionality.
+The library has ~1096 tests covering all major functionality.
 
 Current focus areas:
 - Performance optimisation
