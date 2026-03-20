@@ -2,6 +2,7 @@ package visitors
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/bawdo/gosbee/nodes"
@@ -200,12 +201,106 @@ func (dv *DotVisitor) flushPluginClusters(clusters map[string]*struct {
 	}
 }
 
+// clauseOrder defines the SQL reading order for clause groups emanating from
+// a root statement node. It covers all statement types; only clause groups
+// present in the root's edges participate.
+var clauseOrder = map[string]int{
+	"CTE":         0,
+	"COMMENT":     1,
+	"HINT":        2,
+	"DISTINCT":    3,
+	"DISTINCT ON": 4,
+	"INTO":        5,
+	"TABLE":       6,
+	"SELECT":      7,
+	"COLUMN":      8,
+	"FROM":        9,
+	"JOIN":        10,
+	"WHERE":       11,
+	"SET":         12,
+	"VALUES":      13,
+	"ON_CONFLICT": 14,
+	"GROUP":       15,
+	"HAVING":      16,
+	"WINDOW":      17,
+	"ORDER":       18,
+	"LIMIT":       19,
+	"OFFSET":      20,
+	"LOCK":        21,
+	"RETURNING":   22,
+	"LEFT":        23,
+	"RIGHT":       24,
+	"SUBQUERY":    25,
+	"QUERY":       26,
+}
+
+// clausePrefix extracts the clause name from an edge label by stripping
+// any index suffix (e.g. "SELECT[0]" → "SELECT", "VALUES[0][0]" → "VALUES").
+func clausePrefix(label string) string {
+	if i := strings.Index(label, "["); i >= 0 {
+		return label[:i]
+	}
+	return label
+}
+
+// clauseChainEdges returns invisible edges that chain the first node of each
+// clause group in SQL reading order. This hints Graphviz to lay out clause
+// subtrees left-to-right when using rankdir=LR.
+func (dv *DotVisitor) clauseChainEdges() []dotEdge {
+	if len(dv.nodes) == 0 {
+		return nil
+	}
+	rootID := dv.nodes[0].id
+
+	// Collect the first target node for each clause prefix from root edges.
+	type clauseAnchor struct {
+		prefix string
+		nodeID string
+	}
+	seen := make(map[string]bool)
+	var anchors []clauseAnchor
+	for _, e := range dv.edges {
+		if e.from != rootID {
+			continue
+		}
+		prefix := clausePrefix(e.label)
+		if seen[prefix] {
+			continue
+		}
+		seen[prefix] = true
+		anchors = append(anchors, clauseAnchor{prefix: prefix, nodeID: e.to})
+	}
+
+	// Sort anchors by SQL clause order.
+	sort.Slice(anchors, func(i, j int) bool {
+		oi, ok := clauseOrder[anchors[i].prefix]
+		if !ok {
+			oi = 100
+		}
+		oj, ok := clauseOrder[anchors[j].prefix]
+		if !ok {
+			oj = 100
+		}
+		return oi < oj
+	})
+
+	// Chain consecutive anchors with invisible edges.
+	var chain []dotEdge
+	for i := 0; i+1 < len(anchors); i++ {
+		chain = append(chain, dotEdge{
+			from: anchors[i].nodeID,
+			to:   anchors[i+1].nodeID,
+		})
+	}
+	return chain
+}
+
 // ToDot generates the complete DOT graph text.
 func (dv *DotVisitor) ToDot() string {
 	var sb strings.Builder
 
 	sb.WriteString("digraph AST {\n")
-	sb.WriteString("  rankdir=TB;\n")
+	sb.WriteString("  rankdir=LR;\n")
 	sb.WriteString("  node [shape=box, style=filled, fontname=\"Helvetica\"];\n")
 	sb.WriteString("  edge [fontname=\"Helvetica\", fontsize=10];\n")
 
@@ -252,6 +347,11 @@ func (dv *DotVisitor) ToDot() string {
 		} else {
 			fmt.Fprintf(&sb, "  %s -> %s;\n", e.from, e.to)
 		}
+	}
+
+	// Invisible clause-chain edges to enforce SQL reading order in LR layout.
+	for _, e := range dv.clauseChainEdges() {
+		fmt.Fprintf(&sb, "  %s -> %s [style=invis];\n", e.from, e.to)
 	}
 
 	sb.WriteString("}\n")
