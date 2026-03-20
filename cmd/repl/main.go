@@ -170,6 +170,23 @@ func prompt(rl *readline.Instance, label, defaultVal string) string {
 	return val
 }
 
+// promptPassword reads a password with input masked as asterisks.
+func promptPassword(rl *readline.Instance, label string) string {
+	if rl == nil {
+		return ""
+	}
+	cfg := rl.GeneratePasswordConfig()
+	cfg.Prompt = fmt.Sprintf("[Config]   %s: ", label)
+	cfg.EnableMask = true
+	cfg.MaskRune = '*'
+	defer rl.SetPrompt("gosbee> ")
+	line, err := rl.ReadLineWithConfig(cfg)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(line)
+}
+
 func buildSQLiteDSN(rl *readline.Instance) string {
 	fmt.Println("[Config] SQLite connection setup:")
 	path := prompt(rl, "Database path", ":memory:")
@@ -185,7 +202,7 @@ func buildPostgresDSN(rl *readline.Instance) string {
 	}
 
 	dbUser := prompt(rl, "User", defaultUser)
-	dbPass := prompt(rl, "Password", "")
+	dbPass := promptPassword(rl, "Password")
 	host := prompt(rl, "Host", "localhost")
 	port := prompt(rl, "Port", "5432")
 	dbName := prompt(rl, "Database", dbUser)
@@ -211,7 +228,7 @@ func buildMySQLDSN(rl *readline.Instance) string {
 	fmt.Println("[Config] MySQL connection setup:")
 
 	dbUser := prompt(rl, "User", "root")
-	dbPass := prompt(rl, "Password", "")
+	dbPass := promptPassword(rl, "Password")
 	host := prompt(rl, "Host", "localhost")
 	port := prompt(rl, "Port", "3306")
 	dbName := prompt(rl, "Database", "")
