@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -18,7 +19,10 @@ import (
 //
 //	FAIL: SECURITY: NewSqlLiteral accepted a plain string variable — ...
 func TestNewSqlLiteralRejectsPlainString(t *testing.T) {
-	cmd := exec.Command("go", "build", "./testdata/string_to_sql_literal")
+	// Redirect binary output to a temp dir so no artifact is left in the source tree
+	// regardless of whether the build succeeds or fails.
+	tmpBin := filepath.Join(t.TempDir(), "out")
+	cmd := exec.Command("go", "build", "-o", tmpBin, "./testdata/string_to_sql_literal")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatal(
