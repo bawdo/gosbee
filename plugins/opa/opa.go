@@ -219,7 +219,7 @@ func (o *OPA) applyMasks(core *nodes.SelectCore, masks map[string]map[string]Mas
 func maskLiteral(value, colName string) *nodes.SqlLiteral {
 	escaped := strings.ReplaceAll(value, "'", "''")
 	raw := fmt.Sprintf("'%s' AS \"%s\"", escaped, strings.ReplaceAll(colName, "\"", "\"\""))
-	return nodes.NewSqlLiteral(raw)
+	return nodes.NewSqlLiteral(nodes.RawSQL(raw))
 }
 
 // tableNameFromRelation extracts the underlying table name from a relation node.

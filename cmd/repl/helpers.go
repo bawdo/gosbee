@@ -224,7 +224,7 @@ func nodeSummary(n nodes.Node) string {
 	case *nodes.LiteralNode:
 		return fmt.Sprintf("%v", v.Value)
 	case *nodes.SqlLiteral:
-		return v.Raw
+		return string(v.Raw)
 	case *nodes.SelectCore:
 		return "(subquery)"
 	case *nodes.NamedFunctionNode:

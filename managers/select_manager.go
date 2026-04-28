@@ -102,8 +102,10 @@ func (m *SelectManager) LateralJoin(table nodes.Node, joinTypes ...nodes.JoinTyp
 // StringJoin adds a raw SQL join fragment.
 //
 // SECURITY: The raw string is injected verbatim into SQL output.
-// Never pass user-controlled input to this method.
-func (m *SelectManager) StringJoin(raw string) *SelectManager {
+// Never pass user-controlled input to this method. The RawSQL type
+// enforces this at compile time — use nodes.RawSQL("...") for
+// developer-controlled fragments only.
+func (m *SelectManager) StringJoin(raw nodes.RawSQL) *SelectManager {
 	join := &nodes.JoinNode{
 		Left:  m.Core.From,
 		Right: &nodes.SqlLiteral{Raw: raw},

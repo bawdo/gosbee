@@ -417,7 +417,7 @@ func (dv *DotVisitor) VisitStar(n *nodes.StarNode) string {
 }
 
 func (dv *DotVisitor) VisitSqlLiteral(n *nodes.SqlLiteral) string {
-	id := dv.addNode("SqlLiteral\\n"+n.Raw, colorLiteral)
+	id := dv.addNode("SqlLiteral\\n"+string(n.Raw), colorLiteral)
 	dv.connectToParent(id)
 	return id
 }

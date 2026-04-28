@@ -674,7 +674,7 @@ func (s *Session) cmdRawJoin(args string) error {
 	if raw == "" {
 		return errors.New("usage: raw join <SQL text>")
 	}
-	s.query.StringJoin(raw)
+	s.query.StringJoin(nodes.RawSQL(raw))
 	_, _ = fmt.Fprintln(s.out, "  String join added")
 	return nil
 }

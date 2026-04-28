@@ -14,7 +14,7 @@ func (sv StubVisitor) VisitTableAlias(n *nodes.TableAlias) string { return n.Ali
 func (sv StubVisitor) VisitAttribute(n *nodes.Attribute) string   { return "attr" }
 func (sv StubVisitor) VisitLiteral(n *nodes.LiteralNode) string   { return "lit" }
 func (sv StubVisitor) VisitStar(n *nodes.StarNode) string         { return "*" }
-func (sv StubVisitor) VisitSqlLiteral(n *nodes.SqlLiteral) string { return n.Raw }
+func (sv StubVisitor) VisitSqlLiteral(n *nodes.SqlLiteral) string { return string(n.Raw) }
 func (sv StubVisitor) VisitComparison(n *nodes.ComparisonNode) string {
 	return n.Left.Accept(sv) + "=?" + n.Right.Accept(sv)
 }

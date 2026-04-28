@@ -501,7 +501,7 @@ func (sv stubVisitor) VisitTableAlias(n *TableAlias) string { return n.AliasName
 func (sv stubVisitor) VisitAttribute(*Attribute) string     { return "attr" }
 func (sv stubVisitor) VisitLiteral(*LiteralNode) string     { return "lit" }
 func (sv stubVisitor) VisitStar(*StarNode) string           { return "*" }
-func (sv stubVisitor) VisitSqlLiteral(n *SqlLiteral) string { return n.Raw }
+func (sv stubVisitor) VisitSqlLiteral(n *SqlLiteral) string { return string(n.Raw) }
 func (sv stubVisitor) VisitComparison(n *ComparisonNode) string {
 	if n.Left == nil || n.Right == nil {
 		return "comparison"

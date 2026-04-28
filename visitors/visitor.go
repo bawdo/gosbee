@@ -241,7 +241,7 @@ func (b *baseVisitor) VisitSqlLiteral(n *nodes.SqlLiteral) string {
 			b.paramIndex++
 		}
 	}
-	return n.Raw
+	return string(n.Raw)
 }
 
 func (b *baseVisitor) VisitComparison(n *nodes.ComparisonNode) string {
