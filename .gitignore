@@ -1,0 +1,11 @@
+# Build artefacts
+/bin/
+*.test
+*.out
+
+# OS junk
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
