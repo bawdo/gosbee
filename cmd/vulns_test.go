@@ -181,7 +181,7 @@ func TestVulnsSummarySortsBySeverityByDefault(t *testing.T) {
 	highIdx := strings.Index(out, "CVE-high")
 	medIdx := strings.Index(out, "CVE-med")
 	lowIdx := strings.Index(out, "CVE-low")
-	if !(critIdx < highIdx && highIdx < medIdx && medIdx < lowIdx) {
+	if critIdx >= highIdx || highIdx >= medIdx || medIdx >= lowIdx {
 		t.Fatalf("expected severity ordering Critical < High < Medium < Low, got order:\n%s", out)
 	}
 }
