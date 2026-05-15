@@ -77,7 +77,7 @@ func runVulnsList(ctx context.Context, client iruClient, w io.Writer, opts vulns
 			limit = iru.DefaultLimit
 		}
 		if limit > iru.DefaultLimit {
-			fmt.Fprintf(w, "warning: limit clamped to %d (Iru server-side max)\n", iru.DefaultLimit)
+			_, _ = fmt.Fprintf(w, "warning: limit clamped to %d (Iru server-side max)\n", iru.DefaultLimit)
 			limit = iru.DefaultLimit
 		}
 		page := opts.Page

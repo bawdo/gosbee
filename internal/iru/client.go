@@ -78,7 +78,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return decodeAPIError(resp)

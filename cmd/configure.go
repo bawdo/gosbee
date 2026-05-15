@@ -25,7 +25,7 @@ type configureOpts struct {
 	Stderr        io.Writer
 	StoreToken    func(account, token string) error
 	ReadTokenLine func(r *bufio.Reader) (string, error) // masked read; injected for tests
-	VerifyBaseURL string                                 // override for tests, blank in production
+	VerifyBaseURL string                                // override for tests, blank in production
 }
 
 func newConfigureCmd() *cobra.Command {
@@ -58,13 +58,13 @@ func newConfigureCmd() *cobra.Command {
 func runConfigure(ctx context.Context, o configureOpts) error {
 	r := bufio.NewReader(o.Stdin)
 
-	fmt.Fprint(o.Stdout, "Tenant subdomain (lowercase, digits, dashes): ")
+	_, _ = fmt.Fprint(o.Stdout, "Tenant subdomain (lowercase, digits, dashes): ")
 	subdomain, err := readLine(r)
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprint(o.Stdout, "Region [us/eu]: ")
+	_, _ = fmt.Fprint(o.Stdout, "Region [us/eu]: ")
 	region, err := readLine(r)
 	if err != nil {
 		return err
@@ -76,12 +76,12 @@ func runConfigure(ctx context.Context, o configureOpts) error {
 		return err
 	}
 
-	fmt.Fprint(o.Stdout, "API token: ")
+	_, _ = fmt.Fprint(o.Stdout, "API token: ")
 	token, err := o.ReadTokenLine(r)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(o.Stdout)
+	_, _ = fmt.Fprintln(o.Stdout)
 	if strings.TrimSpace(token) == "" {
 		return errors.New("token must not be empty")
 	}
@@ -106,13 +106,13 @@ func runConfigure(ctx context.Context, o configureOpts) error {
 	c := iru.NewClient(verifyURL, token)
 	if _, err := c.ListDevicesPage(ctx, iru.DeviceFilters{}, 1, 0); err != nil {
 		if errors.Is(err, iru.ErrUnauthorized) || errors.Is(err, iru.ErrForbidden) {
-			fmt.Fprintln(o.Stderr, "Warning: token did not authenticate against Iru. Config saved; re-run configure after rotating the token.")
+			_, _ = fmt.Fprintln(o.Stderr, "Warning: token did not authenticate against Iru. Config saved; re-run configure after rotating the token.")
 			return nil
 		}
-		fmt.Fprintf(o.Stderr, "Warning: verification request failed: %v\n", err)
+		_, _ = fmt.Fprintf(o.Stderr, "Warning: verification request failed: %v\n", err)
 		return nil
 	}
-	fmt.Fprintln(o.Stdout, "Configured. Token verified.")
+	_, _ = fmt.Fprintln(o.Stdout, "Configured. Token verified.")
 	return nil
 }
 

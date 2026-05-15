@@ -13,7 +13,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print the jellyfish version",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fmt.Fprintf(cmd.OutOrStdout(), "jellyfish %s\n", version.Version)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "jellyfish %s\n", version.Version)
 			return nil
 		},
 	}

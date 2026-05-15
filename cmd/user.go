@@ -123,7 +123,7 @@ func renderUserBundle(w io.Writer, format string, b UserBundle) error {
 }
 
 func renderUserBundleTable(w io.Writer, b UserBundle) error {
-	fmt.Fprintln(w, "USER")
+	_, _ = fmt.Fprintln(w, "USER")
 	userTbl := output.Table().WithColumns([]output.Column{
 		{Header: "ID", Extract: func(v any) string { return v.(iru.User).ID }},
 		{Header: "NAME", Extract: func(v any) string { return v.(iru.User).Name }},
@@ -133,7 +133,7 @@ func renderUserBundleTable(w io.Writer, b UserBundle) error {
 		return err
 	}
 
-	fmt.Fprintln(w, "\nDEVICES")
+	_, _ = fmt.Fprintln(w, "\nDEVICES")
 	devices := make([]iru.Device, len(b.Devices))
 	for i := range b.Devices {
 		devices[i] = b.Devices[i].Device
@@ -150,9 +150,9 @@ func renderUserBundleTable(w io.Writer, b UserBundle) error {
 	}
 
 	for _, d := range b.Devices {
-		fmt.Fprintf(w, "\nDETECTIONS for %s (%s)\n", d.Device.DeviceName, d.Device.SerialNumber)
+		_, _ = fmt.Fprintf(w, "\nDETECTIONS for %s (%s)\n", d.Device.DeviceName, d.Device.SerialNumber)
 		if len(d.Detections) == 0 {
-			fmt.Fprintln(w, "  (none)")
+			_, _ = fmt.Fprintln(w, "  (none)")
 			continue
 		}
 		detTbl := output.Table().WithColumns(detectionColumns())

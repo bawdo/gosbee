@@ -32,6 +32,7 @@ func DefaultPath() (string, error) {
 
 // Load reads and parses the YAML file at path.
 func Load(path string) (File, error) {
+	// #nosec G304 - path is controlled by user via --config flag or default location
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
