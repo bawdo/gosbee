@@ -17,4 +17,7 @@ type iruClient interface {
 	ListDetections(ctx context.Context, f iru.DetectionFilters) ([]iru.Detection, error)
 	ListDetectionsPage(ctx context.Context, f iru.DetectionFilters, limit int, cursor string) ([]iru.Detection, string, error)
 	ListDetectionsStream(ctx context.Context, f iru.DetectionFilters, cb func(page []iru.Detection) error) error
+	ListVulnerabilities(ctx context.Context, f iru.VulnerabilityFilters) ([]iru.Vulnerability, error)
+	ListVulnerabilitiesStream(ctx context.Context, f iru.VulnerabilityFilters, cb func(page []iru.Vulnerability) error) error
+	ListVulnerabilitiesPage(ctx context.Context, f iru.VulnerabilityFilters, page, size int) ([]iru.Vulnerability, int, error)
 }

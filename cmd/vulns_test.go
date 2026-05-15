@@ -12,10 +12,11 @@ import (
 )
 
 type fakeClient struct {
-	detections []iru.Detection
-	devices    []iru.Device
-	users      []iru.User
-	bySerial   func(string) (iru.Device, error)
+	detections      []iru.Detection
+	devices         []iru.Device
+	users           []iru.User
+	bySerial        func(string) (iru.Device, error)
+	vulnerabilities []iru.Vulnerability
 }
 
 func (f *fakeClient) ListDetections(ctx context.Context, _ iru.DetectionFilters) ([]iru.Detection, error) {
@@ -57,6 +58,18 @@ func (f *fakeClient) FindUserByEmail(_ context.Context, e string) (iru.User, err
 		}
 	}
 	return iru.User{}, iru.ErrNotFound
+}
+func (f *fakeClient) ListVulnerabilities(_ context.Context, _ iru.VulnerabilityFilters) ([]iru.Vulnerability, error) {
+	return f.vulnerabilities, nil
+}
+func (f *fakeClient) ListVulnerabilitiesStream(_ context.Context, _ iru.VulnerabilityFilters, cb func(page []iru.Vulnerability) error) error {
+	if len(f.vulnerabilities) == 0 {
+		return nil
+	}
+	return cb(f.vulnerabilities)
+}
+func (f *fakeClient) ListVulnerabilitiesPage(_ context.Context, _ iru.VulnerabilityFilters, _, _ int) ([]iru.Vulnerability, int, error) {
+	return f.vulnerabilities, len(f.vulnerabilities), nil
 }
 
 func TestVulnsListJSON(t *testing.T) {
@@ -124,5 +137,73 @@ func TestVulnsListRejectsMutuallyExclusiveFlags(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for both flags")
+	}
+}
+
+func TestVulnsSummaryFiltersByStatus(t *testing.T) {
+	client := &fakeClient{vulnerabilities: []iru.Vulnerability{
+		{CVEID: "CVE-A", Status: "Active", Severity: "High", CVSSScore: 8.0},
+		{CVEID: "CVE-B", Status: "Remediated", Severity: "High", CVSSScore: 6.0},
+		{CVEID: "CVE-C", Status: "Active", Severity: "Low", CVSSScore: 3.0},
+	}}
+	buf := &bytes.Buffer{}
+	err := runVulnsSummary(context.Background(), client, buf, io.Discard, vulnsSummaryOpts{
+		Output: "json", Status: "active", NoCache: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "CVE-A") || !strings.Contains(out, "CVE-C") {
+		t.Fatalf("expected Active records in output: %s", out)
+	}
+	if strings.Contains(out, "CVE-B") {
+		t.Fatalf("Remediated record leaked: %s", out)
+	}
+}
+
+func TestVulnsSummarySortsBySeverityByDefault(t *testing.T) {
+	client := &fakeClient{vulnerabilities: []iru.Vulnerability{
+		{CVEID: "CVE-low", Severity: "Low", CVSSScore: 3.0},
+		{CVEID: "CVE-crit", Severity: "Critical", CVSSScore: 9.5},
+		{CVEID: "CVE-med", Severity: "Medium", CVSSScore: 5.0},
+		{CVEID: "CVE-high", Severity: "High", CVSSScore: 8.0},
+	}}
+	buf := &bytes.Buffer{}
+	err := runVulnsSummary(context.Background(), client, buf, io.Discard, vulnsSummaryOpts{
+		Output: "json", NoCache: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	critIdx := strings.Index(out, "CVE-crit")
+	highIdx := strings.Index(out, "CVE-high")
+	medIdx := strings.Index(out, "CVE-med")
+	lowIdx := strings.Index(out, "CVE-low")
+	if !(critIdx < highIdx && highIdx < medIdx && medIdx < lowIdx) {
+		t.Fatalf("expected severity ordering Critical < High < Medium < Low, got order:\n%s", out)
+	}
+}
+
+func TestVulnsSummaryAppliesLimit(t *testing.T) {
+	client := &fakeClient{vulnerabilities: []iru.Vulnerability{
+		{CVEID: "CVE-1", Severity: "Critical", CVSSScore: 9.0},
+		{CVEID: "CVE-2", Severity: "Critical", CVSSScore: 8.5},
+		{CVEID: "CVE-3", Severity: "Critical", CVSSScore: 8.0},
+	}}
+	buf := &bytes.Buffer{}
+	err := runVulnsSummary(context.Background(), client, buf, io.Discard, vulnsSummaryOpts{
+		Output: "json", Limit: 2, NoCache: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "CVE-1") || !strings.Contains(out, "CVE-2") {
+		t.Fatalf("expected top 2 in output: %s", out)
+	}
+	if strings.Contains(out, "CVE-3") {
+		t.Fatalf("expected CVE-3 to be limited out: %s", out)
 	}
 }

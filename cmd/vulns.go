@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -24,9 +26,10 @@ type vulnsListOpts struct {
 func newVulnsCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "vulns",
-		Short: "Vulnerability detections",
+		Short: "Vulnerability detections and rollups",
 	}
 	c.AddCommand(newVulnsListCmd())
+	c.AddCommand(newVulnsSummaryCmd())
 	return c
 }
 
@@ -134,5 +137,150 @@ func detectionColumns() []output.Column {
 		{Header: "VERSION", Extract: func(v any) string { return v.(iru.Detection).Version }},
 		{Header: "DEVICE", Extract: func(v any) string { return v.(iru.Detection).DeviceName }},
 		{Header: "SERIAL", Extract: func(v any) string { return v.(iru.Detection).DeviceSerialNumber }},
+	}
+}
+
+type vulnsSummaryOpts struct {
+	Status   string
+	Severity string
+	Sort     string
+	Limit    int
+	Output   string
+	NoCache  bool
+}
+
+func newVulnsSummaryCmd() *cobra.Command {
+	var opts vulnsSummaryOpts
+	c := &cobra.Command{
+		Use:   "summary",
+		Short: "Per-CVE rollup view across the fleet",
+		Long: `Per-CVE rollup view backed by Iru's /vulnerability-management/vulnerabilities
+endpoint. Unlike "vulns list" (one row per device-CVE intersection), this is
+one row per CVE with fleet-wide status, affected software, and device count.
+
+Iru does not honour status or severity query params on this endpoint, so all
+filtering happens client-side after a full walk. Results are cached for 15
+minutes; pass --no-cache to force a fresh fetch.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			outFmt, _ := cmd.Flags().GetString("output")
+			opts.Output = outFmt
+
+			client, err := buildClient(cmd)
+			if err != nil {
+				return err
+			}
+			return runVulnsSummary(cmd.Context(), client, cmd.OutOrStdout(), cmd.ErrOrStderr(), opts)
+		},
+	}
+	c.Flags().StringVar(&opts.Status, "status", "", "Filter by status: active | remediated (default: all)")
+	c.Flags().StringVar(&opts.Severity, "severity", "", "Filter by severity: critical | high | medium | low | undefined (default: all)")
+	c.Flags().StringVar(&opts.Sort, "sort", "severity", "Sort by: severity (default) | cvss | kev | devices | cve")
+	c.Flags().IntVar(&opts.Limit, "limit", 0, "Cap the rendered rows after sort")
+	c.Flags().BoolVar(&opts.NoCache, "no-cache", false, "Skip the vulnerabilities cache; always fetch fresh")
+	return c
+}
+
+func runVulnsSummary(ctx context.Context, client iruClient, w, stderr io.Writer, opts vulnsSummaryOpts) error {
+	all, err := fetchAllVulnerabilities(ctx, client, stderr, !opts.NoCache)
+	if err != nil {
+		return err
+	}
+
+	// Client-side filters.
+	statusWant := strings.ToLower(opts.Status)
+	sevWant := strings.ToLower(opts.Severity)
+	filtered := make([]iru.Vulnerability, 0, len(all))
+	for _, v := range all {
+		if statusWant != "" && !strings.EqualFold(v.Status, statusWant) {
+			continue
+		}
+		if sevWant != "" && !strings.EqualFold(v.Severity, sevWant) {
+			continue
+		}
+		filtered = append(filtered, v)
+	}
+
+	sortVulns(filtered, opts.Sort)
+
+	if opts.Limit > 0 && len(filtered) > opts.Limit {
+		filtered = filtered[:opts.Limit]
+	}
+
+	return renderVulns(w, opts.Output, filtered)
+}
+
+// severityRank gives a fixed ordering: Critical > High > Medium > Low > Undefined > anything else.
+func severityRank(s string) int {
+	switch strings.ToLower(s) {
+	case "critical":
+		return 0
+	case "high":
+		return 1
+	case "medium":
+		return 2
+	case "low":
+		return 3
+	case "undefined":
+		return 4
+	default:
+		return 5
+	}
+}
+
+func sortVulns(vs []iru.Vulnerability, key string) {
+	switch strings.ToLower(key) {
+	case "cvss":
+		sort.Slice(vs, func(i, j int) bool { return vs[i].CVSSScore > vs[j].CVSSScore })
+	case "kev":
+		sort.Slice(vs, func(i, j int) bool { return vs[i].KEVScore > vs[j].KEVScore })
+	case "devices":
+		sort.Slice(vs, func(i, j int) bool { return vs[i].DeviceCount > vs[j].DeviceCount })
+	case "cve":
+		sort.Slice(vs, func(i, j int) bool { return vs[i].CVEID < vs[j].CVEID })
+	case "severity", "":
+		// Severity (Critical first), then CVSS desc within a severity tier.
+		sort.SliceStable(vs, func(i, j int) bool {
+			ri, rj := severityRank(vs[i].Severity), severityRank(vs[j].Severity)
+			if ri != rj {
+				return ri < rj
+			}
+			return vs[i].CVSSScore > vs[j].CVSSScore
+		})
+	}
+}
+
+func renderVulns(w io.Writer, format string, vs []iru.Vulnerability) error {
+	if format == "table" || format == "" {
+		t := output.Table().WithColumns(vulnColumns())
+		return t.Render(w, vs)
+	}
+	if format == "csv" {
+		c := output.CSV().WithColumns(vulnColumns())
+		return c.Render(w, vs)
+	}
+	r, err := output.For(format)
+	if err != nil {
+		return err
+	}
+	return r.Render(w, vs)
+}
+
+func vulnColumns() []output.Column {
+	return []output.Column{
+		{Header: "CVE", Extract: func(v any) string { return v.(iru.Vulnerability).CVEID }},
+		{Header: "SEVERITY", Extract: func(v any) string { return v.(iru.Vulnerability).Severity }},
+		{Header: "CVSS", Extract: func(v any) string {
+			return strconv.FormatFloat(v.(iru.Vulnerability).CVSSScore, 'f', 1, 64)
+		}},
+		{Header: "KEV", Extract: func(v any) string {
+			return strconv.FormatFloat(v.(iru.Vulnerability).KEVScore, 'f', 1, 64)
+		}},
+		{Header: "DEVICES", Extract: func(v any) string {
+			return strconv.Itoa(v.(iru.Vulnerability).DeviceCount)
+		}},
+		{Header: "STATUS", Extract: func(v any) string { return v.(iru.Vulnerability).Status }},
+		{Header: "SOFTWARE", Extract: func(v any) string {
+			return strings.Join(v.(iru.Vulnerability).Software, ",")
+		}},
 	}
 }
