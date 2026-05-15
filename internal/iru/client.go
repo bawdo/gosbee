@@ -88,8 +88,3 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	return nil
 }
-
-// Temporary stub. Task 11 replaces this with a proper typed-error decoder.
-func decodeAPIError(resp *http.Response) error {
-	return fmt.Errorf("api error: status %d", resp.StatusCode)
-}
