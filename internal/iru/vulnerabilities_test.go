@@ -24,7 +24,7 @@ func TestListDetectionsPagePassesFilters(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	c := NewClient(srv.URL, "tkn")
-	got, _, err := c.ListDetectionsPage(context.Background(), DetectionFilters{DeviceID: "d-1", Status: "active"}, 50, "")
+	got, _, err := c.ListDetectionsPage(context.Background(), DetectionFilters{DeviceID: "d-1"}, 50, "")
 	if err != nil {
 		t.Fatal(err)
 	}

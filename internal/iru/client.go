@@ -86,10 +86,12 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil
 	}
-	dec := json.NewDecoder(resp.Body)
-	if err := dec.Decode(out); err != nil {
-		raw, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("decode response: %w (raw=%q)", err, string(raw))
+	data, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return fmt.Errorf("read response body: %w", readErr)
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("decode response: %w (raw=%q)", err, string(data))
 	}
 	return nil
 }
