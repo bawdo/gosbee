@@ -2,11 +2,9 @@ package iru
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 )
 
 // GetUser fetches a single user by ID.
@@ -34,29 +32,19 @@ func (c *Client) ListUsersPage(ctx context.Context, limit int, cursor string) ([
 	return p.Results, p.nextCursor(), nil
 }
 
-// FindUserByEmail walks the user list and returns the first case-insensitive
-// email match. Returns ErrNotFound if no user matches.
+// FindUserByEmail returns the user with the given email address. The filter
+// is server-side via Iru's `?email=` query param, which returns at most one
+// exact match. Returns ErrNotFound if no user matches.
 func (c *Client) FindUserByEmail(ctx context.Context, email string) (User, error) {
-	target := strings.ToLower(email)
-	var found User
-	stop := errors.New("found")
-	err := WalkCursor[User](ctx, DefaultLimit,
-		c.ListUsersPage,
-		func(page []User) error {
-			for _, u := range page {
-				if strings.ToLower(u.Email) == target {
-					found = u
-					return stop
-				}
-			}
-			return nil
-		},
-	)
-	if errors.Is(err, stop) {
-		return found, nil
-	}
-	if err != nil {
+	q := url.Values{}
+	q.Set("email", email)
+	q.Set("limit", "1")
+	var p paginated[User]
+	if err := c.do(ctx, http.MethodGet, "/users", q, &p); err != nil {
 		return User{}, err
 	}
-	return User{}, ErrNotFound
+	if len(p.Results) == 0 {
+		return User{}, ErrNotFound
+	}
+	return p.Results[0], nil
 }

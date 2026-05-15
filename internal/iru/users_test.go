@@ -2,9 +2,7 @@ package iru
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,33 +29,11 @@ func TestGetUserByID(t *testing.T) {
 	}
 }
 
-func TestFindUserByEmailScansPages(t *testing.T) {
+func TestFindUserByEmailUsesServerFilter(t *testing.T) {
+	var gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cursor := r.URL.Query().Get("cursor")
-		if cursor == "page2" {
-			// Second page: return the matching user with no next page.
-			resp := map[string]any{
-				"next":     nil,
-				"previous": nil,
-				"results": []map[string]string{
-					{"id": "u-match", "email": "Keith@FlipGroup.com.au"},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(resp)
-			return
-		}
-		// First page: 300 non-matching users with a next cursor.
-		users := make([]map[string]string, DefaultLimit)
-		for i := range users {
-			users[i] = map[string]string{"id": fmt.Sprintf("u-%d", i), "email": fmt.Sprintf("a%d@x", i)}
-		}
-		nextURL := fmt.Sprintf("%s/api/v1/users?cursor=page2&limit=%d", "https://example.iru", DefaultLimit)
-		resp := map[string]any{
-			"next":     nextURL,
-			"previous": nil,
-			"results":  users,
-		}
-		_ = json.NewEncoder(w).Encode(resp)
+		gotQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(`{"next": null, "previous": null, "results": [{"id": "u-match", "email": "Keith@FlipGroup.com.au"}]}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -69,12 +45,14 @@ func TestFindUserByEmailScansPages(t *testing.T) {
 	if u.ID != "u-match" {
 		t.Fatalf("got %+v", u)
 	}
+	if !strings.Contains(gotQuery, "email=keith%40flipgroup.com.au") {
+		t.Fatalf("expected email filter in query, got %q", gotQuery)
+	}
 }
 
 func TestFindUserByEmailNotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"next":null,"previous":null,"results":[]}`))
+		_, _ = w.Write([]byte(`{"next": null, "previous": null, "results": []}`))
 	}))
 	t.Cleanup(srv.Close)
 
