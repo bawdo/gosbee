@@ -19,7 +19,7 @@ func TestListDetectionsPagePassesFilters(t *testing.T) {
 			t.Errorf("expected no cursor on first page, got %q", q.Get("cursor"))
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"next":"https://example.iru?cursor=X","previous":null,"results":[{"detection_id":"x-1","device_id":"d-1","cve":"CVE-2025-0001","status":"active"}]}`))
+		_, _ = w.Write([]byte(`{"next":"https://example.iru?cursor=X","previous":null,"results":[{"cve_id":"CVE-2025-0001","name":"git","version":"2.37.2","severity":"High","device_id":"d-1"}]}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -28,7 +28,7 @@ func TestListDetectionsPagePassesFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].DetectionID != "x-1" {
+	if len(got) != 1 || got[0].CVEID != "CVE-2025-0001" {
 		t.Fatalf("got %+v", got)
 	}
 }
@@ -38,7 +38,7 @@ func TestListDetectionsAutoPaginates(t *testing.T) {
 		cursor := r.URL.Query().Get("cursor")
 		if cursor == "page2" {
 			// Second page: 1 result, no next.
-			_, _ = w.Write([]byte(`{"next":null,"previous":null,"results":[{"detection_id":"y"}]}`))
+			_, _ = w.Write([]byte(`{"next":null,"previous":null,"results":[{"cve_id":"CVE-Y"}]}`))
 			return
 		}
 		// First page: 300 results, next cursor points to page2.
@@ -47,7 +47,7 @@ func TestListDetectionsAutoPaginates(t *testing.T) {
 			if i > 0 {
 				body += ","
 			}
-			body += fmt.Sprintf(`{"detection_id":"x-%d"}`, i)
+			body += fmt.Sprintf(`{"cve_id":"CVE-X-%d"}`, i)
 		}
 		body += `]}`
 		_, _ = w.Write([]byte(body))

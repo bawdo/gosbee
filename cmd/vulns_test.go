@@ -55,14 +55,14 @@ func (f *fakeClient) FindUserByEmail(_ context.Context, e string) (iru.User, err
 
 func TestVulnsListJSON(t *testing.T) {
 	client := &fakeClient{detections: []iru.Detection{
-		{DetectionID: "x-1", DeviceID: "d-1", CVE: "CVE-2025-0001", Severity: "high", Status: "active"},
+		{CVEID: "CVE-2025-0001", Name: "git", Version: "2.37.2", Severity: "High", DeviceID: "d-1"},
 	}}
 	buf := &bytes.Buffer{}
 	err := runVulnsList(context.Background(), client, buf, io.Discard, vulnsListOpts{Output: "json"})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if !strings.Contains(buf.String(), `"detection_id": "x-1"`) {
+	if !strings.Contains(buf.String(), `"cve_id": "CVE-2025-0001"`) {
 		t.Fatalf("output: %q", buf.String())
 	}
 }
@@ -75,7 +75,7 @@ func TestVulnsListSerialResolvesDeviceID(t *testing.T) {
 			}
 			return iru.Device{DeviceID: "d-9"}, nil
 		},
-		detections: []iru.Detection{{DetectionID: "x-9", DeviceID: "d-9"}},
+		detections: []iru.Detection{{CVEID: "CVE-x-9", DeviceID: "d-9"}},
 	}
 	buf := &bytes.Buffer{}
 	err := runVulnsList(context.Background(), client, buf, io.Discard, vulnsListOpts{
@@ -85,7 +85,7 @@ func TestVulnsListSerialResolvesDeviceID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if !strings.Contains(buf.String(), "x-9") {
+	if !strings.Contains(buf.String(), "CVE-x-9") {
 		t.Fatalf("output: %q", buf.String())
 	}
 }

@@ -17,7 +17,7 @@ func TestUserShowByEmailJSON(t *testing.T) {
 			{DeviceID: "d-1", DeviceName: "MBP", SerialNumber: "SN1", User: iru.User{ID: "u-1"}},
 		},
 		detections: []iru.Detection{
-			{DetectionID: "x-1", DeviceID: "d-1", CVE: "CVE-2025-0001", Status: "active"},
+			{CVEID: "CVE-2025-0001", DeviceID: "d-1"},
 		},
 	}
 	buf := &bytes.Buffer{}
@@ -29,7 +29,7 @@ func TestUserShowByEmailJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{"keith@flipgroup.com.au", "d-1", "x-1"} {
+	for _, want := range []string{"keith@flipgroup.com.au", "d-1", "CVE-2025-0001"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in output:\n%s", want, out)
 		}

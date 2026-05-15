@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -167,7 +168,10 @@ func renderUserBundleCSV(w io.Writer, b UserBundle) error {
 	type row struct {
 		userID, userEmail, userName        string
 		deviceID, deviceName, serial       string
-		detectionID, cve, severity, status string
+		cveID, packageName, packageVersion string
+		severity                           string
+		cvssScore                          float64
+		detectionDatetime                  string
 	}
 	var rows []row
 	for _, d := range b.Devices {
@@ -182,7 +186,9 @@ func renderUserBundleCSV(w io.Writer, b UserBundle) error {
 			rows = append(rows, row{
 				userID: b.User.ID, userEmail: b.User.Email, userName: b.User.Name,
 				deviceID: d.Device.DeviceID, deviceName: d.Device.DeviceName, serial: d.Device.SerialNumber,
-				detectionID: det.DetectionID, cve: det.CVE, severity: det.Severity, status: det.Status,
+				cveID: det.CVEID, packageName: det.Name, packageVersion: det.Version,
+				severity: det.Severity, cvssScore: det.CVSSScore,
+				detectionDatetime: det.DetectionDatetime,
 			})
 		}
 	}
@@ -193,10 +199,14 @@ func renderUserBundleCSV(w io.Writer, b UserBundle) error {
 		{Header: "device_id", Extract: func(v any) string { return v.(row).deviceID }},
 		{Header: "device_name", Extract: func(v any) string { return v.(row).deviceName }},
 		{Header: "serial_number", Extract: func(v any) string { return v.(row).serial }},
-		{Header: "detection_id", Extract: func(v any) string { return v.(row).detectionID }},
-		{Header: "cve", Extract: func(v any) string { return v.(row).cve }},
+		{Header: "cve_id", Extract: func(v any) string { return v.(row).cveID }},
+		{Header: "package_name", Extract: func(v any) string { return v.(row).packageName }},
+		{Header: "package_version", Extract: func(v any) string { return v.(row).packageVersion }},
 		{Header: "severity", Extract: func(v any) string { return v.(row).severity }},
-		{Header: "status", Extract: func(v any) string { return v.(row).status }},
+		{Header: "cvss_score", Extract: func(v any) string {
+			return strconv.FormatFloat(v.(row).cvssScore, 'f', 1, 64)
+		}},
+		{Header: "detection_datetime", Extract: func(v any) string { return v.(row).detectionDatetime }},
 	})
 	return c.Render(w, rows)
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -109,11 +110,14 @@ func renderDetections(w io.Writer, format string, detections []iru.Detection) er
 
 func detectionColumns() []output.Column {
 	return []output.Column{
-		{Header: "DETECTION_ID", Extract: func(v any) string { return v.(iru.Detection).DetectionID }},
-		{Header: "DEVICE_ID", Extract: func(v any) string { return v.(iru.Detection).DeviceID }},
-		{Header: "CVE", Extract: func(v any) string { return v.(iru.Detection).CVE }},
+		{Header: "CVE", Extract: func(v any) string { return v.(iru.Detection).CVEID }},
 		{Header: "SEVERITY", Extract: func(v any) string { return v.(iru.Detection).Severity }},
-		{Header: "STATUS", Extract: func(v any) string { return v.(iru.Detection).Status }},
-		{Header: "APP", Extract: func(v any) string { return v.(iru.Detection).AppName }},
+		{Header: "CVSS", Extract: func(v any) string {
+			return strconv.FormatFloat(v.(iru.Detection).CVSSScore, 'f', 1, 64)
+		}},
+		{Header: "PACKAGE", Extract: func(v any) string { return v.(iru.Detection).Name }},
+		{Header: "VERSION", Extract: func(v any) string { return v.(iru.Detection).Version }},
+		{Header: "DEVICE", Extract: func(v any) string { return v.(iru.Detection).DeviceName }},
+		{Header: "SERIAL", Extract: func(v any) string { return v.(iru.Detection).DeviceSerialNumber }},
 	}
 }
