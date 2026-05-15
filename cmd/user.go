@@ -83,7 +83,6 @@ func runUserShow(ctx context.Context, client iruClient, w io.Writer, opts userSh
 		g.Go(func() error {
 			ds, err := client.ListDetections(ctx, iru.DetectionFilters{
 				DeviceID: devices[i].DeviceID,
-				Status:   "active",
 			})
 			if err != nil {
 				return err

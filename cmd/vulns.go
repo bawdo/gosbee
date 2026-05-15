@@ -16,7 +16,6 @@ import (
 type vulnsListOpts struct {
 	DeviceID string
 	Serial   string
-	Status   string
 	Limit    int
 	Output   string
 }
@@ -48,7 +47,6 @@ func newVulnsListCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&opts.DeviceID, "device-id", "", "Filter to a single device by ID")
 	c.Flags().StringVar(&opts.Serial, "serial", "", "Filter to a single device by serial number")
-	c.Flags().StringVar(&opts.Status, "status", "", "Filter by detection status (pass-through to Iru)")
 	c.Flags().IntVar(&opts.Limit, "limit", 0, "Limit results to N (single page when set)")
 	return c
 }
@@ -59,7 +57,7 @@ func runVulnsList(ctx context.Context, client iruClient, w, stderr io.Writer, op
 	}
 
 	// Resolve serial to device id, if provided.
-	filters := iru.DetectionFilters{Status: opts.Status, DeviceID: opts.DeviceID}
+	filters := iru.DetectionFilters{DeviceID: opts.DeviceID}
 	if opts.Serial != "" {
 		d, err := client.GetDeviceBySerial(ctx, opts.Serial)
 		if err != nil {

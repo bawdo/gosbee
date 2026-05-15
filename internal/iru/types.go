@@ -91,10 +91,7 @@ type DeviceFilters struct {
 }
 
 // DetectionFilters is the filter set for /vulnerability-management/detections
-// queries. The Status field is currently ignored — Iru's detection records
-// don't carry a status — but is left in place to be removed in a follow-up
-// commit.
+// queries.
 type DetectionFilters struct {
 	DeviceID string
-	Status   string
 }

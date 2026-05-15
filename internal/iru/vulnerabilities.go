@@ -21,10 +21,6 @@ func (c *Client) ListDetectionsPage(ctx context.Context, f DetectionFilters, lim
 	if f.DeviceID != "" {
 		q.Set("device_id", f.DeviceID)
 	}
-	// NOTE: Iru does not expose a status field on detection records, so
-	// f.Status is no longer honoured here. Callers should not set it; the
-	// flag is being removed in a follow-up commit. We leave the field on
-	// DetectionFilters for the moment to keep this commit focused.
 	var p paginated[Detection]
 	if err := c.do(ctx, http.MethodGet, detectionsPath, q, &p); err != nil {
 		return nil, "", err
