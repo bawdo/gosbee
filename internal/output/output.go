@@ -18,8 +18,9 @@ func For(format string) (Renderer, error) {
 		return JSON(), nil
 	case "yaml":
 		return YAML(), nil
-	case "":
-		return JSON(), nil // temporary default until Table renderer lands
+	case "table", "":
+		// Table requires columns per-command; callers should construct it directly.
+		return Table(), nil
 	default:
 		return nil, fmt.Errorf("unsupported output format %q", format)
 	}
