@@ -18,6 +18,8 @@ func For(format string) (Renderer, error) {
 		return JSON(), nil
 	case "yaml":
 		return YAML(), nil
+	case "csv":
+		return CSV(), nil
 	case "table", "":
 		// Table requires columns per-command; callers should construct it directly.
 		return Table(), nil
