@@ -48,15 +48,23 @@ type paginated[T any] struct {
 
 // nextCursor returns the cursor query param from p.Next, or "" if there is no
 // next page or the URL cannot be parsed.
+//
+// Iru returns two different shapes for the `next` field across endpoints:
+//   - /users: a fully-qualified URL containing a ?cursor=X query param.
+//   - /vulnerability-management/detections: just the raw cursor string.
+//
+// Distinguish by whether the value parses as an absolute URL (has a scheme).
+// If so, extract the `cursor` query param. Otherwise, treat the whole value
+// as the cursor.
 func (p paginated[T]) nextCursor() string {
 	if p.Next == nil || *p.Next == "" {
 		return ""
 	}
-	u, err := url.Parse(*p.Next)
-	if err != nil {
-		return ""
+	next := *p.Next
+	if u, err := url.Parse(next); err == nil && u.Scheme != "" {
+		return u.Query().Get("cursor")
 	}
-	return u.Query().Get("cursor")
+	return next
 }
 
 // WalkCursor drives cursor-based pagination. fetch is called once per page

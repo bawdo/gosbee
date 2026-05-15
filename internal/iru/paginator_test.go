@@ -216,3 +216,76 @@ func TestWalkUsesDefaultLimitWhenNonPositive(t *testing.T) {
 		t.Fatalf("expected DefaultLimit (%d), got %d", DefaultLimit, seenLimit)
 	}
 }
+
+func TestWalkCursorHandlesBothNextShapes(t *testing.T) {
+	cases := []struct {
+		name     string
+		nextRaws []string // value Iru would put in "next"; "" means last page
+		want     []int    // expected accumulated results
+	}{
+		{
+			name:     "raw cursor strings (detections style)",
+			nextRaws: []string{"raw-cursor-1", "raw-cursor-2", ""},
+			want:     []int{1, 2, 3, 4, 5, 6},
+		},
+		{
+			name: "full URL with cursor query param (users style)",
+			nextRaws: []string{
+				"https://example.com/api/v1/users?cursor=url-cursor-1&limit=2",
+				"https://example.com/api/v1/users?cursor=url-cursor-2&limit=2",
+				"",
+			},
+			want: []int{1, 2, 3, 4, 5, 6},
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			pages := []paginated[int]{
+				{Next: stringPtr(c.nextRaws[0]), Results: []int{1, 2}},
+				{Next: stringPtr(c.nextRaws[1]), Results: []int{3, 4}},
+				{Next: stringPtr(c.nextRaws[2]), Results: []int{5, 6}},
+			}
+
+			var seenCursors []string
+			idx := 0
+			fetch := func(_ context.Context, _ int, cursor string) ([]int, string, error) {
+				seenCursors = append(seenCursors, cursor)
+				p := pages[idx]
+				idx++
+				return p.Results, p.nextCursor(), nil
+			}
+
+			var collected []int
+			if err := WalkCursor[int](context.Background(), 2, fetch, func(page []int) error {
+				collected = append(collected, page...)
+				return nil
+			}); err != nil {
+				t.Fatalf("walk: %v", err)
+			}
+
+			if len(collected) != len(c.want) {
+				t.Fatalf("collected %v want %v", collected, c.want)
+			}
+			for i, v := range c.want {
+				if collected[i] != v {
+					t.Fatalf("idx %d: got %d want %d", i, collected[i], v)
+				}
+			}
+			if seenCursors[0] != "" {
+				t.Fatalf("first cursor should be empty, got %q", seenCursors[0])
+			}
+			// Second and third pages should have a non-empty cursor that's
+			// distinct between iterations.
+			if seenCursors[1] == "" || seenCursors[2] == "" {
+				t.Fatalf("expected non-empty cursors after first page, got %v", seenCursors)
+			}
+			if seenCursors[1] == seenCursors[2] {
+				t.Fatalf("expected distinct cursors per page, got %v", seenCursors)
+			}
+		})
+	}
+}
+
+func stringPtr(s string) *string { return &s }
