@@ -64,7 +64,7 @@ func TestVulnsListJSON(t *testing.T) {
 		{CVEID: "CVE-2025-0001", Name: "git", Version: "2.37.2", Severity: "High", DeviceID: "d-1"},
 	}}
 	buf := &bytes.Buffer{}
-	err := runVulnsList(context.Background(), client, buf, io.Discard, vulnsListOpts{Output: "json"})
+	err := runVulnsList(context.Background(), client, buf, io.Discard, vulnsListOpts{Output: "json", NoCache: true})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -88,8 +88,9 @@ func TestVulnsListSerialResolvesDeviceID(t *testing.T) {
 	}
 	buf := &bytes.Buffer{}
 	err := runVulnsList(context.Background(), client, buf, io.Discard, vulnsListOpts{
-		Output: "json",
-		Serial: "SN1",
+		Output:  "json",
+		Serial:  "SN1",
+		NoCache: true,
 	})
 	if err != nil {
 		t.Fatalf("run: %v", err)

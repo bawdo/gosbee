@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -22,9 +23,10 @@ func TestUserShowByEmailJSON(t *testing.T) {
 		},
 	}
 	buf := &bytes.Buffer{}
-	err := runUserShow(context.Background(), client, buf, userShowOpts{
+	err := runUserShow(context.Background(), client, buf, io.Discard, userShowOpts{
 		Identifier: "keith@flipgroup.com.au",
 		Output:     "json",
+		NoCache:    true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +47,7 @@ func TestUserShowByIDFallback(t *testing.T) {
 		users: []iru.User{{ID: "u-9", Name: "Test", Email: "t@x"}},
 	}
 	buf := &bytes.Buffer{}
-	err := runUserShow(context.Background(), client, buf, userShowOpts{Identifier: "u-9", Output: "json"})
+	err := runUserShow(context.Background(), client, buf, io.Discard, userShowOpts{Identifier: "u-9", Output: "json", NoCache: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +58,7 @@ func TestUserShowByIDFallback(t *testing.T) {
 
 func TestUserShowUserNotFound(t *testing.T) {
 	client := &fakeClient{}
-	err := runUserShow(context.Background(), client, &bytes.Buffer{}, userShowOpts{Identifier: "u-x", Output: "json"})
+	err := runUserShow(context.Background(), client, &bytes.Buffer{}, io.Discard, userShowOpts{Identifier: "u-x", Output: "json", NoCache: true})
 	if !errors.Is(err, iru.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}

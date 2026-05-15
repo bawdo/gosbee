@@ -16,6 +16,7 @@ import (
 type userShowOpts struct {
 	Identifier string
 	Output     string
+	NoCache    bool
 }
 
 // UserBundle is the composite shape `user show` returns.
@@ -39,6 +40,7 @@ func newUserCmd() *cobra.Command {
 }
 
 func newUserShowCmd() *cobra.Command {
+	var opts userShowOpts
 	c := &cobra.Command{
 		Use:   "show <user-id-or-email>",
 		Short: "Show a user, their devices, and active detections per device",
@@ -49,16 +51,16 @@ func newUserShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runUserShow(cmd.Context(), client, cmd.OutOrStdout(), userShowOpts{
-				Identifier: args[0],
-				Output:     outFmt,
-			})
+			opts.Identifier = args[0]
+			opts.Output = outFmt
+			return runUserShow(cmd.Context(), client, cmd.OutOrStdout(), cmd.ErrOrStderr(), opts)
 		},
 	}
+	c.Flags().BoolVar(&opts.NoCache, "no-cache", false, "Skip the detection cache; always fetch fresh")
 	return c
 }
 
-func runUserShow(ctx context.Context, client iruClient, w io.Writer, opts userShowOpts) error {
+func runUserShow(ctx context.Context, client iruClient, w, stderr io.Writer, opts userShowOpts) error {
 	user, err := resolveUser(ctx, client, opts.Identifier)
 	if err != nil {
 		return err
@@ -77,7 +79,7 @@ func runUserShow(ctx context.Context, client iruClient, w io.Writer, opts userSh
 		deviceIDs[d.DeviceID] = struct{}{}
 	}
 
-	all, err := client.ListDetections(ctx, iru.DetectionFilters{})
+	all, err := fetchAllDetections(ctx, client, stderr, !opts.NoCache)
 	if err != nil {
 		return err
 	}

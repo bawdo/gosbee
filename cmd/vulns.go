@@ -18,6 +18,7 @@ type vulnsListOpts struct {
 	Serial   string
 	Limit    int
 	Output   string
+	NoCache  bool
 }
 
 func newVulnsCmd() *cobra.Command {
@@ -48,6 +49,7 @@ func newVulnsListCmd() *cobra.Command {
 	c.Flags().StringVar(&opts.DeviceID, "device-id", "", "Filter to a single device by ID")
 	c.Flags().StringVar(&opts.Serial, "serial", "", "Filter to a single device by serial number")
 	c.Flags().IntVar(&opts.Limit, "limit", 0, "Limit results to N (single page when set)")
+	c.Flags().BoolVar(&opts.NoCache, "no-cache", false, "Skip the detection cache; always fetch fresh")
 	return c
 }
 
@@ -70,7 +72,7 @@ func runVulnsList(ctx context.Context, client iruClient, w, stderr io.Writer, op
 	switch {
 	case targetDeviceID != "":
 		// Iru ignores per-device filters on /detections, so walk and filter.
-		all, err := client.ListDetections(ctx, iru.DetectionFilters{})
+		all, err := fetchAllDetections(ctx, client, stderr, !opts.NoCache)
 		if err != nil {
 			return err
 		}
@@ -91,7 +93,7 @@ func runVulnsList(ctx context.Context, client iruClient, w, stderr io.Writer, op
 		}
 		detections = ds
 	default:
-		ds, err := client.ListDetections(ctx, iru.DetectionFilters{})
+		ds, err := fetchAllDetections(ctx, client, stderr, !opts.NoCache)
 		if err != nil {
 			return err
 		}

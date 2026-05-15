@@ -58,7 +58,7 @@ func TestLoadExpired(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Re-write with an old timestamp by editing the file directly.
-	data, _ := os.ReadFile(path)
+	data, _ := os.ReadFile(path) //nolint:gosec // path is a test temp dir file
 	// Use a small TTL so the current entry is expired immediately by sleeping briefly.
 	time.Sleep(20 * time.Millisecond)
 	_, hit, err := Load(path, 10*time.Millisecond)

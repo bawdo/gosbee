@@ -64,7 +64,17 @@ jellyfish vulns list --serial C02XL0RKDV4         # one device by serial
 jellyfish vulns list --limit 50                   # single page of 50
 jellyfish vulns list -o json                      # JSON for jq
 jellyfish vulns list -o csv > vulns.csv           # CSV export
+jellyfish vulns list --no-cache                   # skip cache, always fetch fresh
 ```
+
+### Detection cache
+
+Both `vulns list` and `user show` walk Iru's `/vulnerability-management/detections`
+endpoint client-side (Iru offers no per-device filter). To avoid repeating that
+walk on every command, the result is cached for 15 minutes at the OS cache
+location (typically `~/.cache/jellyfish/detections.json` on Linux or
+`~/Library/Caches/jellyfish/detections.json` on macOS). Pass `--no-cache` to
+force a fresh fetch. Delete the file to invalidate manually.
 
 ### Per-user view
 

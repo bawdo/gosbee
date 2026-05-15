@@ -41,7 +41,7 @@ type File struct {
 // not present, corrupted, or expired. Returns (nil, false, err) for I/O
 // errors other than NotExist.
 func Load(path string, ttl time.Duration) ([]iru.Detection, bool, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is the OS cache dir + fixed filename
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, false, nil
