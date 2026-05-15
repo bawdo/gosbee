@@ -112,3 +112,81 @@ JELLYFISH_KEYCHAIN_TESTS=1 go test ./internal/keychain/... -count=1
 
 The first run will pop a macOS dialog asking to allow the test binary to read
 your Keychain; approve it and re-run.
+
+## Known follow-ups
+
+These items are deferred from v1. None are blocking; capture them here so they
+do not get lost.
+
+### Iru response field names are speculative
+
+`internal/iru/types.go` was authored against the published Iru API docs but
+without a live tenant to verify the exact JSON shape. In particular, `Device`
+contains a nested `User` field (`user`) on the assumption that Iru returns the
+device's user as a nested object. If your tenant returns flat fields instead
+(`user_id`, `user_email`, etc.), edit the struct tags in `types.go`. The same
+caution applies to `Detection` field names.
+
+The fix path: hit your tenant's `/api/v1/devices?limit=1` and
+`/api/v1/vulnerability-management/detections?limit=1` with curl, eyeball the
+JSON shape, and adjust the struct tags to match.
+
+### Retry transport drops the upstream error message body
+
+When `internal/iru/retry.go` exhausts all three attempts on a 429 or 5xx, it
+drains and closes each response body in the retry loop, then returns the last
+response. By the time `client.do` calls `decodeAPIError(resp)`, the body is
+already closed and reads as empty - so `APIError.Message` ends up blank.
+
+Status codes are preserved correctly (so `classifyError` still maps 429 to
+exit 4 and 5xx to exit 4), and exit-code behaviour is unaffected. The only
+loss is the human-readable error text from Iru.
+
+Fix path: in the retry loop, read the body into a `[]byte` before closing,
+then restore it via `io.NopCloser(bytes.NewReader(buf))` on the response
+returned to the caller. Small change; needs a test that asserts the message
+survives after retries.
+
+### `WithHTTPClient` plus `WithTimeout` option ordering is fragile
+
+If a caller passes both `iru.WithTimeout(d)` and `iru.WithHTTPClient(custom)`
+in that order, `WithHTTPClient` replaces the whole `*http.Client` and the
+timeout from the previous option is lost. This is not triggered anywhere in
+v1 because `WithHTTPClient` is never called by production code (only the
+constructor's default `*http.Client` is used). Worth fixing before exposing
+the option more broadly. Either make `WithHTTPClient` preserve any timeout
+already set, or document the ordering contract on each option.
+
+### CSV column order for `user show` is fixed without a test
+
+The flattened CSV columns for `jellyfish user show -o csv` are listed in the
+README above and pinned in `cmd/user.go`'s `renderUserBundleCSV`. There is
+currently no test asserting the order. If the order ever needs to change,
+that change should land alongside a golden-file test that locks it down.
+
+### Page-to-offset arithmetic is untested at the CLI layer
+
+`runVulnsList` computes `offset = (page - 1) * limit` when `--page` is set.
+The `fakeClient` in `cmd/vulns_test.go` does not assert on the `limit` and
+`offset` arguments to `ListDetectionsPage`. The arithmetic is trivially
+correct by inspection but worth a test before any change.
+
+### Linux / Windows support
+
+The CLI is macOS-only because the credential store is the macOS Keychain.
+Porting to Linux would mean swapping in libsecret (or similar); Windows would
+need Credential Manager. Non-darwin builds currently fail at compile time on
+the `keychain` package, which is the intended signal.
+
+### Other future work
+
+- Multi-profile support: the `--profile` flag is already declared but only
+  `default` is honoured. The config file format already keys by profile name,
+  so extending this is mainly a `--profile` plumbing change.
+- Env-var fallback for the token (`JELLYFISH_API_TOKEN`) for CI environments
+  with no Keychain.
+- Write operations (acknowledge, suppress, kick off remediation).
+- A `-vv` extra-verbose mode that logs response bodies with token + PII
+  redaction.
+- Promote `internal/iru` to a public package once a second consumer needs the
+  client.
