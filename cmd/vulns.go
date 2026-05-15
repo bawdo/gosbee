@@ -43,7 +43,7 @@ func newVulnsListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runVulnsList(cmd.Context(), client, cmd.OutOrStdout(), opts)
+			return runVulnsList(cmd.Context(), client, cmd.OutOrStdout(), cmd.ErrOrStderr(), opts)
 		},
 	}
 	c.Flags().StringVar(&opts.DeviceID, "device-id", "", "Filter to a single device by ID")
@@ -54,7 +54,7 @@ func newVulnsListCmd() *cobra.Command {
 	return c
 }
 
-func runVulnsList(ctx context.Context, client iruClient, w io.Writer, opts vulnsListOpts) error {
+func runVulnsList(ctx context.Context, client iruClient, w, stderr io.Writer, opts vulnsListOpts) error {
 	if opts.DeviceID != "" && opts.Serial != "" {
 		return errors.New("--device-id and --serial are mutually exclusive")
 	}
@@ -77,7 +77,7 @@ func runVulnsList(ctx context.Context, client iruClient, w io.Writer, opts vulns
 			limit = iru.DefaultLimit
 		}
 		if limit > iru.DefaultLimit {
-			_, _ = fmt.Fprintf(w, "warning: limit clamped to %d (Iru server-side max)\n", iru.DefaultLimit)
+			_, _ = fmt.Fprintf(stderr, "warning: limit clamped to %d (Iru server-side max)\n", iru.DefaultLimit)
 			limit = iru.DefaultLimit
 		}
 		page := opts.Page

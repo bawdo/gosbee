@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -57,7 +58,7 @@ func TestVulnsListJSON(t *testing.T) {
 		{DetectionID: "x-1", DeviceID: "d-1", CVE: "CVE-2025-0001", Severity: "high", Status: "active"},
 	}}
 	buf := &bytes.Buffer{}
-	err := runVulnsList(context.Background(), client, buf, vulnsListOpts{Output: "json"})
+	err := runVulnsList(context.Background(), client, buf, io.Discard, vulnsListOpts{Output: "json"})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestVulnsListSerialResolvesDeviceID(t *testing.T) {
 		detections: []iru.Detection{{DetectionID: "x-9", DeviceID: "d-9"}},
 	}
 	buf := &bytes.Buffer{}
-	err := runVulnsList(context.Background(), client, buf, vulnsListOpts{
+	err := runVulnsList(context.Background(), client, buf, io.Discard, vulnsListOpts{
 		Output: "json",
 		Serial: "SN1",
 	})
@@ -91,7 +92,7 @@ func TestVulnsListSerialResolvesDeviceID(t *testing.T) {
 
 func TestVulnsListSerialNotFoundExitsNotFound(t *testing.T) {
 	client := &fakeClient{}
-	err := runVulnsList(context.Background(), client, &bytes.Buffer{}, vulnsListOpts{
+	err := runVulnsList(context.Background(), client, &bytes.Buffer{}, io.Discard, vulnsListOpts{
 		Output: "json",
 		Serial: "SN-missing",
 	})
@@ -102,7 +103,7 @@ func TestVulnsListSerialNotFoundExitsNotFound(t *testing.T) {
 
 func TestVulnsListRejectsMutuallyExclusiveFlags(t *testing.T) {
 	client := &fakeClient{}
-	err := runVulnsList(context.Background(), client, &bytes.Buffer{}, vulnsListOpts{
+	err := runVulnsList(context.Background(), client, &bytes.Buffer{}, io.Discard, vulnsListOpts{
 		Output:   "json",
 		DeviceID: "d-1",
 		Serial:   "SN1",
