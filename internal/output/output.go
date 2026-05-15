@@ -14,8 +14,12 @@ type Renderer interface {
 // Supported formats: table, json, yaml, csv (later tasks add the others).
 func For(format string) (Renderer, error) {
 	switch format {
-	case "json", "":
+	case "json":
 		return JSON(), nil
+	case "yaml":
+		return YAML(), nil
+	case "":
+		return JSON(), nil // temporary default until Table renderer lands
 	default:
 		return nil, fmt.Errorf("unsupported output format %q", format)
 	}
