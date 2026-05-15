@@ -10,26 +10,50 @@ A macOS-only Go CLI for the Iru (formerly Kandji) Endpoint Management API.
 
 ## Install
 
-Requires Go 1.21+ on macOS.
+Requires Go 1.21+ on macOS. The module path `flipgroup.com.au/jellyfish` is
+private (no `go-import` meta tag is served), so install from a local checkout
+rather than the network.
 
 ```bash
-go install flipgroup.com.au/jellyfish@latest
+git clone <repo-url> jellyfish && cd jellyfish
+make install
 ```
 
-This places `jellyfish` in `$GOBIN` if set, otherwise `$GOPATH/bin`
-(default `~/go/bin`). Add it to your `PATH` once:
+`make install` runs `go install .` with version metadata baked in via
+`-ldflags`. It places `jellyfish` in `$GOBIN` if set, otherwise `$GOPATH/bin`
+(default `~/go/bin`). Add that directory to your `PATH` once:
 
 ```bash
 echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-To build locally instead:
+For an in-tree build (no install) use:
 
 ```bash
-make build       # ./bin/jellyfish
-make install     # installs via `go install`
+make build       # produces ./bin/jellyfish
+./bin/jellyfish version
 ```
+
+After install, confirm the binary is wired up:
+
+```bash
+jellyfish version    # prints e.g. "jellyfish 7f579d3" (the current git ref)
+```
+
+### Shell completion
+
+`jellyfish` ships Cobra's auto-generated completion script. To enable Zsh
+completion (the macOS default shell), drop the script somewhere Zsh's `fpath`
+already covers:
+
+```bash
+mkdir -p "$(brew --prefix)/share/zsh/site-functions"
+jellyfish completion zsh > "$(brew --prefix)/share/zsh/site-functions/_jellyfish"
+exec zsh    # reload
+```
+
+For other shells: `jellyfish completion {bash,fish,powershell} --help`.
 
 ## Configure
 
@@ -70,11 +94,39 @@ jellyfish vulns list --no-cache                   # skip cache, always fetch fre
 ### Detection cache
 
 Both `vulns list` and `user show` walk Iru's `/vulnerability-management/detections`
-endpoint client-side (Iru offers no per-device filter). To avoid repeating that
-walk on every command, the result is cached for 15 minutes at the OS cache
-location (typically `~/.cache/jellyfish/detections.json` on Linux or
-`~/Library/Caches/jellyfish/detections.json` on macOS). Pass `--no-cache` to
-force a fresh fetch. Delete the file to invalidate manually.
+endpoint client-side. Iru exposes no per-device filter on that endpoint
+(probed against a live tenant — `device_id=`, `device_serial_number=`, and
+others are all silently ignored), so the only way to deliver a per-device
+view is to fetch every detection and filter in memory.
+
+That walk is the bulk of the wall time. On a tenant with thousands of CVE
+detections, expect roughly **30-90 seconds** for the first call (a progress
+indicator on stderr shows pages as they come in). To avoid repeating that
+walk on every command, the result is cached for **15 minutes** at the OS
+cache location:
+
+- macOS: `~/Library/Caches/jellyfish/detections.json`
+- Linux: `$XDG_CACHE_HOME/jellyfish/detections.json` or `~/.cache/jellyfish/detections.json`
+
+Subsequent commands within the TTL skip the walk and return in under a
+second. Pass `--no-cache` (available on both `vulns list` and `user show`)
+to force a fresh fetch. Delete the file by hand to invalidate manually.
+
+### Iru detection semantics
+
+Iru's `/detections` endpoint returns one record per (device, CVE, package
+version) intersection. There is **no status field on detection records** —
+a detection exists exactly while the underlying CVE is present on the
+device's installed package. When the package gets patched, Iru re-scans
+and the detection disappears.
+
+The corollary: every detection `jellyfish vulns list` or `jellyfish user
+show` returns is by definition active / non-remediated. There is no need
+to (and no way to) filter to "active only".
+
+For a per-CVE rollup with remediation status, Iru has a separate
+`/vulnerability-management/vulnerabilities` endpoint. jellyfish doesn't
+surface that yet — see Known follow-ups for the design idea.
 
 ### Per-user view
 
@@ -82,7 +134,12 @@ force a fresh fetch. Delete the file to invalidate manually.
 jellyfish user show keith@flipgroup.com.au        # by email
 jellyfish user show 1f5b...e4                     # by user ID
 jellyfish user show keith@flipgroup.com.au -o json
+jellyfish user show keith@flipgroup.com.au --no-cache
 ```
+
+Email lookup is a single direct `?email=` request against Iru. The
+per-user-device detection bucketing is what triggers the detection walk
+(see Detection cache, above).
 
 ### Output formats
 
@@ -125,19 +182,28 @@ your Keychain; approve it and re-run.
 
 ## Known follow-ups
 
-These items are deferred from v1. None are blocking; capture them here so they
-do not get lost.
+These items were noted during development but are not blocking. Captured
+here so they do not get lost.
 
-### Iru response field names are speculative
+### Iru response shape probing (resolved)
 
-**Resolved in v1.1.** `internal/iru/types.go` was authored without a live
-tenant. v1.1 (commits `128434b`, `bbde2f4`, plus this cleanup) realigned the
-types against real Iru responses: `/users` and `/detections` use cursor
-pagination with a `{next, previous, results}` wrapper, the `Detection` struct
-was rebuilt against the actual field names (no `detection_id`, no `status`,
-`cve` is `cve_id`, etc), and the `User`/`Device` structs were expanded with
-the additional fields Iru returns. `/devices` confirmed to still use the
-top-level array shape.
+`internal/iru/types.go` was originally authored without a live tenant. A
+series of v1.1 commits realigned the code against the real Iru API after
+live probing:
+
+- `/users` paginates with `?cursor=<value>` and returns `{next, previous,
+  results}` where `next` is a full URL.
+- `/detections` paginates with `?after=<value>` and returns the same
+  wrapper but with `next` as a raw cursor string. `nextCursor()` handles
+  both shapes.
+- `/devices` returns a top-level JSON array; no wrapper.
+- Iru ignores per-device filters on `/detections` entirely. Detection
+  filtering happens client-side after a full walk; results are cached
+  for 15 minutes.
+- User lookup by email uses `/users?email=<address>` directly (single
+  request, no walk).
+- `Detection` records have no `status` field. `User` and `Device` structs
+  expanded with the rich fields Iru returns.
 
 ### Retry transport drops the upstream error message body
 
@@ -181,11 +247,19 @@ the `keychain` package, which is the intended signal.
 
 ### Other future work
 
+- **`jellyfish vulns summary`** backed by Iru's
+  `/vulnerability-management/vulnerabilities` endpoint. Unlike `/detections`
+  (one row per device-CVE intersection), `/vulnerabilities` returns one row
+  per CVE-in-tenant with `status` (Active / Remediated), `device_count`,
+  `cvss_score`, `kev_score`, `severity`, `first_detection_date`,
+  `latest_detection_date`. Would make for a useful "which CVEs hurt my
+  fleet most" view sortable by severity, KEV score, or device count.
 - Multi-profile support: the `--profile` flag is already declared but only
   `default` is honoured. The config file format already keys by profile name,
   so extending this is mainly a `--profile` plumbing change.
 - Env-var fallback for the token (`JELLYFISH_API_TOKEN`) for CI environments
   with no Keychain.
+- A configurable `--cache-ttl` flag (currently the 15-minute TTL is hardcoded).
 - Write operations (acknowledge, suppress, kick off remediation).
 - A `-vv` extra-verbose mode that logs response bodies with token + PII
   redaction.
