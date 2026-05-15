@@ -32,21 +32,32 @@ func TestGetUserByID(t *testing.T) {
 }
 
 func TestFindUserByEmailScansPages(t *testing.T) {
-	var page int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		page++
-		switch page {
-		case 1:
-			users := make([]map[string]string, DefaultLimit)
-			for i := range users {
-				users[i] = map[string]string{"id": fmt.Sprintf("u-%d", i), "email": fmt.Sprintf("a%d@x", i)}
+		cursor := r.URL.Query().Get("cursor")
+		if cursor == "page2" {
+			// Second page: return the matching user with no next page.
+			resp := map[string]any{
+				"next":     nil,
+				"previous": nil,
+				"results": []map[string]string{
+					{"id": "u-match", "email": "Keith@FlipGroup.com.au"},
+				},
 			}
-			_ = json.NewEncoder(w).Encode(users)
-		case 2:
-			_ = json.NewEncoder(w).Encode([]map[string]string{
-				{"id": "u-match", "email": "Keith@FlipGroup.com.au"},
-			})
+			_ = json.NewEncoder(w).Encode(resp)
+			return
 		}
+		// First page: 300 non-matching users with a next cursor.
+		users := make([]map[string]string, DefaultLimit)
+		for i := range users {
+			users[i] = map[string]string{"id": fmt.Sprintf("u-%d", i), "email": fmt.Sprintf("a%d@x", i)}
+		}
+		nextURL := fmt.Sprintf("%s/api/v1/users?cursor=page2&limit=%d", "https://example.iru", DefaultLimit)
+		resp := map[string]any{
+			"next":     nextURL,
+			"previous": nil,
+			"results":  users,
+		}
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	t.Cleanup(srv.Close)
 
@@ -63,7 +74,7 @@ func TestFindUserByEmailScansPages(t *testing.T) {
 func TestFindUserByEmailNotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`[]`))
+		_, _ = w.Write([]byte(`{"next":null,"previous":null,"results":[]}`))
 	}))
 	t.Cleanup(srv.Close)
 

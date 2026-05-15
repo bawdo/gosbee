@@ -15,5 +15,5 @@ type iruClient interface {
 	GetUser(ctx context.Context, id string) (iru.User, error)
 	FindUserByEmail(ctx context.Context, email string) (iru.User, error)
 	ListDetections(ctx context.Context, f iru.DetectionFilters) ([]iru.Detection, error)
-	ListDetectionsPage(ctx context.Context, f iru.DetectionFilters, limit, offset int) ([]iru.Detection, error)
+	ListDetectionsPage(ctx context.Context, f iru.DetectionFilters, limit int, cursor string) ([]iru.Detection, string, error)
 }

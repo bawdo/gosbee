@@ -6,6 +6,94 @@ import (
 	"testing"
 )
 
+// ---- WalkCursor tests ----
+
+func TestWalkCursorPaginates(t *testing.T) {
+	pages := []struct {
+		items   []int
+		nextRaw string
+	}{
+		{[]int{1, 2, 3}, "X"},
+		{[]int{4, 5, 6}, "Y"},
+		{[]int{7, 8}, ""}, // last page
+	}
+	var seenCursors []string
+	idx := 0
+	fetch := func(_ context.Context, _ int, cursor string) ([]int, string, error) {
+		seenCursors = append(seenCursors, cursor)
+		p := pages[idx]
+		idx++
+		return p.items, p.nextRaw, nil
+	}
+	var collected []int
+	if err := WalkCursor[int](context.Background(), 0, fetch, func(page []int) error {
+		collected = append(collected, page...)
+		return nil
+	}); err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	want := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	if len(collected) != len(want) {
+		t.Fatalf("got %v want %v", collected, want)
+	}
+	if seenCursors[0] != "" {
+		t.Fatalf("first cursor should be empty, got %q", seenCursors[0])
+	}
+}
+
+func TestWalkCursorStopsOnCallbackError(t *testing.T) {
+	fetch := func(_ context.Context, _ int, _ string) ([]int, string, error) {
+		return []int{1, 2, 3}, "next", nil
+	}
+	var calls int
+	err := WalkCursor[int](context.Background(), 5, fetch, func(page []int) error {
+		calls++
+		return context.Canceled
+	})
+	if err == nil {
+		t.Fatal("expected error from callback to propagate")
+	}
+	if calls != 1 {
+		t.Fatalf("expected 1 callback invocation, got %d", calls)
+	}
+}
+
+func TestWalkCursorPropagatesFetchError(t *testing.T) {
+	customErr := errors.New("fetch failed")
+	calls := 0
+	fetch := func(_ context.Context, _ int, _ string) ([]int, string, error) {
+		calls++
+		if calls == 1 {
+			return []int{1, 2, 3}, "next", nil
+		}
+		return nil, "", customErr
+	}
+	err := WalkCursor[int](context.Background(), 5, fetch, func(page []int) error {
+		return nil
+	})
+	if !errors.Is(err, customErr) {
+		t.Fatalf("expected fetch error to propagate, got %v", err)
+	}
+}
+
+func TestWalkCursorUsesDefaultLimitWhenNonPositive(t *testing.T) {
+	var seenLimit int
+	fetch := func(_ context.Context, limit int, _ string) ([]int, string, error) {
+		if seenLimit == 0 {
+			seenLimit = limit
+		}
+		return nil, "", nil // empty page, no next cursor terminates immediately
+	}
+	if err := WalkCursor[int](context.Background(), 0, fetch, func(page []int) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if seenLimit != DefaultLimit {
+		t.Fatalf("expected DefaultLimit (%d), got %d", DefaultLimit, seenLimit)
+	}
+}
+
+// ---- Walk tests ----
+
 func TestWalkPaginates(t *testing.T) {
 	pages := [][]int{
 		{1, 2, 3, 4, 5},

@@ -21,8 +21,8 @@ type fakeClient struct {
 func (f *fakeClient) ListDetections(ctx context.Context, _ iru.DetectionFilters) ([]iru.Detection, error) {
 	return f.detections, nil
 }
-func (f *fakeClient) ListDetectionsPage(ctx context.Context, _ iru.DetectionFilters, _, _ int) ([]iru.Detection, error) {
-	return f.detections, nil
+func (f *fakeClient) ListDetectionsPage(_ context.Context, _ iru.DetectionFilters, _ int, _ string) ([]iru.Detection, string, error) {
+	return f.detections, "", nil
 }
 func (f *fakeClient) ListDevices(_ context.Context, _ iru.DeviceFilters) ([]iru.Device, error) {
 	return f.devices, nil

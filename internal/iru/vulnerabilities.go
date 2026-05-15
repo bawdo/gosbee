@@ -9,30 +9,35 @@ import (
 
 const detectionsPath = "/vulnerability-management/detections"
 
-// ListDetectionsPage fetches one page of detections.
-func (c *Client) ListDetectionsPage(ctx context.Context, f DetectionFilters, limit, offset int) ([]Detection, error) {
+// ListDetectionsPage fetches one page of detections. cursor is the opaque
+// value taken from the previous page's next URL; pass "" for the first page.
+// The returned nextCursor is "" when there are no more pages.
+func (c *Client) ListDetectionsPage(ctx context.Context, f DetectionFilters, limit int, cursor string) ([]Detection, string, error) {
 	q := url.Values{}
 	q.Set("limit", strconv.Itoa(limit))
-	q.Set("offset", strconv.Itoa(offset))
+	if cursor != "" {
+		q.Set("cursor", cursor)
+	}
 	if f.DeviceID != "" {
 		q.Set("device_id", f.DeviceID)
 	}
-	if f.Status != "" {
-		q.Set("status", f.Status)
+	// NOTE: Iru does not expose a status field on detection records, so
+	// f.Status is no longer honoured here. Callers should not set it; the
+	// flag is being removed in a follow-up commit. We leave the field on
+	// DetectionFilters for the moment to keep this commit focused.
+	var p paginated[Detection]
+	if err := c.do(ctx, http.MethodGet, detectionsPath, q, &p); err != nil {
+		return nil, "", err
 	}
-	var out []Detection
-	if err := c.do(ctx, http.MethodGet, detectionsPath, q, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return p.Results, p.nextCursor(), nil
 }
 
-// ListDetections auto-paginates /vulnerability-management/detections using DefaultLimit.
+// ListDetections auto-paginates the detections endpoint.
 func (c *Client) ListDetections(ctx context.Context, f DetectionFilters) ([]Detection, error) {
 	var all []Detection
-	err := Walk[Detection](ctx, DefaultLimit,
-		func(ctx context.Context, limit, offset int) ([]Detection, error) {
-			return c.ListDetectionsPage(ctx, f, limit, offset)
+	err := WalkCursor[Detection](ctx, DefaultLimit,
+		func(ctx context.Context, limit int, cursor string) ([]Detection, string, error) {
+			return c.ListDetectionsPage(ctx, f, limit, cursor)
 		},
 		func(page []Detection) error {
 			all = append(all, page...)

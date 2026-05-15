@@ -17,7 +17,6 @@ type vulnsListOpts struct {
 	Serial   string
 	Status   string
 	Limit    int
-	Page     int
 	Output   string
 }
 
@@ -50,7 +49,6 @@ func newVulnsListCmd() *cobra.Command {
 	c.Flags().StringVar(&opts.Serial, "serial", "", "Filter to a single device by serial number")
 	c.Flags().StringVar(&opts.Status, "status", "", "Filter by detection status (pass-through to Iru)")
 	c.Flags().IntVar(&opts.Limit, "limit", 0, "Limit results to N (single page when set)")
-	c.Flags().IntVar(&opts.Page, "page", 0, "Fetch a single page at this 1-indexed page number")
 	return c
 }
 
@@ -71,21 +69,13 @@ func runVulnsList(ctx context.Context, client iruClient, w, stderr io.Writer, op
 
 	var detections []iru.Detection
 	switch {
-	case opts.Limit > 0 || opts.Page > 0:
+	case opts.Limit > 0:
 		limit := opts.Limit
-		if limit <= 0 {
-			limit = iru.DefaultLimit
-		}
 		if limit > iru.DefaultLimit {
 			_, _ = fmt.Fprintf(stderr, "warning: limit clamped to %d (Iru server-side max)\n", iru.DefaultLimit)
 			limit = iru.DefaultLimit
 		}
-		page := opts.Page
-		if page < 1 {
-			page = 1
-		}
-		offset := (page - 1) * limit
-		ds, err := client.ListDetectionsPage(ctx, filters, limit, offset)
+		ds, _, err := client.ListDetectionsPage(ctx, filters, limit, "")
 		if err != nil {
 			return err
 		}
