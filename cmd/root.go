@@ -35,6 +35,8 @@ func classifyError(err error) int {
 		return 2
 	case errors.Is(err, iru.ErrNotFound):
 		return 3
+	case errors.Is(err, iru.ErrRateLimited):
+		return 4
 	}
 	var apiErr *iru.APIError
 	if errors.As(err, &apiErr) {

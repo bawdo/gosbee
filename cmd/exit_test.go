@@ -18,6 +18,8 @@ func TestClassifyError(t *testing.T) {
 		{iru.ErrForbidden, 2},
 		{iru.ErrNotFound, 3},
 		{&iru.APIError{Status: 500}, 4},
+		{iru.ErrRateLimited, 4},
+		{&iru.APIError{Status: 429}, 4},
 	}
 	for _, c := range cases {
 		got := classifyError(c.err)
