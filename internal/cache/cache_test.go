@@ -85,3 +85,60 @@ func TestLoadCorrupt(t *testing.T) {
 		t.Fatal("expected silent miss on corrupt cache")
 	}
 }
+
+func TestSaveAndLoadVulnerabilitiesRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "vulnerabilities.json")
+	vulns := []iru.Vulnerability{
+		{CVEID: "CVE-2025-0001", Severity: "High", CVSSScore: 8.5, Status: "Active", Software: []string{"git"}},
+		{CVEID: "CVE-2025-0002", Severity: "Medium", CVSSScore: 5.0, Status: "Remediated", Software: []string{"curl"}},
+	}
+	if err := SaveVulnerabilities(path, vulns); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("expected 0600, got %o", info.Mode().Perm())
+	}
+	out, hit, err := LoadVulnerabilities(path, 1*time.Minute)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !hit {
+		t.Fatal("expected hit")
+	}
+	if len(out) != 2 || out[0].CVEID != "CVE-2025-0001" {
+		t.Fatalf("bad payload: %+v", out)
+	}
+}
+
+func TestLoadVulnerabilitiesMissingFile(t *testing.T) {
+	out, hit, err := LoadVulnerabilities(filepath.Join(t.TempDir(), "missing.json"), 1*time.Minute)
+	if err != nil {
+		t.Fatalf("expected nil err, got %v", err)
+	}
+	if hit {
+		t.Fatal("expected miss")
+	}
+	if out != nil {
+		t.Fatalf("expected nil, got %+v", out)
+	}
+}
+
+func TestLoadVulnerabilitiesCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "vulnerabilities.json")
+	if err := os.WriteFile(path, []byte("{not valid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, hit, err := LoadVulnerabilities(path, 1*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hit || out != nil {
+		t.Fatal("expected silent miss on corrupt cache")
+	}
+}

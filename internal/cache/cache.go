@@ -78,3 +78,60 @@ func Save(path string, dets []iru.Detection) error {
 	}
 	return os.WriteFile(path, data, fileMode)
 }
+
+// VulnFile is the on-disk representation of a vulnerability walk.
+type VulnFile struct {
+	Version         int                  `json:"version"`
+	FetchedAt       time.Time            `json:"fetched_at"`
+	Vulnerabilities []iru.Vulnerability  `json:"vulnerabilities"`
+}
+
+// DefaultVulnPath returns the cache file path for vulnerability rollups —
+// distinct from the detections cache.
+func DefaultVulnPath() (string, error) {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "jellyfish", "vulnerabilities.json"), nil
+}
+
+// LoadVulnerabilities reads the vulnerability cache. Same hit/miss/error
+// semantics as Load (detections).
+func LoadVulnerabilities(path string, ttl time.Duration) ([]iru.Vulnerability, bool, error) {
+	data, err := os.ReadFile(path) //nolint:gosec
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	var f VulnFile
+	if err := json.Unmarshal(data, &f); err != nil {
+		return nil, false, nil
+	}
+	if f.Version != 1 {
+		return nil, false, nil
+	}
+	if time.Since(f.FetchedAt) > ttl {
+		return nil, false, nil
+	}
+	return f.Vulnerabilities, true, nil
+}
+
+// SaveVulnerabilities writes the cache file with mode 0600.
+func SaveVulnerabilities(path string, vulns []iru.Vulnerability) error {
+	if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
+		return fmt.Errorf("create cache dir: %w", err)
+	}
+	f := VulnFile{
+		Version:         1,
+		FetchedAt:       time.Now().UTC(),
+		Vulnerabilities: vulns,
+	}
+	data, err := json.Marshal(f)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, fileMode)
+}
