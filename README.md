@@ -162,13 +162,6 @@ README above and pinned in `cmd/user.go`'s `renderUserBundleCSV`. There is
 currently no test asserting the order. If the order ever needs to change,
 that change should land alongside a golden-file test that locks it down.
 
-### Page-to-offset arithmetic is untested at the CLI layer
-
-`runVulnsList` computes `offset = (page - 1) * limit` when `--page` is set.
-The `fakeClient` in `cmd/vulns_test.go` does not assert on the `limit` and
-`offset` arguments to `ListDetectionsPage`. The arithmetic is trivially
-correct by inspection but worth a test before any change.
-
 ### Linux / Windows support
 
 The CLI is macOS-only because the credential store is the macOS Keychain.
