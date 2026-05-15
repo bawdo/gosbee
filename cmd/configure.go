@@ -24,8 +24,8 @@ type configureOpts struct {
 	Stdout        io.Writer
 	Stderr        io.Writer
 	StoreToken    func(account, token string) error
-	ReadTokenLine func() (string, error) // masked read; injected for tests
-	VerifyBaseURL string                  // override for tests, blank in production
+	ReadTokenLine func(r *bufio.Reader) (string, error) // masked read; injected for tests
+	VerifyBaseURL string                                 // override for tests, blank in production
 }
 
 func newConfigureCmd() *cobra.Command {
@@ -77,7 +77,7 @@ func runConfigure(ctx context.Context, o configureOpts) error {
 	}
 
 	fmt.Fprint(o.Stdout, "API token: ")
-	token, err := o.ReadTokenLine()
+	token, err := o.ReadTokenLine(r)
 	if err != nil {
 		return err
 	}
@@ -124,17 +124,24 @@ func readLine(r *bufio.Reader) (string, error) {
 	return strings.TrimSpace(s), nil
 }
 
-func readMaskedToken() (string, error) {
-	fd := int(os.Stdin.Fd())
-	if !term.IsTerminal(fd) {
-		// Fallback: read line unmasked (e.g. when piped).
-		r := bufio.NewReader(os.Stdin)
-		s, err := r.ReadString('\n')
-		return strings.TrimSpace(s), err
+// readMaskedToken reads a token from in. When in is the real os.Stdin AND a
+// terminal, it uses term.ReadPassword for masked entry. Otherwise it reads a
+// line from in unmasked (the typical piped-input case for CI or scripts).
+func readMaskedToken(in *bufio.Reader) (string, error) {
+	if in == nil {
+		in = bufio.NewReader(os.Stdin)
 	}
-	b, err := term.ReadPassword(fd)
-	if err != nil {
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		b, err := term.ReadPassword(fd)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+	s, err := in.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
 		return "", err
 	}
-	return strings.TrimSpace(string(b)), nil
+	return strings.TrimSpace(s), nil
 }

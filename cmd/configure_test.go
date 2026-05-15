@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"net/http"
@@ -41,7 +42,7 @@ func TestConfigureWritesConfigAndCallsKeychain(t *testing.T) {
 		Stdout:        out,
 		Stderr:        out,
 		StoreToken:    store,
-		ReadTokenLine: func() (string, error) { return "tkn-123", nil },
+		ReadTokenLine: func(_ *bufio.Reader) (string, error) { return "tkn-123", nil },
 		VerifyBaseURL: srv.URL,
 	})
 	if err != nil {
