@@ -29,5 +29,6 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().String("profile", "default", "Profile name (reserved; only 'default' is honoured in v1)")
 
 	root.AddCommand(newVersionCmd())
+	root.AddCommand(newConfigureCmd())
 	return root
 }
