@@ -31,5 +31,6 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newConfigureCmd())
 	root.AddCommand(newVulnsCmd())
+	root.AddCommand(newUserCmd())
 	return root
 }
