@@ -5,7 +5,7 @@ A macOS-only Go CLI for the Iru (formerly Kandji) Endpoint Management API.
 ## Features
 
 - `jellyfish vulns list` - list vulnerability detections across the fleet (one row per device-CVE intersection), filter by device ID or serial number.
-- `jellyfish vulns summary` - per-CVE rollup view with status, severity, CVSS, KEV score, affected software, and device count.
+- `jellyfish vulns summary` - per-CVE rollup view with status, severity, CVSS, KEV (CISA Known Exploited Vulnerabilities) score, affected software, and device count.
 - `jellyfish user show <id-or-email>` - resolve a user, their devices, and the active detections per device.
 - `jellyfish configure` - interactively store the tenant subdomain, region and API token (token in the macOS Keychain).
 
@@ -151,6 +151,20 @@ this endpoint, so filtering is client-side after a full walk (~3000 records
 on a typical tenant; a few seconds with the progress indicator). Results
 are cached separately from detections at
 `~/Library/Caches/jellyfish/vulnerabilities.json`.
+
+**About KEV.** `kev_score` reflects whether the CVE appears in CISA's
+[Known Exploited Vulnerabilities catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) -
+a list of vulnerabilities observed being actively exploited in the wild, not
+just theoretically dangerous. For triage, `--sort kev` is usually a stronger
+patch-priority signal than CVSS alone: a Medium-CVSS bug that attackers are
+actively using can be more urgent than a Critical-CVSS bug that nobody has
+weaponised yet. Iru does not document the exact `kev_score` semantics; on
+this tenant the field is numeric (0 for non-KEV entries). Inspect the
+distribution with:
+
+```bash
+jellyfish vulns summary -o json | jq '[.[].kev_score] | unique'
+```
 
 ### Per-user view
 
