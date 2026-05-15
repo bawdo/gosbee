@@ -4,7 +4,8 @@ A macOS-only Go CLI for the Iru (formerly Kandji) Endpoint Management API.
 
 ## Features
 
-- `jellyfish vulns list` - list vulnerability detections across the fleet, filter by device ID or serial number.
+- `jellyfish vulns list` - list vulnerability detections across the fleet (one row per device-CVE intersection), filter by device ID or serial number.
+- `jellyfish vulns summary` - per-CVE rollup view with status, severity, CVSS, KEV score, affected software, and device count.
 - `jellyfish user show <id-or-email>` - resolve a user, their devices, and the active detections per device.
 - `jellyfish configure` - interactively store the tenant subdomain, region and API token (token in the macOS Keychain).
 
@@ -105,8 +106,8 @@ indicator on stderr shows pages as they come in). To avoid repeating that
 walk on every command, the result is cached for **15 minutes** at the OS
 cache location:
 
-- macOS: `~/Library/Caches/jellyfish/detections.json`
-- Linux: `$XDG_CACHE_HOME/jellyfish/detections.json` or `~/.cache/jellyfish/detections.json`
+- macOS: `~/Library/Caches/jellyfish/detections.json` (detections), `~/Library/Caches/jellyfish/vulnerabilities.json` (vulnerability rollups)
+- Linux: `$XDG_CACHE_HOME/jellyfish/detections.json` or `~/.cache/jellyfish/detections.json` (detections), same directory for `vulnerabilities.json`
 
 Subsequent commands within the TTL skip the walk and return in under a
 second. Pass `--no-cache` (available on both `vulns list` and `user show`)
@@ -124,9 +125,32 @@ The corollary: every detection `jellyfish vulns list` or `jellyfish user
 show` returns is by definition active / non-remediated. There is no need
 to (and no way to) filter to "active only".
 
-For a per-CVE rollup with remediation status, Iru has a separate
-`/vulnerability-management/vulnerabilities` endpoint. jellyfish doesn't
-surface that yet — see Known follow-ups for the design idea.
+For a per-CVE rollup with remediation status, use `jellyfish vulns summary`
+(backed by Iru's `/vulnerability-management/vulnerabilities` endpoint).
+
+### Vulnerability summary
+
+Per-CVE rollup across the fleet, backed by Iru's
+`/vulnerability-management/vulnerabilities` endpoint. Unlike `vulns list`
+(per device, per CVE), this is one row per CVE with status, severity,
+CVSS, KEV score, affected software, and how many devices are exposed.
+
+```bash
+jellyfish vulns summary                            # all CVEs, severity-sorted
+jellyfish vulns summary --status active            # only currently-affecting CVEs
+jellyfish vulns summary --severity critical        # critical only
+jellyfish vulns summary --sort devices --limit 20  # top 20 by device exposure
+jellyfish vulns summary --sort kev                 # sort by KEV (known-exploited)
+jellyfish vulns summary -o json                    # JSON for jq
+jellyfish vulns summary --no-cache                 # bypass the 15-minute cache
+```
+
+Sort keys: `severity` (default - Critical first, then CVSS desc within tier),
+`cvss`, `kev`, `devices`, `cve`. Iru ignores status/severity query params on
+this endpoint, so filtering is client-side after a full walk (~3000 records
+on a typical tenant; a few seconds with the progress indicator). Results
+are cached separately from detections at
+`~/Library/Caches/jellyfish/vulnerabilities.json`.
 
 ### Per-user view
 
@@ -247,13 +271,6 @@ the `keychain` package, which is the intended signal.
 
 ### Other future work
 
-- **`jellyfish vulns summary`** backed by Iru's
-  `/vulnerability-management/vulnerabilities` endpoint. Unlike `/detections`
-  (one row per device-CVE intersection), `/vulnerabilities` returns one row
-  per CVE-in-tenant with `status` (Active / Remediated), `device_count`,
-  `cvss_score`, `kev_score`, `severity`, `first_detection_date`,
-  `latest_detection_date`. Would make for a useful "which CVEs hurt my
-  fleet most" view sortable by severity, KEV score, or device count.
 - Multi-profile support: the `--profile` flag is already declared but only
   `default` is honoured. The config file format already keys by profile name,
   so extending this is mainly a `--profile` plumbing change.
