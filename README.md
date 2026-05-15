@@ -4,7 +4,7 @@ A macOS-only Go CLI for the Iru (formerly Kandji) Endpoint Management API.
 
 ## Features
 
-- `jellyfish vulns list` - list vulnerability detections across the fleet, filter by device ID, serial number or status.
+- `jellyfish vulns list` - list vulnerability detections across the fleet, filter by device ID or serial number.
 - `jellyfish user show <id-or-email>` - resolve a user, their devices, and the active detections per device.
 - `jellyfish configure` - interactively store the tenant subdomain, region and API token (token in the macOS Keychain).
 
@@ -59,10 +59,9 @@ security delete-generic-password -s au.com.flipgroup.jellyfish -a default
 
 ```bash
 jellyfish vulns list                              # everything
-jellyfish vulns list --status active              # active only
 jellyfish vulns list --device-id d-123            # one device by ID
 jellyfish vulns list --serial C02XL0RKDV4         # one device by serial
-jellyfish vulns list --limit 50 --page 1          # single page of 50
+jellyfish vulns list --limit 50                   # single page of 50
 jellyfish vulns list -o json                      # JSON for jq
 jellyfish vulns list -o csv > vulns.csv           # CSV export
 ```
@@ -84,7 +83,8 @@ user and device columns repeated. Column order:
 
 ```
 user_id, user_email, user_name, device_id, device_name, serial_number,
-detection_id, cve, severity, status
+cve_id, package_name, package_version, severity, cvss_score,
+detection_datetime
 ```
 
 ### Exit codes
@@ -120,16 +120,14 @@ do not get lost.
 
 ### Iru response field names are speculative
 
-`internal/iru/types.go` was authored against the published Iru API docs but
-without a live tenant to verify the exact JSON shape. In particular, `Device`
-contains a nested `User` field (`user`) on the assumption that Iru returns the
-device's user as a nested object. If your tenant returns flat fields instead
-(`user_id`, `user_email`, etc.), edit the struct tags in `types.go`. The same
-caution applies to `Detection` field names.
-
-The fix path: hit your tenant's `/api/v1/devices?limit=1` and
-`/api/v1/vulnerability-management/detections?limit=1` with curl, eyeball the
-JSON shape, and adjust the struct tags to match.
+**Resolved in v1.1.** `internal/iru/types.go` was authored without a live
+tenant. v1.1 (commits `128434b`, `bbde2f4`, plus this cleanup) realigned the
+types against real Iru responses: `/users` and `/detections` use cursor
+pagination with a `{next, previous, results}` wrapper, the `Detection` struct
+was rebuilt against the actual field names (no `detection_id`, no `status`,
+`cve` is `cve_id`, etc), and the `User`/`Device` structs were expanded with
+the additional fields Iru returns. `/devices` confirmed to still use the
+top-level array shape.
 
 ### Retry transport drops the upstream error message body
 
