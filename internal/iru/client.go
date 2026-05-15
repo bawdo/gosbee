@@ -1,7 +1,6 @@
 package iru
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -89,7 +88,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	dec := json.NewDecoder(resp.Body)
 	if err := dec.Decode(out); err != nil {
-		raw, _ := io.ReadAll(io.MultiReader(bytes.NewReader([]byte{}), resp.Body))
+		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("decode response: %w (raw=%q)", err, string(raw))
 	}
 	return nil
