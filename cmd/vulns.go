@@ -56,35 +56,50 @@ func runVulnsList(ctx context.Context, client iruClient, w, stderr io.Writer, op
 		return errors.New("--device-id and --serial are mutually exclusive")
 	}
 
-	// Resolve serial to device id, if provided.
-	filters := iru.DetectionFilters{DeviceID: opts.DeviceID}
+	targetDeviceID := opts.DeviceID
 	if opts.Serial != "" {
 		d, err := client.GetDeviceBySerial(ctx, opts.Serial)
 		if err != nil {
 			return err
 		}
-		filters.DeviceID = d.DeviceID
+		targetDeviceID = d.DeviceID
 	}
 
 	var detections []iru.Detection
+
 	switch {
+	case targetDeviceID != "":
+		// Iru ignores per-device filters on /detections, so walk and filter.
+		all, err := client.ListDetections(ctx, iru.DetectionFilters{})
+		if err != nil {
+			return err
+		}
+		for _, det := range all {
+			if det.DeviceID == targetDeviceID {
+				detections = append(detections, det)
+			}
+		}
 	case opts.Limit > 0:
 		limit := opts.Limit
 		if limit > iru.DefaultLimit {
 			_, _ = fmt.Fprintf(stderr, "warning: limit clamped to %d (Iru server-side max)\n", iru.DefaultLimit)
 			limit = iru.DefaultLimit
 		}
-		ds, _, err := client.ListDetectionsPage(ctx, filters, limit, "")
+		ds, _, err := client.ListDetectionsPage(ctx, iru.DetectionFilters{}, limit, "")
 		if err != nil {
 			return err
 		}
 		detections = ds
 	default:
-		ds, err := client.ListDetections(ctx, filters)
+		ds, err := client.ListDetections(ctx, iru.DetectionFilters{})
 		if err != nil {
 			return err
 		}
 		detections = ds
+	}
+
+	if opts.Limit > 0 && len(detections) > opts.Limit {
+		detections = detections[:opts.Limit]
 	}
 
 	return renderDetections(w, opts.Output, detections)

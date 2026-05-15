@@ -90,8 +90,10 @@ type DeviceFilters struct {
 	SerialNumber string
 }
 
-// DetectionFilters is the filter set for /vulnerability-management/detections
-// queries.
-type DetectionFilters struct {
-	DeviceID string
-}
+// DetectionFilters is a placeholder for /vulnerability-management/detections
+// query options. Iru does not currently honour any per-device filter on this
+// endpoint (probed against a live tenant — device_id, device_serial_number
+// and serial_number are all silently ignored), so callers that want a
+// per-device view must walk the full list and filter client-side. The struct
+// is kept as a future-proof seam in case Iru adds real filters later.
+type DetectionFilters struct{}

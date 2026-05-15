@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
 
 	"flipgroup.com.au/jellyfish/internal/iru"
 	"flipgroup.com.au/jellyfish/internal/output"
@@ -70,29 +69,32 @@ func runUserShow(ctx context.Context, client iruClient, w io.Writer, opts userSh
 		return err
 	}
 
-	bundle := UserBundle{User: user, Devices: make([]DeviceWithDetections, len(devices))}
-	for i := range devices {
-		bundle.Devices[i] = DeviceWithDetections{Device: devices[i]}
+	// Iru's /detections endpoint doesn't honour any per-device filter, so we
+	// fetch all detections once and bucket them by device id. Single walk for
+	// the whole user view, regardless of how many devices the user owns.
+	deviceIDs := make(map[string]struct{}, len(devices))
+	for _, d := range devices {
+		deviceIDs[d.DeviceID] = struct{}{}
 	}
 
-	// Concurrent fetch of active detections per device, bounded to 5 in-flight.
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(5)
-	for i := range devices {
-		i := i
-		g.Go(func() error {
-			ds, err := client.ListDetections(ctx, iru.DetectionFilters{
-				DeviceID: devices[i].DeviceID,
-			})
-			if err != nil {
-				return err
-			}
-			bundle.Devices[i].Detections = ds
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
+	all, err := client.ListDetections(ctx, iru.DetectionFilters{})
+	if err != nil {
 		return err
+	}
+
+	byDevice := make(map[string][]iru.Detection, len(devices))
+	for _, det := range all {
+		if _, ok := deviceIDs[det.DeviceID]; ok {
+			byDevice[det.DeviceID] = append(byDevice[det.DeviceID], det)
+		}
+	}
+
+	bundle := UserBundle{User: user, Devices: make([]DeviceWithDetections, len(devices))}
+	for i, d := range devices {
+		bundle.Devices[i] = DeviceWithDetections{
+			Device:     d,
+			Detections: byDevice[d.DeviceID],
+		}
 	}
 
 	return renderUserBundle(w, opts.Output, bundle)

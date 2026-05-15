@@ -18,6 +18,7 @@ func TestUserShowByEmailJSON(t *testing.T) {
 		},
 		detections: []iru.Detection{
 			{CVEID: "CVE-2025-0001", DeviceID: "d-1"},
+			{CVEID: "CVE-unrelated", DeviceID: "d-stranger"},
 		},
 	}
 	buf := &bytes.Buffer{}
@@ -33,6 +34,9 @@ func TestUserShowByEmailJSON(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in output:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "CVE-unrelated") {
+		t.Fatalf("CVE-unrelated should have been bucketed out: %s", out)
 	}
 }
 

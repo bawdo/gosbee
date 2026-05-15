@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-func TestListDetectionsPagePassesFilters(t *testing.T) {
+func TestListDetectionsPagePassesPaginationParams(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		if q.Get("device_id") != "d-1" {
-			t.Errorf("device_id %q", q.Get("device_id"))
+		if q.Get("limit") != "50" {
+			t.Errorf("limit %q", q.Get("limit"))
 		}
 		// cursor should be absent on the first page call
 		if q.Get("cursor") != "" {
@@ -24,7 +24,7 @@ func TestListDetectionsPagePassesFilters(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	c := NewClient(srv.URL, "tkn")
-	got, _, err := c.ListDetectionsPage(context.Background(), DetectionFilters{DeviceID: "d-1"}, 50, "")
+	got, _, err := c.ListDetectionsPage(context.Background(), DetectionFilters{}, 50, "")
 	if err != nil {
 		t.Fatal(err)
 	}

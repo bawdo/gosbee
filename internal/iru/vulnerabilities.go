@@ -12,14 +12,11 @@ const detectionsPath = "/vulnerability-management/detections"
 // ListDetectionsPage fetches one page of detections. cursor is the opaque
 // value taken from the previous page's next URL; pass "" for the first page.
 // The returned nextCursor is "" when there are no more pages.
-func (c *Client) ListDetectionsPage(ctx context.Context, f DetectionFilters, limit int, cursor string) ([]Detection, string, error) {
+func (c *Client) ListDetectionsPage(ctx context.Context, _ DetectionFilters, limit int, cursor string) ([]Detection, string, error) {
 	q := url.Values{}
 	q.Set("limit", strconv.Itoa(limit))
 	if cursor != "" {
 		q.Set("cursor", cursor)
-	}
-	if f.DeviceID != "" {
-		q.Set("device_id", f.DeviceID)
 	}
 	var p paginated[Detection]
 	if err := c.do(ctx, http.MethodGet, detectionsPath, q, &p); err != nil {
