@@ -84,6 +84,31 @@ type Detection struct {
 	CVEModifiedAt      string  `json:"cve_modified_at" yaml:"cve_modified_at"`
 }
 
+// Vulnerability is one CVE-in-tenant rollup record from Iru's
+// /vulnerability-management/vulnerabilities endpoint. Unlike Detection
+// (which is per-device per-CVE), this is one row per CVE with a fleet-wide
+// status, the affected software, and device-count + first/latest detection
+// timestamps. Status values: "Active" or "Remediated". Severity values:
+// "Critical" | "High" | "Medium" | "Low" | "Undefined".
+type Vulnerability struct {
+	CVEID               string   `json:"cve_id" yaml:"cve_id"`
+	Severity            string   `json:"severity" yaml:"severity"`
+	CVSSScore           float64  `json:"cvss_score" yaml:"cvss_score"`
+	KEVScore            float64  `json:"kev_score" yaml:"kev_score"`
+	CVELink             string   `json:"cve_link" yaml:"cve_link"`
+	FirstDetectionDate  string   `json:"first_detection_date" yaml:"first_detection_date"`
+	LatestDetectionDate string   `json:"latest_detection_date" yaml:"latest_detection_date"`
+	DeviceCount         int      `json:"device_count" yaml:"device_count"`
+	Software            []string `json:"software" yaml:"software"`
+	Status              string   `json:"status" yaml:"status"`
+}
+
+// VulnerabilityFilters is a placeholder — Iru ignores ?status=, ?severity=,
+// and similar filter params on this endpoint (probed against a live tenant).
+// All filtering happens client-side. The struct exists for symmetry with
+// DeviceFilters/DetectionFilters and as a future-proof seam.
+type VulnerabilityFilters struct{}
+
 // DeviceFilters is the filter set for /devices queries.
 type DeviceFilters struct {
 	UserID       string

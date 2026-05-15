@@ -9,6 +9,112 @@ import (
 	"testing"
 )
 
+func TestListVulnerabilitiesPageSendsPageAndSize(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("page") != "1" {
+			t.Errorf("expected page=1, got %q", q.Get("page"))
+		}
+		if q.Get("size") != "300" {
+			t.Errorf("expected size=300, got %q", q.Get("size"))
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"page":1,"size":300,"total":1,"results":[{"cve_id":"CVE-1999-1386","severity":"Medium","cvss_score":5.5,"kev_score":0,"status":"Remediated","software":["perl"],"device_count":0}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewClient(srv.URL, "tkn")
+	got, total, err := c.ListVulnerabilitiesPage(context.Background(), VulnerabilityFilters{}, 1, 300)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 {
+		t.Fatalf("expected total=1, got %d", total)
+	}
+	if len(got) != 1 || got[0].CVEID != "CVE-1999-1386" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestListVulnerabilitiesStreamWalksAllPages(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		switch page {
+		case "1":
+			body := `{"page":1,"size":300,"total":650,"results":[`
+			for i := 0; i < 300; i++ {
+				if i > 0 {
+					body += ","
+				}
+				body += fmt.Sprintf(`{"cve_id":"CVE-P1-%d"}`, i)
+			}
+			body += `]}`
+			_, _ = w.Write([]byte(body))
+		case "2":
+			body := `{"page":2,"size":300,"total":650,"results":[`
+			for i := 0; i < 300; i++ {
+				if i > 0 {
+					body += ","
+				}
+				body += fmt.Sprintf(`{"cve_id":"CVE-P2-%d"}`, i)
+			}
+			body += `]}`
+			_, _ = w.Write([]byte(body))
+		case "3":
+			// Short page — 50 records — signals end.
+			body := `{"page":3,"size":300,"total":650,"results":[`
+			for i := 0; i < 50; i++ {
+				if i > 0 {
+					body += ","
+				}
+				body += fmt.Sprintf(`{"cve_id":"CVE-P3-%d"}`, i)
+			}
+			body += `]}`
+			_, _ = w.Write([]byte(body))
+		default:
+			_, _ = w.Write([]byte(`{"page":4,"size":300,"total":650,"results":[]}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewClient(srv.URL, "tkn")
+	total := 0
+	err := c.ListVulnerabilitiesStream(context.Background(), VulnerabilityFilters{}, func(page []Vulnerability) error {
+		total += len(page)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 650 {
+		t.Fatalf("expected 650 total records, got %d", total)
+	}
+}
+
+func TestListVulnerabilitiesRespectsTotal(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		// Return 5 records with total=5; walk should stop after one page.
+		_, _ = w.Write([]byte(`{"page":1,"size":300,"total":5,"results":[
+			{"cve_id":"CVE-A"},{"cve_id":"CVE-B"},{"cve_id":"CVE-C"},{"cve_id":"CVE-D"},{"cve_id":"CVE-E"}
+		]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewClient(srv.URL, "tkn")
+	got, err := c.ListVulnerabilities(context.Background(), VulnerabilityFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 5 {
+		t.Fatalf("expected 5 records, got %d", len(got))
+	}
+	if calls != 1 {
+		t.Fatalf("expected 1 server call (total reached), got %d", calls)
+	}
+}
+
 func TestListDetectionsPagePassesPaginationParams(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
