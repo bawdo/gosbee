@@ -24,6 +24,12 @@ func (f *fakeClient) ListDetections(ctx context.Context, _ iru.DetectionFilters)
 func (f *fakeClient) ListDetectionsPage(_ context.Context, _ iru.DetectionFilters, _ int, _ string) ([]iru.Detection, string, error) {
 	return f.detections, "", nil
 }
+func (f *fakeClient) ListDetectionsStream(_ context.Context, _ iru.DetectionFilters, cb func(page []iru.Detection) error) error {
+	if len(f.detections) == 0 {
+		return nil
+	}
+	return cb(f.detections)
+}
 func (f *fakeClient) ListDevices(_ context.Context, _ iru.DeviceFilters) ([]iru.Device, error) {
 	return f.devices, nil
 }

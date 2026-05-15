@@ -16,4 +16,5 @@ type iruClient interface {
 	FindUserByEmail(ctx context.Context, email string) (iru.User, error)
 	ListDetections(ctx context.Context, f iru.DetectionFilters) ([]iru.Detection, error)
 	ListDetectionsPage(ctx context.Context, f iru.DetectionFilters, limit int, cursor string) ([]iru.Detection, string, error)
+	ListDetectionsStream(ctx context.Context, f iru.DetectionFilters, cb func(page []iru.Detection) error) error
 }

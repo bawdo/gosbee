@@ -28,17 +28,23 @@ func (c *Client) ListDetectionsPage(ctx context.Context, _ DetectionFilters, lim
 	return p.Results, p.nextCursor(), nil
 }
 
-// ListDetections auto-paginates the detections endpoint.
-func (c *Client) ListDetections(ctx context.Context, f DetectionFilters) ([]Detection, error) {
-	var all []Detection
-	err := WalkCursor[Detection](ctx, DefaultLimit,
+// ListDetectionsStream walks the detections endpoint and invokes cb with each
+// page. Returns the first error from fetch or cb.
+func (c *Client) ListDetectionsStream(ctx context.Context, f DetectionFilters, cb func(page []Detection) error) error {
+	return WalkCursor[Detection](ctx, DefaultLimit,
 		func(ctx context.Context, limit int, cursor string) ([]Detection, string, error) {
 			return c.ListDetectionsPage(ctx, f, limit, cursor)
 		},
-		func(page []Detection) error {
-			all = append(all, page...)
-			return nil
-		},
+		cb,
 	)
+}
+
+// ListDetections accumulates all detections in memory.
+func (c *Client) ListDetections(ctx context.Context, f DetectionFilters) ([]Detection, error) {
+	var all []Detection
+	err := c.ListDetectionsStream(ctx, f, func(page []Detection) error {
+		all = append(all, page...)
+		return nil
+	})
 	return all, err
 }
