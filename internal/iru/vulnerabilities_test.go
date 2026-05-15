@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -35,14 +36,15 @@ func TestListDetectionsPagePassesPaginationParams(t *testing.T) {
 
 func TestListDetectionsAutoPaginates(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cursor := r.URL.Query().Get("cursor")
-		if cursor == "page2" {
+		after := r.URL.Query().Get("after")
+		if after == "page2" {
 			// Second page: 1 result, no next.
 			_, _ = w.Write([]byte(`{"next":null,"previous":null,"results":[{"cve_id":"CVE-Y"}]}`))
 			return
 		}
 		// First page: 300 results, next cursor points to page2.
-		body := `{"next":"https://example.iru?cursor=page2","previous":null,"results":[`
+		// The /detections endpoint returns raw cursor strings, not full URLs.
+		body := `{"next":"page2","previous":null,"results":[`
 		for i := 0; i < 300; i++ {
 			if i > 0 {
 				body += ","
@@ -61,5 +63,29 @@ func TestListDetectionsAutoPaginates(t *testing.T) {
 	}
 	if len(got) != 301 {
 		t.Fatalf("expected 301 detections, got %d", len(got))
+	}
+}
+
+func TestListDetectionsPageSendsAfterCursor(t *testing.T) {
+	var gotQueries []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQueries = append(gotQueries, r.URL.RawQuery)
+		_, _ = w.Write([]byte(`{"next": null, "previous": null, "results": []}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewClient(srv.URL, "tkn")
+	_, _, err := c.ListDetectionsPage(context.Background(), DetectionFilters{}, 50, "page-2-cursor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gotQueries) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(gotQueries))
+	}
+	if !strings.Contains(gotQueries[0], "after=page-2-cursor") {
+		t.Fatalf("expected after=page-2-cursor in query, got %q", gotQueries[0])
+	}
+	if strings.Contains(gotQueries[0], "cursor=") {
+		t.Fatalf("expected NO cursor= in query, got %q", gotQueries[0])
 	}
 }

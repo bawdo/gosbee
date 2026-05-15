@@ -15,8 +15,11 @@ const detectionsPath = "/vulnerability-management/detections"
 func (c *Client) ListDetectionsPage(ctx context.Context, _ DetectionFilters, limit int, cursor string) ([]Detection, string, error) {
 	q := url.Values{}
 	q.Set("limit", strconv.Itoa(limit))
+	// Iru's /detections endpoint uses `after`, not `cursor`, for forward
+	// pagination (confirmed by probing — sending `cursor` is silently ignored
+	// and returns the same first page each time, causing an infinite walk).
 	if cursor != "" {
-		q.Set("cursor", cursor)
+		q.Set("after", cursor)
 	}
 	var p paginated[Detection]
 	if err := c.do(ctx, http.MethodGet, detectionsPath, q, &p); err != nil {
