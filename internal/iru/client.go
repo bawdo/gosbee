@@ -38,8 +38,11 @@ func NewClient(baseURL, token string, opts ...Option) *Client {
 		baseURL:   baseURL,
 		userAgent: "jellyfish/dev",
 		httpClient: &http.Client{
-			Transport: &authTransport{token: token, base: http.DefaultTransport},
-			Timeout:   30 * time.Second,
+			Transport: &authTransport{
+				token: token,
+				base:  &retryTransport{base: http.DefaultTransport},
+			},
+			Timeout: 30 * time.Second,
 		},
 	}
 	for _, o := range opts {
@@ -47,7 +50,10 @@ func NewClient(baseURL, token string, opts ...Option) *Client {
 	}
 	// Preserve the auth transport when callers swap in their own http.Client.
 	if c.httpClient.Transport == nil {
-		c.httpClient.Transport = &authTransport{token: token, base: http.DefaultTransport}
+		c.httpClient.Transport = &authTransport{
+			token: token,
+			base:  &retryTransport{base: http.DefaultTransport},
+		}
 	}
 	return c
 }
