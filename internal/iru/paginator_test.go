@@ -6,6 +6,85 @@ import (
 	"testing"
 )
 
+// ---- WalkPaged tests ----
+
+func TestWalkPagedCollectsAllPages(t *testing.T) {
+	// Two full pages of 5 + one short page of 3 = 13 total records.
+	pages := [][]int{
+		{1, 2, 3, 4, 5},
+		{6, 7, 8, 9, 10},
+		{11, 12, 13}, // short page — signals end
+	}
+	const pageSize = 5
+	calls := 0
+	fetch := func(_ context.Context, page, size int) ([]int, int, error) {
+		idx := page - 1
+		if idx >= len(pages) {
+			return nil, 13, nil
+		}
+		calls++
+		return pages[idx], 13, nil
+	}
+	var collected []int
+	if err := WalkPaged[int](context.Background(), pageSize, fetch, func(p []int) error {
+		collected = append(collected, p...)
+		return nil
+	}); err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	want := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
+	if len(collected) != len(want) {
+		t.Fatalf("got %v want %v", collected, want)
+	}
+	for i, v := range want {
+		if collected[i] != v {
+			t.Fatalf("idx %d: got %d want %d", i, collected[i], v)
+		}
+	}
+	if calls != 3 {
+		t.Fatalf("expected 3 fetch calls, got %d", calls)
+	}
+}
+
+func TestWalkPagedStopsWhenTotalReached(t *testing.T) {
+	// Server reports total=5 and returns all 5 on the first page (size=300).
+	// WalkPaged should stop after one page even though it didn't hit the size cap.
+	calls := 0
+	fetch := func(_ context.Context, _, _ int) ([]int, int, error) {
+		calls++
+		return []int{1, 2, 3, 4, 5}, 5, nil
+	}
+	var collected []int
+	if err := WalkPaged[int](context.Background(), 300, fetch, func(p []int) error {
+		collected = append(collected, p...)
+		return nil
+	}); err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if len(collected) != 5 {
+		t.Fatalf("expected 5 records, got %d: %v", len(collected), collected)
+	}
+	if calls != 1 {
+		t.Fatalf("expected 1 fetch call (total reached), got %d", calls)
+	}
+}
+
+func TestWalkPagedUsesDefaultSizeWhenNonPositive(t *testing.T) {
+	var seenSize int
+	fetch := func(_ context.Context, _, size int) ([]int, int, error) {
+		if seenSize == 0 {
+			seenSize = size
+		}
+		return nil, 0, nil // empty page terminates immediately
+	}
+	if err := WalkPaged[int](context.Background(), 0, fetch, func([]int) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if seenSize != DefaultLimit {
+		t.Fatalf("expected DefaultLimit (%d), got %d", DefaultLimit, seenSize)
+	}
+}
+
 // ---- WalkCursor tests ----
 
 func TestWalkCursorPaginates(t *testing.T) {

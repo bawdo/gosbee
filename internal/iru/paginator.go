@@ -67,6 +67,48 @@ func (p paginated[T]) nextCursor() string {
 	return next
 }
 
+// pagedList wraps an Iru list response that uses {page, size, total, results}
+// page/size pagination.
+type pagedList[T any] struct {
+	Page    int `json:"page"`
+	Size    int `json:"size"`
+	Total   int `json:"total"`
+	Results []T `json:"results"`
+}
+
+// WalkPaged drives page/size pagination. fetch is called with the current
+// 1-indexed page number and the desired page size, and must return the page's
+// results plus the server-reported total. The walk stops when the accumulated
+// count reaches total or the server returns a short page.
+func WalkPaged[T any](
+	ctx context.Context,
+	size int,
+	fetch func(ctx context.Context, page, size int) ([]T, int, error),
+	cb func(page []T) error,
+) error {
+	if size <= 0 {
+		size = DefaultLimit
+	}
+	collected := 0
+	for page := 1; ; page++ {
+		results, total, err := fetch(ctx, page, size)
+		if err != nil {
+			return err
+		}
+		if len(results) > 0 {
+			if err := cb(results); err != nil {
+				return err
+			}
+			collected += len(results)
+		}
+		// Stop when the server gave us a short page (last page) or we've
+		// collected as many records as the server claims to have.
+		if len(results) < size || (total > 0 && collected >= total) {
+			return nil
+		}
+	}
+}
+
 // WalkCursor drives cursor-based pagination. fetch is called once per page
 // with the current cursor (empty string for the first page) and must return
 // the page's results plus the next cursor (empty when no more pages). cb is
