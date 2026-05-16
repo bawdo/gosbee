@@ -1,6 +1,7 @@
 package email
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,8 +21,12 @@ func TestLoadLogoSuccess(t *testing.T) {
 	if p.Name != "logo_small.png" {
 		t.Errorf("Name: got %q want logo_small.png", p.Name)
 	}
-	if len(p.Bytes) < 100 {
-		t.Errorf("Bytes: got %d bytes, suspiciously small", len(p.Bytes))
+	want, err := os.ReadFile("testdata/logo_small.png")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if !bytes.Equal(p.Bytes, want) {
+		t.Errorf("Bytes: got %d bytes, want %d bytes (content mismatch)", len(p.Bytes), len(want))
 	}
 }
 
