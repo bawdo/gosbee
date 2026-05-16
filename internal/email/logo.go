@@ -55,3 +55,25 @@ func loadLogo(path string) (*logoPart, error) {
 // "no logo configured" from a hard load error. loadLogo itself returns
 // (nil, nil) in that case; this sentinel is reserved for future use.
 var errLogoNotConfigured = errors.New("no logo configured")
+
+// ValidateLogoFile checks that path points at a readable PNG no larger than
+// MaxLogoBytes. Returns the byte length on success.
+func ValidateLogoFile(path string) (int64, error) {
+	// #nosec G304 - path is the operator's own input
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, fmt.Errorf("stat %s: %w", path, err)
+	}
+	if info.Size() > MaxLogoBytes {
+		return 0, fmt.Errorf("logo %s is %d bytes (max %d)", path, info.Size(), MaxLogoBytes)
+	}
+	// #nosec G304 - see above
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, fmt.Errorf("read %s: %w", path, err)
+	}
+	if _, err := png.Decode(bytes.NewReader(data)); err != nil {
+		return 0, fmt.Errorf("decode PNG %s: %w", path, err)
+	}
+	return info.Size(), nil
+}

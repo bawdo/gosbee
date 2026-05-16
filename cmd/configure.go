@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -33,6 +34,7 @@ type configureOpts struct {
 // configureEmailOpts is the DI surface for `configure email`.
 type configureEmailOpts struct {
 	ConfigPath      string
+	LogosDir        string // managed location for copied logos; defaults to <dirname(ConfigPath)>/logos
 	Stdin           io.Reader
 	Stdout          io.Writer
 	Stderr          io.Writer
@@ -270,6 +272,23 @@ func runConfigureEmail(ctx context.Context, o configureEmailOpts) error {
 	}
 	prof.Email.HeaderBG = headerBG
 
+	logosDir := o.LogosDir
+	if logosDir == "" {
+		logosDir = filepath.Join(filepath.Dir(o.ConfigPath), "logos")
+	}
+	newLogo, err := promptLogo(o.Stdout, o.Stderr, r, prof.Email.LogoPath, logosDir)
+	if err != nil {
+		return err
+	}
+	if newLogo != prof.Email.LogoPath {
+		if prof.Email.LogoPath != "" {
+			if rmErr := removeManagedLogo(prof.Email.LogoPath, logosDir); rmErr != nil {
+				_, _ = fmt.Fprintf(o.Stderr, "warn: failed to remove previous logo %s: %v\n", prof.Email.LogoPath, rmErr)
+			}
+		}
+	}
+	prof.Email.LogoPath = newLogo
+
 	file["default"] = prof
 
 	if err := config.Save(o.ConfigPath, file); err != nil {
@@ -378,4 +397,74 @@ func promptHeaderBG(stdout, stderr io.Writer, r *bufio.Reader, current string) (
 		return value, nil
 	}
 	return "", fmt.Errorf("invalid header background colour after %d attempts", configureEmailMaxAttempts)
+}
+
+func promptLogo(stdout, stderr io.Writer, r *bufio.Reader, current, logosDir string) (string, error) {
+	for attempt := 1; attempt <= configureEmailMaxAttempts; attempt++ {
+		value, err := promptWithDefault(stdout, r, "Logo PNG path", current)
+		if err != nil {
+			return "", err
+		}
+		switch value {
+		case current:
+			// Enter on existing value -> keep
+			return current, nil
+		case "":
+			// dash collapsed -> clear; caller handles unlinking
+			return "", nil
+		default:
+			dst, copyErr := copyLogoToManagedDir(value, logosDir)
+			if copyErr != nil {
+				_, _ = fmt.Fprintln(stderr, copyErr)
+				continue
+			}
+			return dst, nil
+		}
+	}
+	return "", fmt.Errorf("invalid logo after %d attempts", configureEmailMaxAttempts)
+}
+
+// copyLogoToManagedDir validates src as a PNG <= MaxLogoBytes and copies it
+// to <logosDir>/<basename(src)> with mode 0o600. Returns the destination path.
+func copyLogoToManagedDir(src, logosDir string) (string, error) {
+	if _, err := email.ValidateLogoFile(src); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(logosDir, 0o700); err != nil {
+		return "", fmt.Errorf("create logos dir %s: %w", logosDir, err)
+	}
+	// #nosec G304 - src is the operator's own input
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", src, err)
+	}
+	dst := filepath.Join(logosDir, filepath.Base(src))
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		return "", fmt.Errorf("write %s: %w", dst, err)
+	}
+	return dst, nil
+}
+
+// removeManagedLogo deletes the file at path iff it sits inside logosDir.
+// Anything outside that directory is left alone.
+func removeManagedLogo(path, logosDir string) error {
+	if path == "" || logosDir == "" {
+		return nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	absDir, err := filepath.Abs(logosDir)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(absDir, abs)
+	if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
+		return nil // outside the managed dir
+	}
+	if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }

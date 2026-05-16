@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -619,7 +620,8 @@ func TestConfigureEmailPromptHeaderBGRejectsInvalidThenAccepts(t *testing.T) {
 		Email: config.EmailConfig{From: "a@example.com"},
 	}})
 	// Inputs: from kept, defaultTo kept, gmail kept, bad colour twice, then valid.
-	in := strings.NewReader("\n\n\npurple\nnotahex\n#7566FF\n")
+	// Fifth prompt is logo - Enter keeps (empty current).
+	in := strings.NewReader("\n\n\npurple\nnotahex\n#7566FF\n\n")
 	var out, errBuf bytes.Buffer
 	if err := runConfigureEmail(context.Background(), configureEmailOpts{
 		ConfigPath: path, Stdin: in, Stdout: &out, Stderr: &errBuf,
@@ -632,5 +634,105 @@ func TestConfigureEmailPromptHeaderBGRejectsInvalidThenAccepts(t *testing.T) {
 	file, _ := config.Load(path)
 	if file["default"].Email.HeaderBG != "#7566FF" {
 		t.Errorf("HeaderBG: got %q", file["default"].Email.HeaderBG)
+	}
+}
+
+func TestConfigureEmailLogoCopiesIntoLogosDir(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yml")
+	logosDir := filepath.Join(dir, "logos")
+	srcLogo := filepath.Join(dir, "src", "flip.png")
+	if err := os.MkdirAll(filepath.Dir(srcLogo), 0o700); err != nil {
+		t.Fatalf("mkdir src: %v", err)
+	}
+	// Reuse the fixture from internal/email/testdata as a real PNG.
+	srcBytes, err := os.ReadFile("../internal/email/testdata/logo_small.png")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if err := os.WriteFile(srcLogo, srcBytes, 0o600); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	_ = config.Save(cfgPath, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: config.EmailConfig{From: "a@example.com"},
+	}})
+	// Inputs (in order): from kept, defaultTo kept, gmail kept, header_bg blank kept, logo path supplied.
+	in := strings.NewReader("\n\n\n\n" + srcLogo + "\n")
+	var out, errBuf bytes.Buffer
+	if err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, LogosDir: logosDir,
+		Stdin: in, Stdout: &out, Stderr: &errBuf,
+	}); err != nil {
+		t.Fatalf("runConfigureEmail: %v\nstderr:\n%s", err, errBuf.String())
+	}
+	dst := filepath.Join(logosDir, "flip.png")
+	gotBytes, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("expected logo at %s: %v", dst, err)
+	}
+	if !bytes.Equal(gotBytes, srcBytes) {
+		t.Errorf("copied bytes differ from src")
+	}
+	file, _ := config.Load(cfgPath)
+	if file["default"].Email.LogoPath != dst {
+		t.Errorf("LogoPath: got %q want %q", file["default"].Email.LogoPath, dst)
+	}
+}
+
+func TestConfigureEmailLogoClearDeletesManagedFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yml")
+	logosDir := filepath.Join(dir, "logos")
+	if err := os.MkdirAll(logosDir, 0o700); err != nil {
+		t.Fatalf("mkdir logos: %v", err)
+	}
+	managed := filepath.Join(logosDir, "old.png")
+	if err := os.WriteFile(managed, []byte("png-bytes"), 0o600); err != nil {
+		t.Fatalf("seed managed file: %v", err)
+	}
+	_ = config.Save(cfgPath, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: config.EmailConfig{From: "a@example.com", LogoPath: managed},
+	}})
+	in := strings.NewReader("\n\n\n\n-\n")
+	var out, errBuf bytes.Buffer
+	if err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, LogosDir: logosDir,
+		Stdin: in, Stdout: &out, Stderr: &errBuf,
+	}); err != nil {
+		t.Fatalf("runConfigureEmail: %v\nstderr:\n%s", err, errBuf.String())
+	}
+	if _, err := os.Stat(managed); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected managed file deleted, stat err: %v", err)
+	}
+	file, _ := config.Load(cfgPath)
+	if file["default"].Email.LogoPath != "" {
+		t.Errorf("LogoPath: got %q want empty", file["default"].Email.LogoPath)
+	}
+}
+
+func TestConfigureEmailLogoClearLeavesUnmanagedFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yml")
+	logosDir := filepath.Join(dir, "logos")
+	unmanaged := filepath.Join(dir, "elsewhere.png")
+	if err := os.WriteFile(unmanaged, []byte("png"), 0o600); err != nil {
+		t.Fatalf("seed unmanaged: %v", err)
+	}
+	_ = config.Save(cfgPath, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: config.EmailConfig{From: "a@example.com", LogoPath: unmanaged},
+	}})
+	in := strings.NewReader("\n\n\n\n-\n")
+	var out, errBuf bytes.Buffer
+	if err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, LogosDir: logosDir,
+		Stdin: in, Stdout: &out, Stderr: &errBuf,
+	}); err != nil {
+		t.Fatalf("runConfigureEmail: %v", err)
+	}
+	if _, err := os.Stat(unmanaged); err != nil {
+		t.Errorf("unmanaged file should still exist: %v", err)
 	}
 }
