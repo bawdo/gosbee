@@ -91,3 +91,51 @@ func TestBuildBaseURLRejectsBadInput(t *testing.T) {
 		t.Fatal("expected error for invalid subdomain characters")
 	}
 }
+
+func TestLoadParsesEmailBlock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	content := []byte(`default:
+  subdomain: acme
+  region: us
+  email:
+    from: alice@example.com
+    default_to: secops@example.com
+    subject_template: "Weekly brief - {{.Date}}"
+    cve_link_primary: "https://example.test/{cve}"
+    cve_link_secondary: "https://mirror.test/{cve}"
+`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	out, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := out["default"].Email
+	want := EmailConfig{
+		From:             "alice@example.com",
+		DefaultTo:        "secops@example.com",
+		SubjectTemplate:  "Weekly brief - {{.Date}}",
+		CVELinkPrimary:   "https://example.test/{cve}",
+		CVELinkSecondary: "https://mirror.test/{cve}",
+	}
+	if got != want {
+		t.Fatalf("Email mismatch.\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLoadEmailBlockOptional(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(path, []byte("default:\n  subdomain: acme\n  region: us\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	out, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if (out["default"].Email != EmailConfig{}) {
+		t.Fatalf("expected zero EmailConfig, got %#v", out["default"].Email)
+	}
+}

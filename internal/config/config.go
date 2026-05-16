@@ -10,10 +10,22 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// EmailConfig holds optional defaults for the -o email output. Every field
+// is optional. Flags override these values; if both are empty the renderer
+// falls back to built-in defaults (or, for "from", git user.email).
+type EmailConfig struct {
+	From             string `yaml:"from"`
+	DefaultTo        string `yaml:"default_to"`
+	SubjectTemplate  string `yaml:"subject_template"`
+	CVELinkPrimary   string `yaml:"cve_link_primary"`
+	CVELinkSecondary string `yaml:"cve_link_secondary"`
+}
+
 type Profile struct {
-	Subdomain string `yaml:"subdomain"`
-	Region    string `yaml:"region"`
-	BaseURL   string `yaml:"base_url"`
+	Subdomain string      `yaml:"subdomain"`
+	Region    string      `yaml:"region"`
+	BaseURL   string      `yaml:"base_url"`
+	Email     EmailConfig `yaml:"email,omitempty"`
 }
 
 // File maps profile name to its configuration. v1 only honours "default".
