@@ -13,6 +13,7 @@ import (
 	"golang.org/x/term"
 
 	"flipgroup.com.au/jellyfish/internal/config"
+	"flipgroup.com.au/jellyfish/internal/gmail"
 	"flipgroup.com.au/jellyfish/internal/iru"
 	"flipgroup.com.au/jellyfish/internal/keychain"
 )
@@ -30,10 +31,12 @@ type configureOpts struct {
 
 // configureEmailOpts is the DI surface for `configure email`.
 type configureEmailOpts struct {
-	ConfigPath string
-	Stdin      io.Reader
-	Stdout     io.Writer
-	Stderr     io.Writer
+	ConfigPath      string
+	Stdin           io.Reader
+	Stdout          io.Writer
+	Stderr          io.Writer
+	StoreGmailJSON  func(jsonBytes []byte) error
+	DeleteGmailJSON func() error
 }
 
 func newConfigureCmd() *cobra.Command {
@@ -68,7 +71,7 @@ func newConfigureCmd() *cobra.Command {
 func newConfigureEmailCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "email",
-		Short: "Interactively configure email output defaults (From, default To)",
+		Short: "Interactively configure email output defaults (From, default To, Gmail credentials)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfgPath, err := cmd.Flags().GetString("config")
 			if err != nil {
@@ -81,10 +84,12 @@ func newConfigureEmailCmd() *cobra.Command {
 				}
 			}
 			return runConfigureEmail(cmd.Context(), configureEmailOpts{
-				ConfigPath: cfgPath,
-				Stdin:      cmd.InOrStdin(),
-				Stdout:     cmd.OutOrStdout(),
-				Stderr:     cmd.ErrOrStderr(),
+				ConfigPath:      cfgPath,
+				Stdin:           cmd.InOrStdin(),
+				Stdout:          cmd.OutOrStdout(),
+				Stderr:          cmd.ErrOrStderr(),
+				StoreGmailJSON:  keychain.SetGmailServiceAccount,
+				DeleteGmailJSON: keychain.DeleteGmailServiceAccount,
 			})
 		},
 	}
@@ -253,6 +258,11 @@ func runConfigureEmail(ctx context.Context, o configureEmailOpts) error {
 
 	prof.Email.From = from
 	prof.Email.DefaultTo = defaultTo
+
+	if err := promptGmailJSON(o, r, &prof); err != nil {
+		return err
+	}
+
 	file["default"] = prof
 
 	if err := config.Save(o.ConfigPath, file); err != nil {
@@ -260,6 +270,60 @@ func runConfigureEmail(ctx context.Context, o configureEmailOpts) error {
 	}
 	_, _ = fmt.Fprintf(o.Stdout, "Email config saved to %s\n", o.ConfigPath)
 	return nil
+}
+
+const gmailPromptPlaceholderConfigured = "configured"
+
+// promptGmailJSON drives the third prompt:
+//   - "" (after Enter on "[configured]") -> keep
+//   - "-" -> clear (DeleteGmailJSON + GmailConfigured=false)
+//   - any other -> read file, ValidateServiceAccountJSON, StoreGmailJSON,
+//     GmailConfigured=true
+//
+// Validation failures error out without touching Keychain or config.
+func promptGmailJSON(o configureEmailOpts, r *bufio.Reader, prof *config.Profile) error {
+	current := ""
+	if prof.Email.GmailConfigured {
+		current = gmailPromptPlaceholderConfigured
+	}
+	line, err := promptWithDefault(o.Stdout, r, "Gmail service-account JSON path", current)
+	if err != nil {
+		return err
+	}
+	switch line {
+	case gmailPromptPlaceholderConfigured:
+		// User accepted the existing configured value; no change.
+		return nil
+	case "":
+		// User typed "-" (promptWithDefault collapses dash to empty).
+		if !prof.Email.GmailConfigured {
+			return nil
+		}
+		if o.DeleteGmailJSON != nil {
+			if err := o.DeleteGmailJSON(); err != nil {
+				return fmt.Errorf("delete Gmail credentials from Keychain: %w", err)
+			}
+		}
+		prof.Email.GmailConfigured = false
+		return nil
+	default:
+		// Treat as a filesystem path.
+		// #nosec G304 - path is the operator's own input at configure time
+		fileBytes, err := os.ReadFile(line)
+		if err != nil {
+			return fmt.Errorf("read Gmail JSON %s: %w", line, err)
+		}
+		if err := gmail.ValidateServiceAccountJSON(fileBytes); err != nil {
+			return fmt.Errorf("validate Gmail JSON %s: %w", line, err)
+		}
+		if o.StoreGmailJSON != nil {
+			if err := o.StoreGmailJSON(fileBytes); err != nil {
+				return fmt.Errorf("store Gmail JSON in Keychain: %w", err)
+			}
+		}
+		prof.Email.GmailConfigured = true
+		return nil
+	}
 }
 
 // promptValidated runs promptWithDefault + validateEmailish in a loop up to

@@ -19,6 +19,7 @@ type EmailConfig struct {
 	SubjectTemplate  string `yaml:"subject_template,omitempty"`
 	CVELinkPrimary   string `yaml:"cve_link_primary,omitempty"`
 	CVELinkSecondary string `yaml:"cve_link_secondary,omitempty"`
+	GmailConfigured  bool   `yaml:"gmail_configured,omitempty"`
 }
 
 type Profile struct {

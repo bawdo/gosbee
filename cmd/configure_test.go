@@ -405,3 +405,180 @@ func TestConfigureEmailErrorsWhenNoDefaultProfile(t *testing.T) {
 		t.Errorf("error wording: got %v", err)
 	}
 }
+
+// gmailKeychainStubs captures Set/Delete calls so tests can assert what
+// runConfigureEmail did to the Keychain.
+type gmailKeychainStubs struct {
+	stored   []byte
+	deleted  bool
+	storeErr error
+	delErr   error
+}
+
+func (g *gmailKeychainStubs) store(b []byte) error {
+	if g.storeErr != nil {
+		return g.storeErr
+	}
+	g.stored = append([]byte(nil), b...)
+	return nil
+}
+
+func (g *gmailKeychainStubs) delete() error {
+	if g.delErr != nil {
+		return g.delErr
+	}
+	g.deleted = true
+	return nil
+}
+
+// writeGmailJSON writes a syntactically valid service-account JSON to a temp
+// file and returns the path. Used by tests that exercise the path-reading
+// branch of the Gmail prompt.
+func writeGmailJSON(t *testing.T, dir string) string {
+	t.Helper()
+	path := filepath.Join(dir, "sa.json")
+	contents := `{"type":"service_account","client_email":"x@y.iam.gserviceaccount.com","private_key":"k"}`
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write sa.json: %v", err)
+	}
+	return path
+}
+
+func TestConfigureEmailGmailPromptStoresJSON(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+	}})
+	jsonPath := writeGmailJSON(t, tmp)
+	kc := &gmailKeychainStubs{}
+
+	in := strings.NewReader("alice@example.com\nsecops@example.com\n" + jsonPath + "\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+		StoreGmailJSON:  kc.store,
+		DeleteGmailJSON: kc.delete,
+	})
+	if err != nil {
+		t.Fatalf("runConfigureEmail: %v", err)
+	}
+	if string(kc.stored) == "" {
+		t.Fatal("expected StoreGmailJSON to be called")
+	}
+	loaded, _ := config.Load(cfgPath)
+	if !loaded["default"].Email.GmailConfigured {
+		t.Errorf("GmailConfigured should be true after storing JSON")
+	}
+}
+
+func TestConfigureEmailGmailPromptDashClears(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: config.EmailConfig{From: "alice@example.com", DefaultTo: "secops@example.com", GmailConfigured: true},
+	}})
+	kc := &gmailKeychainStubs{}
+
+	in := strings.NewReader("\n\n-\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+		StoreGmailJSON:  kc.store,
+		DeleteGmailJSON: kc.delete,
+	})
+	if err != nil {
+		t.Fatalf("runConfigureEmail: %v", err)
+	}
+	if !kc.deleted {
+		t.Error("expected DeleteGmailJSON to be called")
+	}
+	loaded, _ := config.Load(cfgPath)
+	if loaded["default"].Email.GmailConfigured {
+		t.Errorf("GmailConfigured should be false after clearing")
+	}
+}
+
+func TestConfigureEmailGmailPromptEnterKeepsExisting(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: config.EmailConfig{From: "alice@example.com", DefaultTo: "secops@example.com", GmailConfigured: true},
+	}})
+	kc := &gmailKeychainStubs{}
+
+	in := strings.NewReader("\n\n\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+		StoreGmailJSON:  kc.store,
+		DeleteGmailJSON: kc.delete,
+	})
+	if err != nil {
+		t.Fatalf("runConfigureEmail: %v", err)
+	}
+	if kc.stored != nil || kc.deleted {
+		t.Errorf("Enter on Gmail prompt should not touch Keychain (stored=%v deleted=%v)", kc.stored, kc.deleted)
+	}
+	loaded, _ := config.Load(cfgPath)
+	if !loaded["default"].Email.GmailConfigured {
+		t.Errorf("GmailConfigured should remain true")
+	}
+}
+
+func TestConfigureEmailGmailPromptRejectsMissingFile(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+	}})
+	missing := filepath.Join(tmp, "does-not-exist.json")
+	kc := &gmailKeychainStubs{}
+
+	in := strings.NewReader("alice@example.com\nsecops@example.com\n" + missing + "\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+		StoreGmailJSON:  kc.store,
+		DeleteGmailJSON: kc.delete,
+	})
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	if kc.stored != nil {
+		t.Error("StoreGmailJSON should not have been called")
+	}
+	loaded, _ := config.Load(cfgPath)
+	if loaded["default"].Email.GmailConfigured {
+		t.Errorf("GmailConfigured should remain false on validation failure")
+	}
+}
+
+func TestConfigureEmailGmailPromptRejectsWrongType(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+	}})
+	badPath := filepath.Join(tmp, "user.json")
+	if err := os.WriteFile(badPath, []byte(`{"type":"authorized_user","client_email":"x@y"}`), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	kc := &gmailKeychainStubs{}
+
+	in := strings.NewReader("alice@example.com\nsecops@example.com\n" + badPath + "\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+		StoreGmailJSON:  kc.store,
+		DeleteGmailJSON: kc.delete,
+	})
+	if err == nil {
+		t.Fatal("expected error for wrong type")
+	}
+	if kc.stored != nil {
+		t.Error("StoreGmailJSON should not have been called")
+	}
+}

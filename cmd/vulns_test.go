@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"flipgroup.com.au/jellyfish/internal/config"
+	"flipgroup.com.au/jellyfish/internal/gmail"
 	"flipgroup.com.au/jellyfish/internal/iru"
 )
 
@@ -266,5 +268,53 @@ func TestVulnsSummaryEmailErrorsWithoutFrom(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error when no From address available")
+	}
+}
+
+func TestVulnsSummarySendEmailRequiresRecipient(t *testing.T) {
+	client := &fakeClient{vulnerabilities: []iru.Vulnerability{{CVEID: "CVE-A", Severity: "Critical"}}}
+	opts := vulnsSummaryOpts{
+		EmailFlags: emailFlagValues{Send: true, From: "ops@flipgroup.com.au"},
+		EmailNow:   time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+		Profile:    config.Profile{Email: config.EmailConfig{GmailConfigured: true}},
+		NoCache:    true,
+		KeychainGet: func() ([]byte, error) { return []byte(`{"type":"service_account"}`), nil },
+		NewSender:   func(_ context.Context, _ []byte, _ string) (gmail.Sender, error) { return &fakeGmailSender{}, nil },
+	}
+	err := runVulnsSummary(context.Background(), client, &bytes.Buffer{}, &bytes.Buffer{}, opts)
+	if err == nil {
+		t.Fatal("expected error for missing recipient")
+	}
+	if !strings.Contains(err.Error(), "recipient") {
+		t.Errorf("error wording: got %v", err)
+	}
+}
+
+func TestVulnsSummarySendEmailSends(t *testing.T) {
+	client := &fakeClient{vulnerabilities: []iru.Vulnerability{
+		{CVEID: "CVE-A", Severity: "Critical", CVSSScore: 9.5, KEVScore: 1, DeviceCount: 2, Status: "Active", Software: []string{"foo"}},
+	}}
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+	sender := &fakeGmailSender{returnID: "msg-abc"}
+	opts := vulnsSummaryOpts{
+		EmailFlags: emailFlagValues{Send: true, From: "ops@flipgroup.com.au", To: "secops@example.com"},
+		EmailNow:   time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+		Profile:    config.Profile{Email: config.EmailConfig{GmailConfigured: true}},
+		NoCache:    true,
+		KeychainGet: func() ([]byte, error) { return []byte(`{"type":"service_account"}`), nil },
+		NewSender:   func(_ context.Context, _ []byte, _ string) (gmail.Sender, error) { return sender, nil },
+	}
+	if err := runVulnsSummary(context.Background(), client, stdout, stderr, opts); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if stdout.Len() > 0 {
+		t.Errorf("stdout should be empty; got %q", stdout.String())
+	}
+	want := "sent: to=secops@example.com from=ops@flipgroup.com.au gmail-id=msg-abc"
+	if !strings.Contains(stderr.String(), want) {
+		t.Errorf("stderr confirmation:\n got %q\nwant %q", stderr.String(), want)
+	}
+	if sender.sent == nil {
+		t.Fatal("sender was not called")
 	}
 }

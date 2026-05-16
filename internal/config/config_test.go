@@ -139,3 +139,24 @@ func TestLoadEmailBlockOptional(t *testing.T) {
 		t.Fatalf("expected zero EmailConfig, got %#v", out["default"].Email)
 	}
 }
+
+func TestSaveLoadPreservesGmailConfigured(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	in := File{"default": Profile{
+		Subdomain: "acme",
+		Region:    "us",
+		BaseURL:   "https://acme.api.kandji.io/api/v1",
+		Email:     EmailConfig{From: "alice@example.com", GmailConfigured: true},
+	}}
+	if err := Save(path, in); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	out, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !out["default"].Email.GmailConfigured {
+		t.Errorf("GmailConfigured did not round-trip; got %+v", out["default"].Email)
+	}
+}

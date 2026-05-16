@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"flipgroup.com.au/jellyfish/internal/config"
+	"flipgroup.com.au/jellyfish/internal/gmail"
 	"flipgroup.com.au/jellyfish/internal/iru"
 )
 
@@ -172,5 +174,94 @@ func TestUserShowEmailErrorsWithoutFrom(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error when no From address available")
+	}
+}
+
+func TestUserShowSendEmailDefaultsToUserEmail(t *testing.T) {
+	client := &fakeClient{
+		users:   []iru.User{{ID: "u-1", Name: "Alice", Email: "alice@example.com"}},
+		devices: []iru.Device{{DeviceID: "d-1", DeviceName: "MBP", SerialNumber: "SN1"}},
+		detections: []iru.Detection{
+			{DeviceID: "d-1", CVEID: "CVE-A", Severity: "Critical", CVSSScore: 9.5, Name: "x", Version: "1.0"},
+		},
+	}
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+	sender := &fakeGmailSender{returnID: "msg-xyz"}
+	opts := userShowOpts{
+		Identifier: "u-1",
+		NoCache:    true,
+		EmailFlags: emailFlagValues{Send: true, From: "ops@flipgroup.com.au"},
+		EmailNow:   time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+		Profile:    config.Profile{Email: config.EmailConfig{GmailConfigured: true}},
+		KeychainGet: func() ([]byte, error) { return []byte(`{"type":"service_account"}`), nil },
+		NewSender:   func(_ context.Context, _ []byte, _ string) (gmail.Sender, error) { return sender, nil },
+	}
+	if err := runUserShow(context.Background(), client, stdout, stderr, opts); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if stdout.Len() > 0 {
+		t.Errorf("stdout should be empty when --send-email; got %q", stdout.String())
+	}
+	want := "sent: to=alice@example.com from=ops@flipgroup.com.au gmail-id=msg-xyz"
+	if !strings.Contains(stderr.String(), want) {
+		t.Errorf("stderr confirmation:\n got %q\nwant substring %q", stderr.String(), want)
+	}
+	if sender.sent == nil {
+		t.Fatal("sender was not called")
+	}
+	msg, err := mail.ReadMessage(bytes.NewReader(sender.sent))
+	if err != nil {
+		t.Fatalf("parse sent eml: %v\nraw:\n%s", err, sender.sent)
+	}
+	if got := msg.Header.Get("To"); got != "alice@example.com" {
+		t.Errorf("To: got %q", got)
+	}
+}
+
+func TestUserShowSendEmailExplicitToOverridesUser(t *testing.T) {
+	client := &fakeClient{
+		users:   []iru.User{{ID: "u-1", Name: "Alice", Email: "alice@example.com"}},
+		devices: []iru.Device{{DeviceID: "d-1", DeviceName: "MBP", SerialNumber: "SN1"}},
+		detections: []iru.Detection{
+			{DeviceID: "d-1", CVEID: "CVE-A", Severity: "Critical", CVSSScore: 9.5, Name: "x", Version: "1.0"},
+		},
+	}
+	stderr := &bytes.Buffer{}
+	sender := &fakeGmailSender{}
+	opts := userShowOpts{
+		Identifier: "u-1",
+		NoCache:    true,
+		EmailFlags: emailFlagValues{Send: true, From: "ops@flipgroup.com.au", To: "other@example.com"},
+		EmailNow:   time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+		Profile:    config.Profile{Email: config.EmailConfig{GmailConfigured: true}},
+		KeychainGet: func() ([]byte, error) { return []byte(`{"type":"service_account"}`), nil },
+		NewSender:   func(_ context.Context, _ []byte, _ string) (gmail.Sender, error) { return sender, nil },
+	}
+	if err := runUserShow(context.Background(), client, &bytes.Buffer{}, stderr, opts); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "to=other@example.com") {
+		t.Errorf("expected explicit To to win; stderr=%q", stderr.String())
+	}
+}
+
+func TestUserShowSendEmailPropagatesSenderError(t *testing.T) {
+	client := &fakeClient{
+		users:   []iru.User{{ID: "u-1", Name: "Alice", Email: "alice@example.com"}},
+		devices: []iru.Device{{DeviceID: "d-1", DeviceName: "MBP", SerialNumber: "SN1"}},
+	}
+	sender := &fakeGmailSender{err: gmail.ErrUnauthorized}
+	opts := userShowOpts{
+		Identifier: "u-1",
+		NoCache:    true,
+		EmailFlags: emailFlagValues{Send: true, From: "ops@flipgroup.com.au"},
+		EmailNow:   time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+		Profile:    config.Profile{Email: config.EmailConfig{GmailConfigured: true}},
+		KeychainGet: func() ([]byte, error) { return []byte(`{"type":"service_account"}`), nil },
+		NewSender:   func(_ context.Context, _ []byte, _ string) (gmail.Sender, error) { return sender, nil },
+	}
+	err := runUserShow(context.Background(), client, &bytes.Buffer{}, &bytes.Buffer{}, opts)
+	if !errors.Is(err, gmail.ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized propagated; got %v", err)
 	}
 }
