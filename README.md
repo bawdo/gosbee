@@ -192,6 +192,50 @@ cve_id, package_name, package_version, severity, cvss_score,
 detection_datetime
 ```
 
+### Email output
+
+`-o email` writes an RFC 5322 multipart/alternative message (.eml) to stdout.
+It carries a styled HTML body (executive summary + per-CVE table with
+clickable NVD/MITRE CVE links) and a plain-text alternative. Open the .eml
+file in Mail, pipe it to your mail tooling, or feed it to a future
+`--send-email` flag.
+
+```bash
+jellyfish vulns summary --severity critical -o email > critical.eml
+jellyfish vulns summary -o email | open -f -a Mail            # macOS
+jellyfish user show keith@flipgroup.com.au -o email \
+    --email-to keith@flipgroup.com.au > exposure.eml
+```
+
+On a real tenant `vulns summary` is ~3000 rows. Gmail will clip the message
+if you send the unfiltered output - filter with `--severity`, `--status`, or
+`--limit` first.
+
+Recipient, sender, and subject default from the `email:` block in
+`config.yml`; flags override:
+
+| Flag | Config key | Default |
+|---|---|---|
+| `--email-to`      | `email.default_to`       | empty (header renders as `<unspecified>`) |
+| `--email-from`    | `email.from`             | `git config user.email` |
+| `--email-subject` | `email.subject_template` | per-command default |
+
+`email.subject_template` is a Go template; available variables: `{{.Date}}`
+(YYYY-MM-DD) and `{{.Time}}` (HH:MM).
+
+CVE link targets are also config-overridable; defaults are NVD and MITRE:
+
+```yaml
+email:
+  from: alice@example.com
+  default_to: secops@example.com
+  subject_template: "Weekly brief - {{.Date}}"
+  cve_link_primary: "https://nvd.nist.gov/vuln/detail/{cve}"
+  cve_link_secondary: "https://www.cve.org/CVERecord?id={cve}"
+```
+
+The `{cve}` token in link templates is a literal substring replacement.
+
 ### Exit codes
 
 | Code | Meaning |
