@@ -224,6 +224,8 @@ minutes; pass --no-cache to force a fresh fetch.`,
 	c.Flags().String("email-to", "", "Email To: header (default: email.default_to from config)")
 	c.Flags().String("email-from", "", "Email From: header (default: email.from from config, then git user.email)")
 	c.Flags().String("email-subject", "", "Email Subject: header (default: rendered email.subject_template or a per-command default)")
+	c.Flags().String("email-header-bg", "", "Email header background colour as #RRGGBB (default: email.header_bg or #7566FF)")
+	c.Flags().String("email-logo", "", "Path to a PNG to show in the email header (default: email.logo_path)")
 	c.Flags().Bool("send-email", false, "Send the rendered email via Gmail (requires `jellyfish configure email` to be run first)")
 	return c
 }

@@ -318,3 +318,56 @@ func TestVulnsSummarySendEmailSends(t *testing.T) {
 		t.Fatal("sender was not called")
 	}
 }
+
+func TestResolveEmailOptionsHeaderBGAndLogoFromFlag(t *testing.T) {
+	flags := emailFlagValues{
+		From:     "alice@example.com",
+		HeaderBG: "#6846D8",
+		LogoPath: "/abs/path/logo.png",
+	}
+	prof := config.Profile{Subdomain: "acme", Email: config.EmailConfig{
+		From:     "config-from@example.com",
+		HeaderBG: "#C6B8FE",
+		LogoPath: "/cfg/path/other.png",
+	}}
+	now := time.Date(2026, 5, 16, 10, 0, 0, 0, time.UTC)
+	got, err := resolveEmailOptions(flags, prof, func() (string, error) { return "", nil }, now)
+	if err != nil {
+		t.Fatalf("resolveEmailOptions: %v", err)
+	}
+	if got.HeaderBG != "#6846D8" {
+		t.Errorf("HeaderBG: flag should win, got %q", got.HeaderBG)
+	}
+	if got.LogoPath != "/abs/path/logo.png" {
+		t.Errorf("LogoPath: flag should win, got %q", got.LogoPath)
+	}
+}
+
+func TestResolveEmailOptionsHeaderBGAndLogoFromConfigWhenFlagsEmpty(t *testing.T) {
+	flags := emailFlagValues{From: "alice@example.com"}
+	prof := config.Profile{Subdomain: "acme", Email: config.EmailConfig{
+		HeaderBG: "#C6B8FE",
+		LogoPath: "/cfg/path/other.png",
+	}}
+	now := time.Date(2026, 5, 16, 10, 0, 0, 0, time.UTC)
+	got, err := resolveEmailOptions(flags, prof, func() (string, error) { return "", nil }, now)
+	if err != nil {
+		t.Fatalf("resolveEmailOptions: %v", err)
+	}
+	if got.HeaderBG != "#C6B8FE" {
+		t.Errorf("HeaderBG: got %q want #C6B8FE", got.HeaderBG)
+	}
+	if got.LogoPath != "/cfg/path/other.png" {
+		t.Errorf("LogoPath: got %q", got.LogoPath)
+	}
+}
+
+func TestResolveEmailOptionsRejectsInvalidHeaderBG(t *testing.T) {
+	flags := emailFlagValues{From: "alice@example.com", HeaderBG: "purple"}
+	prof := config.Profile{Subdomain: "acme"}
+	now := time.Date(2026, 5, 16, 10, 0, 0, 0, time.UTC)
+	_, err := resolveEmailOptions(flags, prof, func() (string, error) { return "", nil }, now)
+	if err == nil {
+		t.Fatal("expected error for invalid hex colour")
+	}
+}
