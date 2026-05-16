@@ -28,8 +28,16 @@ type configureOpts struct {
 	VerifyBaseURL string                                // override for tests, blank in production
 }
 
+// configureEmailOpts is the DI surface for `configure email`.
+type configureEmailOpts struct {
+	ConfigPath string
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
+}
+
 func newConfigureCmd() *cobra.Command {
-	return &cobra.Command{
+	c := &cobra.Command{
 		Use:   "configure",
 		Short: "Interactively configure jellyfish credentials",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -50,6 +58,33 @@ func newConfigureCmd() *cobra.Command {
 				Stderr:        cmd.ErrOrStderr(),
 				StoreToken:    keychain.Set,
 				ReadTokenLine: readMaskedToken,
+			})
+		},
+	}
+	c.AddCommand(newConfigureEmailCmd())
+	return c
+}
+
+func newConfigureEmailCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "email",
+		Short: "Interactively configure email output defaults (From, default To)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfgPath, err := cmd.Flags().GetString("config")
+			if err != nil {
+				return err
+			}
+			if cfgPath == "" {
+				cfgPath, err = config.DefaultPath()
+				if err != nil {
+					return err
+				}
+			}
+			return runConfigureEmail(cmd.Context(), configureEmailOpts{
+				ConfigPath: cfgPath,
+				Stdin:      cmd.InOrStdin(),
+				Stdout:     cmd.OutOrStdout(),
+				Stderr:     cmd.ErrOrStderr(),
 			})
 		},
 	}
@@ -186,4 +221,72 @@ func validateEmailish(value string, allowEmpty bool, fieldLabel string) error {
 		return fmt.Errorf("%s must look like an email address (contain @)", fieldLabel)
 	}
 	return nil
+}
+
+const configureEmailMaxAttempts = 3
+
+func runConfigureEmail(ctx context.Context, o configureEmailOpts) error {
+	_ = ctx
+
+	file, err := config.Load(o.ConfigPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf(`no config found at %s - run "jellyfish configure" first to set up tenant + token`, o.ConfigPath)
+		}
+		return fmt.Errorf("read config: %w", err)
+	}
+	prof, ok := file["default"]
+	if !ok {
+		return errors.New(`no "default" profile yet - run "jellyfish configure" first to set up tenant + token`)
+	}
+
+	r := bufio.NewReader(o.Stdin)
+
+	from, err := promptValidated(o.Stdout, o.Stderr, r, "Email From", prof.Email.From, false)
+	if err != nil {
+		return err
+	}
+	defaultTo, err := promptValidated(o.Stdout, o.Stderr, r, "Email default To", prof.Email.DefaultTo, true)
+	if err != nil {
+		return err
+	}
+
+	prof.Email.From = from
+	prof.Email.DefaultTo = defaultTo
+	file["default"] = prof
+
+	if err := config.Save(o.ConfigPath, file); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(o.Stdout, "Email config saved to %s\n", o.ConfigPath)
+	return nil
+}
+
+// promptValidated runs promptWithDefault + validateEmailish in a loop up to
+// configureEmailMaxAttempts times. Validation errors print to stderr; the
+// loop re-prompts. The fieldName used in error messages is derived from the
+// label: "Email From" -> "From", "Email default To" -> "DefaultTo".
+func promptValidated(stdout, stderr io.Writer, r *bufio.Reader, label, current string, allowEmpty bool) (string, error) {
+	fieldName := label
+	if idx := strings.Index(label, " "); idx > 0 {
+		fieldName = label[idx+1:]
+	}
+	if fieldName == "default To" {
+		fieldName = "DefaultTo"
+	}
+	for attempt := 1; attempt <= configureEmailMaxAttempts; attempt++ {
+		value, err := promptWithDefault(stdout, r, label, current)
+		if err != nil {
+			return "", err
+		}
+		if value == "" {
+			return value, nil
+		}
+		if vErr := validateEmailish(value, allowEmpty, fieldName); vErr != nil {
+			_, _ = fmt.Fprintln(stderr, vErr)
+			continue
+		}
+		return value, nil
+	}
+	return "", fmt.Errorf("invalid %s address after %d attempts", fieldName, configureEmailMaxAttempts)
 }
