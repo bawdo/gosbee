@@ -148,6 +148,15 @@ func TestNewUserShowRendererRejectsEmptyFrom(t *testing.T) {
 	}
 }
 
+func TestNewUserShowRendererRejectsBadLinkTemplate(t *testing.T) {
+	opts := newPinnedUserShowOpts()
+	opts.CVELinkPrimary = "https://no-token.example/"
+	err := NewUserShowRenderer(opts).Render(&bytes.Buffer{}, sampleUserBundle())
+	if err == nil {
+		t.Fatal("expected validation error for missing {cve} token")
+	}
+}
+
 func TestUserShowRoundTripParses(t *testing.T) {
 	var buf bytes.Buffer
 	if err := NewUserShowRenderer(newPinnedUserShowOpts()).Render(&buf, sampleUserBundle()); err != nil {

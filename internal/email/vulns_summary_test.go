@@ -244,3 +244,22 @@ func TestVulnSummaryRoundTripParses(t *testing.T) {
 		t.Fatal("missing Subject")
 	}
 }
+
+func TestDomainFromAddress(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"user@domain.com", "domain.com"},
+		{"Display Name <alice@example.com>", "example.com"},
+		{"alice@example.com>", "example.com"},
+		{"not-an-email", "localhost"},
+		{"", "localhost"},
+	}
+	for _, tc := range cases {
+		got := domainFromAddress(tc.in)
+		if got != tc.want {
+			t.Errorf("domainFromAddress(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
