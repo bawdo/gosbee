@@ -8,9 +8,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"flipgroup.com.au/jellyfish/internal/config"
+	"flipgroup.com.au/jellyfish/internal/email"
 	"flipgroup.com.au/jellyfish/internal/iru"
 	"flipgroup.com.au/jellyfish/internal/output"
 )
@@ -141,12 +144,16 @@ func detectionColumns() []output.Column {
 }
 
 type vulnsSummaryOpts struct {
-	Status   string
-	Severity string
-	Sort     string
-	Limit    int
-	Output   string
-	NoCache  bool
+	Status     string
+	Severity   string
+	Sort       string
+	Limit      int
+	Output     string
+	NoCache    bool
+	EmailFlags emailFlagValues
+	EmailNow   time.Time
+	Profile    config.Profile
+	gitEmail   gitEmailLookup
 }
 
 func newVulnsSummaryCmd() *cobra.Command {
@@ -164,7 +171,15 @@ minutes; pass --no-cache to force a fresh fetch.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			outFmt, _ := cmd.Flags().GetString("output")
 			opts.Output = outFmt
-
+			opts.EmailFlags = readEmailFlags(cmd)
+			opts.EmailNow = time.Now()
+			if outFmt == "email" {
+				prof, err := activeProfile(cmd)
+				if err != nil {
+					return err
+				}
+				opts.Profile = prof
+			}
 			client, err := buildClient(cmd)
 			if err != nil {
 				return err
@@ -177,6 +192,9 @@ minutes; pass --no-cache to force a fresh fetch.`,
 	c.Flags().StringVar(&opts.Sort, "sort", "severity", "Sort by: severity (default) | cvss | kev | devices | cve")
 	c.Flags().IntVar(&opts.Limit, "limit", 0, "Cap the rendered rows after sort")
 	c.Flags().BoolVar(&opts.NoCache, "no-cache", false, "Skip the vulnerabilities cache; always fetch fresh")
+	c.Flags().String("email-to", "", "Email To: header (default: email.default_to from config)")
+	c.Flags().String("email-from", "", "Email From: header (default: email.from from config, then git user.email)")
+	c.Flags().String("email-subject", "", "Email Subject: header (default: rendered email.subject_template or a per-command default)")
 	return c
 }
 
@@ -206,7 +224,7 @@ func runVulnsSummary(ctx context.Context, client iruClient, w, stderr io.Writer,
 		filtered = filtered[:opts.Limit]
 	}
 
-	return renderVulns(w, opts.Output, filtered)
+	return renderVulns(w, opts, filtered)
 }
 
 // severityRank gives a fixed ordering: Critical > High > Medium > Low > Undefined > anything else.
@@ -249,16 +267,30 @@ func sortVulns(vs []iru.Vulnerability, key string) {
 	}
 }
 
-func renderVulns(w io.Writer, format string, vs []iru.Vulnerability) error {
-	if format == "table" || format == "" {
+func renderVulns(w io.Writer, opts vulnsSummaryOpts, vs []iru.Vulnerability) error {
+	switch opts.Output {
+	case "table", "":
 		t := output.Table().WithColumns(vulnColumns())
 		return t.Render(w, vs)
-	}
-	if format == "csv" {
+	case "csv":
 		c := output.CSV().WithColumns(vulnColumns())
 		return c.Render(w, vs)
+	case "email":
+		now := opts.EmailNow
+		if now.IsZero() {
+			now = time.Now()
+		}
+		gitLookup := opts.gitEmail
+		if gitLookup == nil {
+			gitLookup = gitUserEmail
+		}
+		emailOpts, err := resolveEmailOptions(opts.EmailFlags, opts.Profile, gitLookup, now)
+		if err != nil {
+			return err
+		}
+		return email.NewVulnSummaryRenderer(emailOpts).Render(w, vs)
 	}
-	r, err := output.For(format)
+	r, err := output.For(opts.Output)
 	if err != nil {
 		return err
 	}

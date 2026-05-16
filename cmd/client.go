@@ -35,3 +35,25 @@ func buildClient(cmd *cobra.Command) (iruClient, error) {
 	}
 	return iru.NewClient(prof.BaseURL, tok, iru.WithUserAgent("jellyfish/"+version.Version)), nil
 }
+
+// activeProfile returns the named profile from config (only "default" honoured
+// today). A missing config file is treated as "no profile" rather than an
+// error so the email command can still rely purely on flags + git fallback.
+func activeProfile(cmd *cobra.Command) (config.Profile, error) {
+	cfgPath, _ := cmd.Flags().GetString("config")
+	if cfgPath == "" {
+		p, err := config.DefaultPath()
+		if err != nil {
+			return config.Profile{}, err
+		}
+		cfgPath = p
+	}
+	f, err := config.Load(cfgPath)
+	if err != nil {
+		return config.Profile{}, nil
+	}
+	if prof, ok := f["default"]; ok {
+		return prof, nil
+	}
+	return config.Profile{}, nil
+}
