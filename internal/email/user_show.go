@@ -26,10 +26,11 @@ type UserBundleDevice struct {
 	Detections []iru.Detection
 }
 
-//go:embed templates/user_show.txt.tmpl templates/user_show.html.tmpl
+//go:embed templates/user_show.txt.tmpl templates/user_show.html.tmpl templates/_header.html.tmpl
 var userShowFS embed.FS
 
 type userShowView struct {
+	Header         Header
 	User           iru.User
 	Tenant         string
 	GeneratedAtStr string
@@ -132,7 +133,11 @@ func renderUserShowHTML(v userShowView) (string, error) {
 		"sevRowBG":  sevRowBG,
 		"sevPillBG": sevPillBG,
 		"sevPillFG": sevPillFG,
-	}).ParseFS(userShowFS, "templates/user_show.html.tmpl")
+		"safeCSS":   func(s string) htmltmpl.CSS { return htmltmpl.CSS(s) },
+	}).ParseFS(userShowFS,
+		"templates/_header.html.tmpl",
+		"templates/user_show.html.tmpl",
+	)
 	if err != nil {
 		return "", err
 	}
@@ -169,6 +174,19 @@ func (r *userShowRenderer) Render(w io.Writer, v any) error {
 	}
 
 	view := buildUserShowView(bundle, r.opts)
+
+	subtitle := r.opts.GeneratedAt.Format("2 Jan 2006 - 15:04 MST")
+	if bundle.User.Email != "" {
+		subtitle = bundle.User.Email + " - " + subtitle
+	}
+	if view.Tenant != "" {
+		subtitle += " - " + view.Tenant
+	}
+	subtitle += fmt.Sprintf(" - %d CVEs across %d device(s)", view.TotalCVEs, view.DeviceCount)
+	view.Header = buildHeader("JELLYFISH / USER",
+		"Vulnerability exposure - "+bundle.User.Name,
+		subtitle, r.opts.HeaderBG, r.opts.LogoPath != "",
+	)
 
 	subject := r.opts.Subject
 	if subject == "" {

@@ -106,13 +106,15 @@ func TestRenderUserShowText(t *testing.T) {
 }
 
 func TestRenderUserShowHTML(t *testing.T) {
-	view := buildUserShowView(sampleUserBundle(), Options{}.withDefaults())
+	opts := Options{}.withDefaults()
+	view := buildUserShowView(sampleUserBundle(), opts)
+	view.Header = buildHeader("JELLYFISH / USER", "Vulnerability exposure - Alice Example", "subtitle", opts.HeaderBG, false)
 	got, err := renderUserShowHTML(view)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	for _, want := range []string{
-		`bgcolor="#0f172a"`,
+		`bgcolor="#7566FF"`,
 		"Alice Example",
 		"Alice MBP",
 		"Alice iPad",
@@ -185,6 +187,46 @@ func TestNewUserShowRendererRejectsBadLinkTemplate(t *testing.T) {
 	err := NewUserShowRenderer(opts).Render(&bytes.Buffer{}, sampleUserBundle())
 	if err == nil {
 		t.Fatal("expected validation error for missing {cve} token")
+	}
+}
+
+func TestUserShowHTMLHeaderColoursAndLogo(t *testing.T) {
+	bundle := UserBundleInput{User: iru.User{Name: "Keith Bawden", Email: "k@example.com"}}
+	cases := []struct {
+		name     string
+		bg       string
+		logoPath string
+		wantText string
+		wantLogo bool
+	}{
+		{"default no-logo", "", "", "color:#f8fafc", false},
+		{"lavender no-logo", "#C6B8FE", "", "color:#0f172a", false},
+		{"lavender with logo", "#C6B8FE", "testdata/logo_small.png", "color:#0f172a", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := Options{
+				From:        "alice@example.com",
+				HeaderBG:    tc.bg,
+				LogoPath:    tc.logoPath,
+				GeneratedAt: time.Date(2026, 5, 16, 18, 42, 0, 0, time.UTC),
+			}.withDefaults()
+			view := buildUserShowView(bundle, opts)
+			view.Header = buildHeader("JELLYFISH / USER",
+				"Vulnerability exposure - "+bundle.User.Name,
+				"k@example.com - 0 devices", opts.HeaderBG, opts.LogoPath != "")
+			html, err := renderUserShowHTML(view)
+			if err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			if !strings.Contains(html, tc.wantText) {
+				t.Errorf("expected text-colour substring %q in html", tc.wantText)
+			}
+			hasCID := strings.Contains(html, `src="cid:jf-logo"`)
+			if hasCID != tc.wantLogo {
+				t.Errorf("logo presence: got %v want %v", hasCID, tc.wantLogo)
+			}
+		})
 	}
 }
 

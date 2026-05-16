@@ -62,3 +62,26 @@ func computeHeaderStyle(bg string) headerStyle {
 	}
 	return headerStyle{BG: bg, TextFG: "#f8fafc", BadgeBG: "rgba(255,255,255,0.18)", BadgeFG: "#f8fafc"}
 }
+
+// Header is the data the shared header partial renders against. The
+// per-renderer view struct must expose this on its top-level Header field.
+type Header struct {
+	BG       string
+	TextFG   string
+	BadgeBG  string
+	BadgeFG  string
+	Badge    string
+	Title    string
+	Subtitle string
+	HasLogo  bool
+}
+
+// buildHeader composes a Header from per-command strings plus the chosen
+// background colour and a hasLogo flag.
+func buildHeader(badge, title, subtitle, bg string, hasLogo bool) Header {
+	s := computeHeaderStyle(bg)
+	return Header{
+		BG: s.BG, TextFG: s.TextFG, BadgeBG: s.BadgeBG, BadgeFG: s.BadgeFG,
+		Badge: badge, Title: title, Subtitle: subtitle, HasLogo: hasLogo,
+	}
+}

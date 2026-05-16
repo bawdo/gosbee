@@ -13,12 +13,13 @@ import (
 	"flipgroup.com.au/jellyfish/internal/output"
 )
 
-//go:embed templates/vulns_summary.txt.tmpl templates/vulns_summary.html.tmpl
+//go:embed templates/vulns_summary.txt.tmpl templates/vulns_summary.html.tmpl templates/_header.html.tmpl
 var vulnSummaryFS embed.FS
 
 // vulnSummaryView is the data shape vulns_summary templates render against.
 // Every field is pre-formatted so templates contain no Go logic.
 type vulnSummaryView struct {
+	Header         Header
 	Tenant         string
 	GeneratedAtStr string
 	GeneratedDate  string
@@ -136,7 +137,11 @@ func renderVulnSummaryHTML(v vulnSummaryView) (string, error) {
 		"sevRowBG":  sevRowBG,
 		"sevPillBG": sevPillBG,
 		"sevPillFG": sevPillFG,
-	}).ParseFS(vulnSummaryFS, "templates/vulns_summary.html.tmpl")
+		"safeCSS":   func(s string) htmltmpl.CSS { return htmltmpl.CSS(s) },
+	}).ParseFS(vulnSummaryFS,
+		"templates/_header.html.tmpl",
+		"templates/vulns_summary.html.tmpl",
+	)
 	if err != nil {
 		return "", err
 	}
@@ -173,6 +178,19 @@ func (r *vulnSummaryRenderer) Render(w io.Writer, v any) error {
 	}
 
 	view := buildVulnSummaryView(vs, r.opts)
+
+	subtitle := view.GeneratedAtStr
+	if view.Tenant != "" {
+		subtitle += " - " + view.Tenant
+	}
+	subtitle += fmt.Sprintf(" - %d CVEs across %d devices (max per CVE)", view.TotalCVEs, view.DeviceCount)
+	view.Header = buildHeader(
+		"JELLYFISH / VULNS",
+		"Fleet vulnerability summary",
+		subtitle,
+		r.opts.HeaderBG,
+		r.opts.LogoPath != "",
+	)
 
 	subject := r.opts.Subject
 	if subject == "" {
