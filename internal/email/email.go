@@ -221,6 +221,14 @@ func randomBoundary() (string, error) {
 	return "=_jf_" + hex.EncodeToString(b[:]), nil
 }
 
+func randomRelatedBoundary() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return "=_jfr_" + hex.EncodeToString(b[:]), nil
+}
+
 // randomMessageID returns "<nanos.<6 hex chars>@<domain>>".
 func randomMessageID(domain string) (string, error) {
 	var b [3]byte

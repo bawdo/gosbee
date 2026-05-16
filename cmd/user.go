@@ -141,7 +141,7 @@ func runUserShow(ctx context.Context, client iruClient, w, stderr io.Writer, opt
 		return runSendUserShow(ctx, stderr, opts, bundle)
 	}
 
-	return renderUserBundle(w, opts, bundle)
+	return renderUserBundle(w, stderr, opts, bundle)
 }
 
 func resolveUser(ctx context.Context, client iruClient, id string) (iru.User, error) {
@@ -151,7 +151,7 @@ func resolveUser(ctx context.Context, client iruClient, id string) (iru.User, er
 	return client.GetUser(ctx, id)
 }
 
-func renderUserBundle(w io.Writer, opts userShowOpts, b UserBundle) error {
+func renderUserBundle(w io.Writer, stderr io.Writer, opts userShowOpts, b UserBundle) error {
 	switch opts.Output {
 	case "json", "yaml":
 		r, err := output.For(opts.Output)
@@ -176,7 +176,7 @@ func renderUserBundle(w io.Writer, opts userShowOpts, b UserBundle) error {
 		if err != nil {
 			return err
 		}
-		return email.NewUserShowRenderer(emailOpts).Render(w, bundleToEmailInput(b))
+		return email.NewUserShowRendererWithStderr(emailOpts, stderr).Render(w, bundleToEmailInput(b))
 	default:
 		return fmt.Errorf("unsupported output format %q", opts.Output)
 	}
@@ -211,7 +211,7 @@ func runSendUserShow(ctx context.Context, stderr io.Writer, opts userShowOpts, b
 	emailOpts.To = to
 
 	var buf bytes.Buffer
-	if err := email.NewUserShowRenderer(emailOpts).Render(&buf, bundleToEmailInput(b)); err != nil {
+	if err := email.NewUserShowRendererWithStderr(emailOpts, stderr).Render(&buf, bundleToEmailInput(b)); err != nil {
 		return err
 	}
 

@@ -309,6 +309,61 @@ func TestVulnSummaryHTMLHeaderColoursAndLogo(t *testing.T) {
 	}
 }
 
+func TestVulnSummaryRendererWarnsOnLogoLoadFailure(t *testing.T) {
+	opts := Options{
+		From:        "alice@example.com",
+		LogoPath:    "/no/such/path/logo.png",
+		GeneratedAt: time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+	}
+	var warnBuf bytes.Buffer
+	r := NewVulnSummaryRendererWithStderr(opts, &warnBuf).(*vulnSummaryRenderer)
+	var out bytes.Buffer
+	if err := r.Render(&out, []iru.Vulnerability(nil)); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(warnBuf.String(), "warn: email logo not loaded") {
+		t.Errorf("expected warn on stderr, got:\n%s", warnBuf.String())
+	}
+	if strings.Contains(out.String(), "cid:jf-logo") {
+		t.Errorf("expected no logo img in HTML when load fails")
+	}
+	if !strings.Contains(out.String(), "multipart/alternative") {
+		t.Errorf("expected multipart/alternative on failed-logo path")
+	}
+	if strings.Contains(out.String(), "multipart/related") {
+		t.Errorf("expected NO multipart/related on failed-logo path")
+	}
+}
+
+func TestVulnSummaryRendererWithValidLogoEmitsMultipartRelated(t *testing.T) {
+	opts := Options{
+		From:                    "alice@example.com",
+		LogoPath:                "testdata/logo_small.png",
+		HeaderBG:                "#C6B8FE",
+		GeneratedAt:             time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+		BoundaryOverride:        "=_jf_TEST",
+		RelatedBoundaryOverride: "=_jfr_TEST",
+		MessageIDOverride:       "<m@example.com>",
+	}
+	var warnBuf, out bytes.Buffer
+	r := NewVulnSummaryRendererWithStderr(opts, &warnBuf).(*vulnSummaryRenderer)
+	if err := r.Render(&out, []iru.Vulnerability(nil)); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if warnBuf.Len() != 0 {
+		t.Errorf("expected no warnings, got: %s", warnBuf.String())
+	}
+	if !strings.Contains(out.String(), "multipart/related") {
+		t.Errorf("expected multipart/related, raw:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "Content-ID: <jf-logo>") {
+		t.Errorf("expected Content-ID: <jf-logo>")
+	}
+	if !strings.Contains(out.String(), `"cid:jf-logo"`) {
+		t.Errorf("expected HTML to reference cid:jf-logo")
+	}
+}
+
 func TestDomainFromAddress(t *testing.T) {
 	cases := []struct {
 		in   string
