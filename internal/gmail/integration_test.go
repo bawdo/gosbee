@@ -26,7 +26,7 @@ func TestIntegrationSend(t *testing.T) {
 		t.Fatal("JELLYFISH_GMAIL_TEST_FROM must be the Workspace user the service account can impersonate")
 	}
 
-	saJSON, err := os.ReadFile(jsonPath) // #nosec G304 - test-only, operator-provided path
+	saJSON, err := os.ReadFile(jsonPath) // #nosec G304,G703 - test-only, operator-provided path
 	if err != nil {
 		t.Fatalf("read service-account JSON: %v", err)
 	}
