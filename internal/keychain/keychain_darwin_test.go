@@ -52,3 +52,28 @@ func TestGetMissing(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestGmailServiceAccountRoundTrip(t *testing.T) {
+	skipIfNoKeychain(t)
+	t.Cleanup(func() { _ = DeleteGmailServiceAccount() })
+
+	want := []byte(`{"type":"service_account","client_email":"x@y.iam.gserviceaccount.com"}`)
+	if err := SetGmailServiceAccount(want); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+
+	got, err := GetGmailServiceAccount()
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("round-trip mismatch:\n got: %s\nwant: %s", got, want)
+	}
+
+	if err := DeleteGmailServiceAccount(); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := GetGmailServiceAccount(); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("after delete: want ErrNotFound, got %v", err)
+	}
+}
