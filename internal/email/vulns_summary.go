@@ -4,10 +4,12 @@ import (
 	"embed"
 	"fmt"
 	htmltmpl "html/template"
+	"io"
 	"strings"
 	texttmpl "text/template"
 
 	"flipgroup.com.au/jellyfish/internal/iru"
+	"flipgroup.com.au/jellyfish/internal/output"
 )
 
 //go:embed templates/vulns_summary.txt.tmpl templates/vulns_summary.html.tmpl
@@ -167,4 +169,87 @@ func renderVulnSummaryHTML(v vulnSummaryView) (string, error) {
 		return "", err
 	}
 	return sb.String(), nil
+}
+
+type vulnSummaryRenderer struct {
+	opts Options
+}
+
+// NewVulnSummaryRenderer returns an output.Renderer whose Render(w, v) expects
+// v to be []iru.Vulnerability and writes a complete .eml message to w.
+func NewVulnSummaryRenderer(opts Options) output.Renderer {
+	return &vulnSummaryRenderer{opts: opts.withDefaults()}
+}
+
+func (r *vulnSummaryRenderer) Render(w io.Writer, v any) error {
+	vs, ok := v.([]iru.Vulnerability)
+	if !ok {
+		return fmt.Errorf("email vulns summary renderer expected []iru.Vulnerability, got %T", v)
+	}
+	if err := validateLinkTemplate("primary", r.opts.CVELinkPrimary); err != nil {
+		return err
+	}
+	if err := validateLinkTemplate("secondary", r.opts.CVELinkSecondary); err != nil {
+		return err
+	}
+	if r.opts.From == "" {
+		return fmt.Errorf("email renderer requires a non-empty From address")
+	}
+
+	view := buildVulnSummaryView(vs, r.opts)
+
+	subject := r.opts.Subject
+	if subject == "" {
+		subject = "Jellyfish vulnerability summary - " + view.GeneratedDate
+	}
+
+	htmlBody, err := renderVulnSummaryHTML(view)
+	if err != nil {
+		return err
+	}
+	textBody, err := renderVulnSummaryText(view)
+	if err != nil {
+		return err
+	}
+
+	boundary := r.opts.BoundaryOverride
+	if boundary == "" {
+		boundary, err = randomBoundary()
+		if err != nil {
+			return err
+		}
+	}
+	messageID := r.opts.MessageIDOverride
+	if messageID == "" {
+		messageID, err = randomMessageID(domainFromAddress(r.opts.From))
+		if err != nil {
+			return err
+		}
+	}
+
+	bytesOut, err := assembleMessage(messageHeaders{
+		From:    r.opts.From,
+		To:      r.opts.To,
+		Subject: subject,
+		Date:    r.opts.GeneratedAt,
+	}, htmlBody, textBody, boundary, messageID)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(bytesOut)
+	return err
+}
+
+// domainFromAddress extracts the right-hand side of an email address used in
+// a From header. Returns "localhost" if no '@' is present (defensive only).
+func domainFromAddress(addr string) string {
+	at := strings.LastIndex(addr, "@")
+	if at < 0 {
+		return "localhost"
+	}
+	rest := addr[at+1:]
+	if end := strings.IndexAny(rest, "> "); end >= 0 {
+		rest = rest[:end]
+	}
+	return rest
 }

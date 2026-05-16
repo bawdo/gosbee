@@ -1,11 +1,17 @@
 package email
 
 import (
+	"bytes"
+	"flag"
+	"net/mail"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"flipgroup.com.au/jellyfish/internal/iru"
+	"flipgroup.com.au/jellyfish/internal/output"
 )
 
 func sampleVulns() []iru.Vulnerability {
@@ -134,5 +140,94 @@ func TestRenderVulnSummaryHTMLEscapesUnsafeInput(t *testing.T) {
 	}
 	if !strings.Contains(got, "&lt;script&gt;") {
 		t.Errorf("expected escaped script tag in output")
+	}
+}
+
+var updateGolden = flag.Bool("update-golden", false, "rewrite golden testdata files instead of asserting against them")
+
+func goldenAssert(t *testing.T, name string, got []byte) {
+	t.Helper()
+	path := filepath.Join("testdata", name)
+	if *updateGolden {
+		if err := os.MkdirAll("testdata", 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatalf("write golden: %v", err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden %s: %v (run with -update-golden to regenerate)", path, err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("golden mismatch for %s\n--- got ---\n%s\n--- want ---\n%s", path, got, want)
+	}
+}
+
+func newPinnedOpts() Options {
+	return Options{
+		From:              "Jellyfish <alice@example.com>",
+		To:                "secops@example.com",
+		Subject:           "Jellyfish vulnerability summary - 2026-05-16",
+		Tenant:            "flipgroup",
+		GeneratedAt:       time.Date(2026, 5, 16, 10, 42, 0, 0, time.FixedZone("AEST", 10*3600)),
+		BoundaryOverride:  "=_jf_FIXEDBOUNDARY00",
+		MessageIDOverride: "<fixed-id@example.com>",
+	}
+}
+
+func TestNewVulnSummaryRendererGolden(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewVulnSummaryRenderer(newPinnedOpts())
+	if err := r.Render(&buf, sampleVulns()); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	goldenAssert(t, "vulns_summary.golden.eml", buf.Bytes())
+}
+
+func TestNewVulnSummaryRendererGoldenEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewVulnSummaryRenderer(newPinnedOpts())
+	if err := r.Render(&buf, []iru.Vulnerability{}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	goldenAssert(t, "vulns_summary_empty.golden.eml", buf.Bytes())
+}
+
+func TestNewVulnSummaryRendererRejectsWrongType(t *testing.T) {
+	r := NewVulnSummaryRenderer(newPinnedOpts())
+	err := r.Render(&bytes.Buffer{}, "not a slice of vulnerabilities")
+	if err == nil {
+		t.Fatal("expected type error")
+	}
+}
+
+func TestNewVulnSummaryRendererRejectsBadLinkTemplate(t *testing.T) {
+	opts := newPinnedOpts()
+	opts.CVELinkPrimary = "https://no-token.example/"
+	r := NewVulnSummaryRenderer(opts)
+	err := r.Render(&bytes.Buffer{}, sampleVulns())
+	if err == nil {
+		t.Fatal("expected validation error for missing {cve} token")
+	}
+}
+
+func TestNewVulnSummaryRendererSatisfiesOutputRenderer(t *testing.T) {
+	var _ output.Renderer = NewVulnSummaryRenderer(newPinnedOpts())
+}
+
+func TestVulnSummaryRoundTripParses(t *testing.T) {
+	var buf bytes.Buffer
+	if err := NewVulnSummaryRenderer(newPinnedOpts()).Render(&buf, sampleVulns()); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	msg, err := mail.ReadMessage(&buf)
+	if err != nil {
+		t.Fatalf("ReadMessage: %v", err)
+	}
+	if msg.Header.Get("Subject") == "" {
+		t.Fatal("missing Subject")
 	}
 }
