@@ -1,7 +1,11 @@
 package email
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"mime/quotedprintable"
 	"strings"
 	"time"
 )
@@ -60,4 +64,106 @@ func validateLinkTemplate(label, tmpl string) error {
 		return fmt.Errorf("email %s CVE link template must contain {cve}: got %q", label, tmpl)
 	}
 	return nil
+}
+
+// messageHeaders is the minimum set of headers assembleMessage writes.
+type messageHeaders struct {
+	From    string
+	To      string
+	Subject string
+	Date    time.Time
+}
+
+// assembleMessage produces a full RFC 5322 multipart/alternative message
+// from a plain-text body and an HTML body. boundary and messageID are
+// caller-supplied for test determinism; production callers pass values
+// from randomBoundary() and randomMessageID().
+func assembleMessage(h messageHeaders, htmlBody, textBody, boundary, messageID string) ([]byte, error) {
+	var sb strings.Builder
+	writeHeader := func(name, value string) {
+		sb.WriteString(name)
+		sb.WriteString(": ")
+		sb.WriteString(value)
+		sb.WriteString("\r\n")
+	}
+
+	to := h.To
+	if to == "" {
+		to = "<unspecified>"
+	}
+
+	writeHeader("From", h.From)
+	writeHeader("To", to)
+	writeHeader("Subject", h.Subject)
+	writeHeader("Date", h.Date.Format(time.RFC1123Z))
+	writeHeader("Message-ID", messageID)
+	writeHeader("MIME-Version", "1.0")
+	writeHeader("Content-Type", fmt.Sprintf("multipart/alternative; boundary=%q", boundary))
+	sb.WriteString("\r\n")
+
+	writePart := func(contentType, body string) error {
+		sb.WriteString("--")
+		sb.WriteString(boundary)
+		sb.WriteString("\r\n")
+		sb.WriteString("Content-Type: ")
+		sb.WriteString(contentType)
+		sb.WriteString("\r\n")
+		sb.WriteString("Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+
+		encoded, err := quotedPrintableEncode(body)
+		if err != nil {
+			return err
+		}
+		sb.WriteString(encoded)
+		if !strings.HasSuffix(encoded, "\r\n") {
+			sb.WriteString("\r\n")
+		}
+		return nil
+	}
+
+	if err := writePart("text/plain; charset=UTF-8", textBody); err != nil {
+		return nil, err
+	}
+	if err := writePart("text/html; charset=UTF-8", htmlBody); err != nil {
+		return nil, err
+	}
+
+	sb.WriteString("--")
+	sb.WriteString(boundary)
+	sb.WriteString("--\r\n")
+
+	return []byte(sb.String()), nil
+}
+
+// quotedPrintableEncode runs body through stdlib quoted-printable, then
+// normalises line endings to CRLF (stdlib emits LF after soft-break inserts
+// on some Go versions; RFC 5322 requires CRLF throughout the message).
+func quotedPrintableEncode(body string) (string, error) {
+	buf := &strings.Builder{}
+	w := quotedprintable.NewWriter(buf)
+	if _, err := io.WriteString(w, body); err != nil {
+		return "", err
+	}
+	if err := w.Close(); err != nil {
+		return "", err
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(buf.String(), "\r\n", "\n"), "\n", "\r\n"), nil
+}
+
+// randomBoundary returns "=_jf_" + 16 lowercase hex chars (8 random bytes).
+func randomBoundary() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return "=_jf_" + hex.EncodeToString(b[:]), nil
+}
+
+// randomMessageID returns "<nanos.<6 hex chars>@<domain>>".
+func randomMessageID(domain string) (string, error) {
+	var b [3]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("<%d.%s@%s>", time.Now().UnixNano(), hex.EncodeToString(b[:]), domain), nil
 }
