@@ -3,14 +3,14 @@ package email
 import (
 	"embed"
 	"fmt"
+	htmltmpl "html/template"
 	"strings"
-	"text/template"
+	texttmpl "text/template"
 
 	"flipgroup.com.au/jellyfish/internal/iru"
 )
 
-// Task 5 widens this directive to also embed vulns_summary.html.tmpl.
-//go:embed templates/vulns_summary.txt.tmpl
+//go:embed templates/vulns_summary.txt.tmpl templates/vulns_summary.html.tmpl
 var vulnSummaryFS embed.FS
 
 // vulnSummaryView is the data shape vulns_summary templates render against.
@@ -102,7 +102,7 @@ func buildVulnSummaryView(vs []iru.Vulnerability, opts Options) vulnSummaryView 
 }
 
 func renderVulnSummaryText(v vulnSummaryView) (string, error) {
-	tmpl, err := template.New("vulns_summary.txt.tmpl").Funcs(template.FuncMap{
+	tmpl, err := texttmpl.New("vulns_summary.txt.tmpl").Funcs(texttmpl.FuncMap{
 		"cond": func(b bool, t, f string) string {
 			if b {
 				return t
@@ -110,6 +110,55 @@ func renderVulnSummaryText(v vulnSummaryView) (string, error) {
 			return f
 		},
 	}).ParseFS(vulnSummaryFS, "templates/vulns_summary.txt.tmpl")
+	if err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	if err := tmpl.Execute(&sb, v); err != nil {
+		return "", err
+	}
+	return sb.String(), nil
+}
+
+func renderVulnSummaryHTML(v vulnSummaryView) (string, error) {
+	tmpl, err := htmltmpl.New("vulns_summary.html.tmpl").Funcs(htmltmpl.FuncMap{
+		"sevRowBG": func(class string) string {
+			switch class {
+			case "crit":
+				return "#dc2626"
+			case "high":
+				return "#ea580c"
+			case "med":
+				return "#ca8a04"
+			default:
+				return "#64748b"
+			}
+		},
+		"sevPillBG": func(class string) string {
+			switch class {
+			case "crit":
+				return "#fee2e2"
+			case "high":
+				return "#ffedd5"
+			case "med":
+				return "#fef3c7"
+			default:
+				return "#f1f5f9"
+			}
+		},
+		"sevPillFG": func(class string) string {
+			switch class {
+			case "crit":
+				return "#991b1b"
+			case "high":
+				return "#9a3412"
+			case "med":
+				return "#854d0e"
+			default:
+				return "#334155"
+			}
+		},
+	}).ParseFS(vulnSummaryFS, "templates/vulns_summary.html.tmpl")
 	if err != nil {
 		return "", err
 	}

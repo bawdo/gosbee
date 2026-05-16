@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vulnerability summary</title>
+<style>
+@media (prefers-color-scheme: dark) {
+  body, table { background:#0f172a !important; color:#e2e8f0 !important; }
+}
+</style>
+</head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#0f172a;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:20px 0;">
+<tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;width:600px;max-width:600px;">
+
+<tr><td bgcolor="#0f172a" style="background:#0f172a;color:#f8fafc;padding:18px 24px;">
+  <div style="font:700 10px/1 'SF Mono','Menlo','Consolas',monospace;letter-spacing:.14em;padding:4px 7px;background:rgba(255,255,255,0.12);border-radius:3px;display:inline-block;">JELLYFISH / VULNS</div>
+  <div style="font:700 20px/1.2 -apple-system,system-ui,sans-serif;margin:10px 0 4px;">Fleet vulnerability summary</div>
+  <div style="font:12px/1.4 -apple-system,system-ui,sans-serif;opacity:.7;">{{.GeneratedAtStr}}{{if .Tenant}} - {{.Tenant}}{{end}} - {{.TotalCVEs}} CVEs across {{.DeviceCount}} devices (max per CVE)</div>
+</td></tr>
+
+<tr><td style="padding:0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="1" bgcolor="#e2e8f0" style="border-collapse:separate;border-spacing:1px;background:#e2e8f0;width:100%;">
+<tr>
+  <td bgcolor="#ffffff" align="left" style="background:#ffffff;padding:14px 12px;width:25%;">
+    <div style="font:800 26px/1 -apple-system,system-ui,sans-serif;letter-spacing:-0.02em;color:#dc2626;">{{.CriticalCount}}</div>
+    <div style="font:600 10px/1.2 -apple-system,system-ui,sans-serif;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin-top:6px;">Critical</div>
+  </td>
+  <td bgcolor="#ffffff" align="left" style="background:#ffffff;padding:14px 12px;width:25%;">
+    <div style="font:800 26px/1 -apple-system,system-ui,sans-serif;letter-spacing:-0.02em;color:#ea580c;">{{.HighCount}}</div>
+    <div style="font:600 10px/1.2 -apple-system,system-ui,sans-serif;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin-top:6px;">High</div>
+  </td>
+  <td bgcolor="#ffffff" align="left" style="background:#ffffff;padding:14px 12px;width:25%;">
+    <div style="font:800 26px/1 -apple-system,system-ui,sans-serif;letter-spacing:-0.02em;color:#7c3aed;">{{.KEVCount}}</div>
+    <div style="font:600 10px/1.2 -apple-system,system-ui,sans-serif;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin-top:6px;">KEV listed</div>
+  </td>
+  <td bgcolor="#ffffff" align="left" style="background:#ffffff;padding:14px 12px;width:25%;">
+    <div style="font:800 26px/1 -apple-system,system-ui,sans-serif;letter-spacing:-0.02em;color:#0f172a;">{{.DeviceCount}}</div>
+    <div style="font:600 10px/1.2 -apple-system,system-ui,sans-serif;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin-top:6px;">Devices</div>
+  </td>
+</tr>
+</table>
+</td></tr>
+
+<tr><td style="padding:16px 24px 10px;border-bottom:1px solid #e2e8f0;font:700 12px/1 -apple-system,system-ui,sans-serif;color:#0f172a;letter-spacing:.1em;text-transform:uppercase;">
+  Top by priority
+</td></tr>
+
+{{if eq (len .Rows) 0}}
+<tr><td style="padding:24px;font:14px/1.5 -apple-system,system-ui,sans-serif;color:#64748b;">No matching vulnerabilities.</td></tr>
+{{else}}
+<tr><td style="padding:0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
+<thead>
+<tr>
+  <th align="left" style="font:700 10px/1 -apple-system,system-ui,sans-serif;color:#64748b;letter-spacing:.08em;text-transform:uppercase;padding:12px 8px 8px 24px;border-bottom:1px solid #e2e8f0;">CVE</th>
+  <th align="left" style="font:700 10px/1 -apple-system,system-ui,sans-serif;color:#64748b;letter-spacing:.08em;text-transform:uppercase;padding:12px 8px 8px;border-bottom:1px solid #e2e8f0;">Sev</th>
+  <th align="right" style="font:700 10px/1 -apple-system,system-ui,sans-serif;color:#64748b;letter-spacing:.08em;text-transform:uppercase;padding:12px 8px 8px;border-bottom:1px solid #e2e8f0;">CVSS</th>
+  <th align="left" style="font:700 10px/1 -apple-system,system-ui,sans-serif;color:#64748b;letter-spacing:.08em;text-transform:uppercase;padding:12px 8px 8px;border-bottom:1px solid #e2e8f0;">KEV</th>
+  <th align="right" style="font:700 10px/1 -apple-system,system-ui,sans-serif;color:#64748b;letter-spacing:.08em;text-transform:uppercase;padding:12px 8px 8px;border-bottom:1px solid #e2e8f0;">Devices</th>
+  <th align="left" style="font:700 10px/1 -apple-system,system-ui,sans-serif;color:#64748b;letter-spacing:.08em;text-transform:uppercase;padding:12px 8px 8px 8px;border-bottom:1px solid #e2e8f0;padding-right:24px;">Software</th>
+</tr>
+</thead>
+<tbody>
+{{range .Rows}}
+<tr>
+  <td valign="middle" style="padding:0;border-bottom:1px solid #f1f5f9;">
+    <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <tr>
+        <td bgcolor="{{sevRowBG .SeverityClass}}" width="3" style="width:3px;background:{{sevRowBG .SeverityClass}};">&nbsp;</td>
+        <td style="padding:12px 8px 12px 21px;font:600 12px/1 'SF Mono','Menlo','Consolas',monospace;">
+          <a href="{{.NVDLink}}" style="color:#0f172a;text-decoration:none;border-bottom:1px dotted #94a3b8;padding-bottom:1px;">{{.CVEID}}</a>
+          <a href="{{.MITRELink}}" style="font-size:10px;color:#94a3b8;text-decoration:none;margin-left:4px;">(M)</a>
+        </td>
+      </tr>
+    </table>
+  </td>
+  <td valign="middle" style="padding:12px 8px;border-bottom:1px solid #f1f5f9;">
+    <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <tr><td bgcolor="{{sevPillBG .SeverityClass}}" style="background:{{sevPillBG .SeverityClass}};color:{{sevPillFG .SeverityClass}};font:700 9px/1 -apple-system,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;padding:4px 6px;border-radius:3px;">{{.Severity}}</td></tr>
+    </table>
+  </td>
+  <td valign="middle" align="right" style="padding:12px 8px;border-bottom:1px solid #f1f5f9;font:600 13px/1 'SF Mono','Menlo','Consolas',monospace;color:#0f172a;">{{.CVSSStr}}</td>
+  <td valign="middle" style="padding:12px 8px;border-bottom:1px solid #f1f5f9;">
+    {{if .IsKEV}}
+    <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <tr><td bgcolor="#ede9fe" style="background:#ede9fe;color:#6d28d9;font:700 9px/1 -apple-system,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;padding:4px 6px;border-radius:3px;">KEV</td></tr>
+    </table>
+    {{else}}<span style="color:#94a3b8;">-</span>{{end}}
+  </td>
+  <td valign="middle" align="right" style="padding:12px 8px;border-bottom:1px solid #f1f5f9;font:600 13px/1 'SF Mono','Menlo','Consolas',monospace;color:#0f172a;">{{.Devices}}</td>
+  <td valign="middle" style="padding:12px 8px 12px 8px;padding-right:24px;border-bottom:1px solid #f1f5f9;font:12px/1.4 -apple-system,system-ui,sans-serif;color:#334155;">{{.Software}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</td></tr>
+{{end}}
+
+<tr><td bgcolor="#f8fafc" style="background:#f8fafc;padding:14px 24px 18px;font:11px/1.5 -apple-system,system-ui,sans-serif;color:#64748b;border-top:1px solid #e2e8f0;">
+Generated by jellyfish vulns summary. KEV = CISA Known Exploited Vulnerabilities catalogue.
+</td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>

@@ -86,3 +86,53 @@ func TestRenderVulnSummaryTextEmpty(t *testing.T) {
 		t.Errorf("empty marker fused with KEV footer (whitespace bug):\n%s", got)
 	}
 }
+
+func TestRenderVulnSummaryHTML(t *testing.T) {
+	view := buildVulnSummaryView(sampleVulns(), Options{Tenant: "flipgroup"}.withDefaults())
+	got, err := renderVulnSummaryHTML(view)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	for _, want := range []string{
+		`bgcolor="#0f172a"`,
+		`>CVE-2024-3094<`,
+		`href="https://nvd.nist.gov/vuln/detail/CVE-2024-3094"`,
+		`href="https://www.cve.org/CVERecord?id=CVE-2024-3094"`,
+		`>KEV<`,
+		`Critical`,
+		`openssh-server`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("HTML missing %q", want)
+		}
+	}
+}
+
+func TestRenderVulnSummaryHTMLEmpty(t *testing.T) {
+	view := buildVulnSummaryView(nil, Options{Tenant: "flipgroup"}.withDefaults())
+	got, err := renderVulnSummaryHTML(view)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(got, "No matching vulnerabilities") {
+		t.Errorf("expected empty marker, got:\n%s", got)
+	}
+}
+
+func TestRenderVulnSummaryHTMLEscapesUnsafeInput(t *testing.T) {
+	view := buildVulnSummaryView([]iru.Vulnerability{{
+		CVEID:    "CVE-XSS-1",
+		Severity: "Critical",
+		Software: []string{`<script>alert(1)</script>`},
+	}}, Options{}.withDefaults())
+	got, err := renderVulnSummaryHTML(view)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if strings.Contains(got, "<script>alert(1)</script>") {
+		t.Errorf("unescaped <script> tag leaked into HTML output")
+	}
+	if !strings.Contains(got, "&lt;script&gt;") {
+		t.Errorf("expected escaped script tag in output")
+	}
+}
