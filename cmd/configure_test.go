@@ -70,3 +70,72 @@ func TestConfigureWritesConfigAndCallsKeychain(t *testing.T) {
 		t.Fatalf("mode %o", info.Mode().Perm())
 	}
 }
+
+func TestPromptWithDefaultKeepsCurrentOnEnter(t *testing.T) {
+	out := &bytes.Buffer{}
+	r := bufio.NewReader(strings.NewReader("\n"))
+	got, err := promptWithDefault(out, r, "Email From", "old@x")
+	if err != nil {
+		t.Fatalf("promptWithDefault: %v", err)
+	}
+	if got != "old@x" {
+		t.Errorf("value: got %q want %q", got, "old@x")
+	}
+	if !strings.Contains(out.String(), "Email From [old@x]: ") {
+		t.Errorf("prompt text: got %q", out.String())
+	}
+}
+
+func TestPromptWithDefaultReplacesOnTypedValue(t *testing.T) {
+	out := &bytes.Buffer{}
+	r := bufio.NewReader(strings.NewReader("new@y\n"))
+	got, err := promptWithDefault(out, r, "Email From", "old@x")
+	if err != nil {
+		t.Fatalf("promptWithDefault: %v", err)
+	}
+	if got != "new@y" {
+		t.Errorf("value: got %q want %q", got, "new@y")
+	}
+}
+
+func TestPromptWithDefaultDashClears(t *testing.T) {
+	out := &bytes.Buffer{}
+	r := bufio.NewReader(strings.NewReader("-\n"))
+	got, err := promptWithDefault(out, r, "Email From", "old@x")
+	if err != nil {
+		t.Fatalf("promptWithDefault: %v", err)
+	}
+	if got != "" {
+		t.Errorf("value: got %q want empty", got)
+	}
+}
+
+func TestPromptWithDefaultOmitsBracketsWhenNoCurrent(t *testing.T) {
+	out := &bytes.Buffer{}
+	r := bufio.NewReader(strings.NewReader("new@y\n"))
+	got, err := promptWithDefault(out, r, "Email From", "")
+	if err != nil {
+		t.Fatalf("promptWithDefault: %v", err)
+	}
+	if got != "new@y" {
+		t.Errorf("value: got %q", got)
+	}
+	if strings.Contains(out.String(), "[") {
+		t.Errorf("prompt should not show brackets when current is empty; got %q", out.String())
+	}
+	if !strings.Contains(out.String(), "Email From: ") {
+		t.Errorf("prompt text: got %q", out.String())
+	}
+}
+
+func TestPromptWithDefaultTrimsWhitespace(t *testing.T) {
+	out := &bytes.Buffer{}
+	r := bufio.NewReader(strings.NewReader("  alice@x  \n"))
+	got, err := promptWithDefault(out, r, "Email From", "")
+	if err != nil {
+		t.Fatalf("promptWithDefault: %v", err)
+	}
+	if got != "alice@x" {
+		t.Errorf("value: got %q", got)
+	}
+}

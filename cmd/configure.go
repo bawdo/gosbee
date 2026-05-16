@@ -145,3 +145,29 @@ func readMaskedToken(in *bufio.Reader) (string, error) {
 	}
 	return strings.TrimSpace(s), nil
 }
+
+// promptWithDefault writes "<label>[ [<current>]]: " to w, reads a line from
+// r, and applies the keep/clear/replace rules:
+//
+//   ""  -> current   (Enter keeps)
+//   "-" -> ""        (literal dash clears)
+//   x   -> x         (replace, trimmed)
+func promptWithDefault(w io.Writer, r *bufio.Reader, label, current string) (string, error) {
+	if current == "" {
+		_, _ = fmt.Fprintf(w, "%s: ", label)
+	} else {
+		_, _ = fmt.Fprintf(w, "%s [%s]: ", label, current)
+	}
+	line, err := readLine(r)
+	if err != nil {
+		return "", err
+	}
+	switch line {
+	case "":
+		return current, nil
+	case "-":
+		return "", nil
+	default:
+		return line, nil
+	}
+}
