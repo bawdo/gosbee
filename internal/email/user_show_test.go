@@ -1,11 +1,14 @@
 package email
 
 import (
+	"bytes"
+	"net/mail"
 	"strings"
 	"testing"
 	"time"
 
 	"flipgroup.com.au/jellyfish/internal/iru"
+	"flipgroup.com.au/jellyfish/internal/output"
 )
 
 func sampleUserBundle() UserBundleInput {
@@ -88,5 +91,69 @@ func TestRenderUserShowHTML(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("HTML missing %q", want)
 		}
+	}
+}
+
+func newPinnedUserShowOpts() Options {
+	return Options{
+		From:              "Jellyfish <alice@example.com>",
+		To:                "alice@example.com",
+		Subject:           "Vulnerability exposure - Alice Example - 2026-05-16",
+		Tenant:            "flipgroup",
+		GeneratedAt:       time.Date(2026, 5, 16, 10, 42, 0, 0, time.FixedZone("AEST", 10*3600)),
+		BoundaryOverride:  "=_jf_FIXEDBOUNDARY01",
+		MessageIDOverride: "<fixed-user-id@example.com>",
+	}
+}
+
+func TestNewUserShowRendererGolden(t *testing.T) {
+	var buf bytes.Buffer
+	if err := NewUserShowRenderer(newPinnedUserShowOpts()).Render(&buf, sampleUserBundle()); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	goldenAssert(t, "user_show.golden.eml", buf.Bytes())
+}
+
+func TestNewUserShowRendererGoldenNoDetections(t *testing.T) {
+	bundle := UserBundleInput{
+		User: iru.User{ID: "u-9", Name: "Bob Empty", Email: "bob@example.com"},
+		Devices: []UserBundleDevice{
+			{Device: iru.Device{DeviceID: "d-9", DeviceName: "Bob MBA", SerialNumber: "SN9"}, Detections: nil},
+		},
+	}
+	var buf bytes.Buffer
+	if err := NewUserShowRenderer(newPinnedUserShowOpts()).Render(&buf, bundle); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	goldenAssert(t, "user_show_no_detections.golden.eml", buf.Bytes())
+}
+
+func TestNewUserShowRendererSatisfiesOutputRenderer(t *testing.T) {
+	var _ output.Renderer = NewUserShowRenderer(newPinnedUserShowOpts())
+}
+
+func TestNewUserShowRendererRejectsWrongType(t *testing.T) {
+	err := NewUserShowRenderer(newPinnedUserShowOpts()).Render(&bytes.Buffer{}, "nope")
+	if err == nil {
+		t.Fatal("expected type error")
+	}
+}
+
+func TestNewUserShowRendererRejectsEmptyFrom(t *testing.T) {
+	opts := newPinnedUserShowOpts()
+	opts.From = ""
+	err := NewUserShowRenderer(opts).Render(&bytes.Buffer{}, sampleUserBundle())
+	if err == nil {
+		t.Fatal("expected error for empty From")
+	}
+}
+
+func TestUserShowRoundTripParses(t *testing.T) {
+	var buf bytes.Buffer
+	if err := NewUserShowRenderer(newPinnedUserShowOpts()).Render(&buf, sampleUserBundle()); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if _, err := mail.ReadMessage(&buf); err != nil {
+		t.Fatalf("ReadMessage: %v", err)
 	}
 }

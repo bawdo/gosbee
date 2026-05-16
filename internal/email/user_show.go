@@ -4,10 +4,12 @@ import (
 	"embed"
 	"fmt"
 	htmltmpl "html/template"
+	"io"
 	"strings"
 	texttmpl "text/template"
 
 	"flipgroup.com.au/jellyfish/internal/iru"
+	"flipgroup.com.au/jellyfish/internal/output"
 )
 
 // UserBundleInput is the typed shape that NewUserShowRenderer expects. The
@@ -130,4 +132,77 @@ func renderUserShowHTML(v userShowView) (string, error) {
 		return "", err
 	}
 	return sb.String(), nil
+}
+
+type userShowRenderer struct {
+	opts Options
+}
+
+// NewUserShowRenderer returns an output.Renderer whose Render(w, v) expects
+// v to be a UserBundleInput and writes a complete .eml message to w.
+func NewUserShowRenderer(opts Options) output.Renderer {
+	return &userShowRenderer{opts: opts.withDefaults()}
+}
+
+func (r *userShowRenderer) Render(w io.Writer, v any) error {
+	bundle, ok := v.(UserBundleInput)
+	if !ok {
+		return fmt.Errorf("email user show renderer expected UserBundleInput, got %T", v)
+	}
+	if err := validateLinkTemplate("primary", r.opts.CVELinkPrimary); err != nil {
+		return err
+	}
+	if err := validateLinkTemplate("secondary", r.opts.CVELinkSecondary); err != nil {
+		return err
+	}
+	if r.opts.From == "" {
+		return fmt.Errorf("email renderer requires a non-empty From address")
+	}
+
+	view := buildUserShowView(bundle, r.opts)
+
+	subject := r.opts.Subject
+	if subject == "" {
+		who := bundle.User.Name
+		if who == "" {
+			who = bundle.User.Email
+		}
+		subject = "Vulnerability exposure - " + who + " - " + view.GeneratedDate
+	}
+
+	htmlBody, err := renderUserShowHTML(view)
+	if err != nil {
+		return err
+	}
+	textBody, err := renderUserShowText(view)
+	if err != nil {
+		return err
+	}
+
+	boundary := r.opts.BoundaryOverride
+	if boundary == "" {
+		boundary, err = randomBoundary()
+		if err != nil {
+			return err
+		}
+	}
+	messageID := r.opts.MessageIDOverride
+	if messageID == "" {
+		messageID, err = randomMessageID(domainFromAddress(r.opts.From))
+		if err != nil {
+			return err
+		}
+	}
+
+	bytesOut, err := assembleMessage(messageHeaders{
+		From:    r.opts.From,
+		To:      r.opts.To,
+		Subject: subject,
+		Date:    r.opts.GeneratedAt,
+	}, htmlBody, textBody, boundary, messageID)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(bytesOut)
+	return err
 }
