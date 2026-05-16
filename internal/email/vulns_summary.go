@@ -137,7 +137,7 @@ func renderVulnSummaryHTML(v vulnSummaryView) (string, error) {
 		"sevRowBG":  sevRowBG,
 		"sevPillBG": sevPillBG,
 		"sevPillFG": sevPillFG,
-		"safeCSS":   func(s string) htmltmpl.CSS { return htmltmpl.CSS(s) },
+		"safeCSS":   safeCSS,
 	}).ParseFS(vulnSummaryFS,
 		"templates/_header.html.tmpl",
 		"templates/vulns_summary.html.tmpl",

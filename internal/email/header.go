@@ -2,6 +2,7 @@ package email
 
 import (
 	"fmt"
+	htmltmpl "html/template"
 	"math"
 	"regexp"
 	"strconv"
@@ -85,3 +86,8 @@ func buildHeader(badge, title, subtitle, bg string, hasLogo bool) Header {
 		Badge: badge, Title: title, Subtitle: subtitle, HasLogo: hasLogo,
 	}
 }
+
+// safeCSS marks a string as already-trusted CSS so html/template does not
+// escape it. Used in the header partial for rgba() badge backgrounds, which
+// the CSS sanitiser otherwise rewrites to "ZgotmplZ".
+func safeCSS(s string) htmltmpl.CSS { return htmltmpl.CSS(s) }

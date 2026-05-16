@@ -133,7 +133,7 @@ func renderUserShowHTML(v userShowView) (string, error) {
 		"sevRowBG":  sevRowBG,
 		"sevPillBG": sevPillBG,
 		"sevPillFG": sevPillFG,
-		"safeCSS":   func(s string) htmltmpl.CSS { return htmltmpl.CSS(s) },
+		"safeCSS":   safeCSS,
 	}).ParseFS(userShowFS,
 		"templates/_header.html.tmpl",
 		"templates/user_show.html.tmpl",
