@@ -83,7 +83,7 @@ func assembleMessage(h messageHeaders, htmlBody, textBody, boundary, messageID s
 	writeHeader := func(name, value string) {
 		sb.WriteString(name)
 		sb.WriteString(": ")
-		sb.WriteString(value)
+		sb.WriteString(sanitiseHeaderValue(value))
 		sb.WriteString("\r\n")
 	}
 
@@ -98,7 +98,7 @@ func assembleMessage(h messageHeaders, htmlBody, textBody, boundary, messageID s
 	writeHeader("Date", h.Date.Format(time.RFC1123Z))
 	writeHeader("Message-ID", messageID)
 	writeHeader("MIME-Version", "1.0")
-	writeHeader("Content-Type", fmt.Sprintf("multipart/alternative; boundary=%q", boundary))
+	writeHeader("Content-Type", fmt.Sprintf("multipart/alternative; boundary=%q", sanitiseHeaderValue(boundary)))
 	sb.WriteString("\r\n")
 
 	writePart := func(contentType, body string) error {
@@ -166,4 +166,10 @@ func randomMessageID(domain string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("<%d.%s@%s>", time.Now().UnixNano(), hex.EncodeToString(b[:]), domain), nil
+}
+
+// sanitiseHeaderValue strips CR/LF so a caller-supplied header value cannot
+// inject additional headers (RFC 5322 header injection).
+func sanitiseHeaderValue(v string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(v)
 }

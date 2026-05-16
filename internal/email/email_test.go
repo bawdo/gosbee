@@ -147,3 +147,26 @@ func TestRandomMessageIDShape(t *testing.T) {
 		t.Errorf("message-id shape unexpected: %q", id)
 	}
 }
+
+func TestAssembleMessageStripsHeaderInjection(t *testing.T) {
+	hdr := messageHeaders{
+		From:    "alice@example.com",
+		To:      "bob@example.com",
+		Subject: "Report\r\nBcc: attacker@evil.com",
+		Date:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	out, err := assembleMessage(hdr, "<p>h</p>", "h\n", "=_jf_X", "<i@b.c>")
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	msg, err := mail.ReadMessage(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if msg.Header.Get("Bcc") != "" {
+		t.Fatalf("Bcc unexpectedly present after sanitisation: %q", msg.Header.Get("Bcc"))
+	}
+	if got := msg.Header.Get("Subject"); got != "ReportBcc: attacker@evil.com" {
+		t.Fatalf("Subject after strip: got %q want %q", got, "ReportBcc: attacker@evil.com")
+	}
+}
