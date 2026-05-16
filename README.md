@@ -247,6 +247,19 @@ that background - pair the default with a logo whose distinguishing element
 is white or dark, or pick a contrasting header colour such as `#C6B8FE`
 (light lavender) or `#6846D8` (deep purple).
 
+**Logo dimensions.** The header renders the logo at a fixed 56px height; width
+scales by the source PNG's aspect ratio. For sharp rendering on retina/HiDPI
+mail clients, supply a 2x asset:
+
+| Logo shape | Source PNG (2x) | Rendered (1x) |
+|---|---|---|
+| Square (1:1)        | 112 x 112 | 56 x 56  |
+| Rectangle (2:1)     | 224 x 112 | 112 x 56 |
+
+PNG only. The renderer rejects anything larger than 512 KB or that fails PNG
+decode. Any aspect ratio works (3:1, 1.5:1 etc.); the table above just covers
+the two common cases.
+
 `email.subject_template` is a Go template; available variables: `{{.Date}}`
 (YYYY-MM-DD) and `{{.Time}}` (HH:MM).
 
