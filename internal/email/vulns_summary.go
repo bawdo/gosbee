@@ -9,6 +9,7 @@ import (
 	"flipgroup.com.au/jellyfish/internal/iru"
 )
 
+// Task 5 widens this directive to also embed vulns_summary.html.tmpl.
 //go:embed templates/vulns_summary.txt.tmpl
 var vulnSummaryFS embed.FS
 
@@ -32,7 +33,6 @@ type vulnSummaryRow struct {
 	CVEID         string
 	Severity      string
 	SeverityClass string
-	CVSS          float64
 	CVSSStr       string
 	IsKEV         bool
 	Devices       int
@@ -88,7 +88,6 @@ func buildVulnSummaryView(vs []iru.Vulnerability, opts Options) vulnSummaryView 
 			CVEID:         v.CVEID,
 			Severity:      v.Severity,
 			SeverityClass: severityClass(v.Severity),
-			CVSS:          v.CVSSScore,
 			CVSSStr:       fmt.Sprintf("%.1f", v.CVSSScore),
 			IsKEV:         isKEV,
 			Devices:       v.DeviceCount,

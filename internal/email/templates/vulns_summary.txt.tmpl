@@ -4,7 +4,7 @@ Generated {{.GeneratedAtStr}}{{if .Tenant}} for tenant {{.Tenant}}{{end}}.
 
 {{if eq (len .Rows) 0 -}}
 No matching vulnerabilities.
-{{- else -}}
+{{else -}}
 CVE              SEVERITY  CVSS  KEV  DEVICES  STATUS      SOFTWARE
 {{range .Rows -}}
 {{printf "%-16s %-9s %-5s %-4s %-8d %-11s %s" .CVEID .Severity .CVSSStr (cond .IsKEV "KEV" "-") .Devices .Status .Software}}
@@ -12,6 +12,6 @@ CVE              SEVERITY  CVSS  KEV  DEVICES  STATUS      SOFTWARE
 NVD links:
 {{range .Rows}}{{.CVEID}}: {{.NVDLink}}
 {{end -}}
-{{- end -}}
+{{end}}
 
 KEV = CISA Known Exploited Vulnerabilities catalogue.

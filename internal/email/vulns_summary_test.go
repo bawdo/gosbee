@@ -79,4 +79,10 @@ func TestRenderVulnSummaryTextEmpty(t *testing.T) {
 	if !strings.Contains(got, "No matching vulnerabilities") {
 		t.Errorf("expected empty marker, got:\n%s", got)
 	}
+	if !strings.Contains(got, "KEV = CISA") {
+		t.Errorf("expected KEV footnote, got:\n%s", got)
+	}
+	if strings.Contains(got, "No matching vulnerabilities.KEV") {
+		t.Errorf("empty marker fused with KEV footer (whitespace bug):\n%s", got)
+	}
 }
