@@ -89,5 +89,8 @@ func buildHeader(badge, title, subtitle, bg string, hasLogo bool) Header {
 
 // safeCSS marks a string as already-trusted CSS so html/template does not
 // escape it. Used in the header partial for rgba() badge backgrounds, which
-// the CSS sanitiser otherwise rewrites to "ZgotmplZ".
+// the CSS sanitiser otherwise rewrites to "ZgotmplZ". The inputs are
+// internally-generated colour values (not operator input), so the bypass
+// is safe.
+// #nosec G203 - inputs are package-internal colour literals, not user content
 func safeCSS(s string) htmltmpl.CSS { return htmltmpl.CSS(s) }

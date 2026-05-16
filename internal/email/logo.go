@@ -2,7 +2,6 @@ package email
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"image/png"
 	"os"
@@ -50,11 +49,6 @@ func loadLogo(path string) (*logoPart, error) {
 		CID:   "jf-logo",
 	}, nil
 }
-
-// errLogoNotConfigured is returned only when callers want to distinguish
-// "no logo configured" from a hard load error. loadLogo itself returns
-// (nil, nil) in that case; this sentinel is reserved for future use.
-var errLogoNotConfigured = errors.New("no logo configured")
 
 // ValidateLogoFile checks that path points at a readable PNG no larger than
 // MaxLogoBytes. Returns the byte length on success.

@@ -129,9 +129,7 @@ func assembleMessage(
 		sb.WriteString("--")
 		sb.WriteString(outerBoundary)
 		sb.WriteString("\r\n")
-		sb.WriteString("Content-Type: ")
-		sb.WriteString(fmt.Sprintf("multipart/alternative; boundary=%q", sanitiseHeaderValue(innerBoundary)))
-		sb.WriteString("\r\n\r\n")
+		fmt.Fprintf(&sb, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", sanitiseHeaderValue(innerBoundary))
 	}
 
 	writePart := func(contentType, body string) error {
@@ -170,8 +168,8 @@ func assembleMessage(
 		sb.WriteString("\r\n")
 		sb.WriteString("Content-Type: image/png\r\n")
 		sb.WriteString("Content-Transfer-Encoding: base64\r\n")
-		sb.WriteString(fmt.Sprintf("Content-ID: <%s>\r\n", logo.CID))
-		sb.WriteString(fmt.Sprintf("Content-Disposition: inline; filename=%q\r\n\r\n", logo.Name))
+		fmt.Fprintf(&sb, "Content-ID: <%s>\r\n", logo.CID)
+		fmt.Fprintf(&sb, "Content-Disposition: inline; filename=%q\r\n\r\n", logo.Name)
 		sb.WriteString(base64Wrap(logo.Bytes, 76))
 		sb.WriteString("\r\n--")
 		sb.WriteString(outerBoundary)

@@ -439,6 +439,7 @@ func copyLogoToManagedDir(src, logosDir string) (string, error) {
 		return "", fmt.Errorf("read %s: %w", src, err)
 	}
 	dst := filepath.Join(logosDir, filepath.Base(src))
+	// #nosec G304 G703 - dst is constructed from operator-controlled logosDir
 	if err := os.WriteFile(dst, data, 0o600); err != nil {
 		return "", fmt.Errorf("write %s: %w", dst, err)
 	}

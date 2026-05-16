@@ -650,6 +650,7 @@ func TestConfigureEmailLogoCopiesIntoLogosDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
+	// #nosec G304 G703 - test fixture path under t.TempDir()
 	if err := os.WriteFile(srcLogo, srcBytes, 0o600); err != nil {
 		t.Fatalf("write src: %v", err)
 	}

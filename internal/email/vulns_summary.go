@@ -194,7 +194,7 @@ func (r *vulnSummaryRenderer) Render(w io.Writer, v any) error {
 	}
 	logo, logoErr := loadLogo(r.opts.LogoPath)
 	if logoErr != nil {
-		fmt.Fprintf(warn, "warn: email logo not loaded (%v); rendering without logo\n", logoErr)
+		_, _ = fmt.Fprintf(warn, "warn: email logo not loaded (%v); rendering without logo\n", logoErr)
 	}
 
 	subtitle := view.GeneratedAtStr
