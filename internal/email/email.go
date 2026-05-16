@@ -49,15 +49,15 @@ func (o Options) withDefaults() Options {
 
 // buildCVELink substitutes the literal {cve} token in template with cve.
 // All occurrences are replaced.
-func buildCVELink(template, cve string) string {
-	return strings.ReplaceAll(template, "{cve}", cve)
+func buildCVELink(tmpl, cve string) string {
+	return strings.ReplaceAll(tmpl, "{cve}", cve)
 }
 
 // validateLinkTemplate ensures a CVE link template contains the {cve} token.
 // label appears in the error to disambiguate primary vs secondary.
-func validateLinkTemplate(label, template string) error {
-	if !strings.Contains(template, "{cve}") {
-		return fmt.Errorf("email %s CVE link template must contain {cve}: got %q", label, template)
+func validateLinkTemplate(label, tmpl string) error {
+	if !strings.Contains(tmpl, "{cve}") {
+		return fmt.Errorf("email %s CVE link template must contain {cve}: got %q", label, tmpl)
 	}
 	return nil
 }
