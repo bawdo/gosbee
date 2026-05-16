@@ -248,17 +248,26 @@ is white or dark, or pick a contrasting header colour such as `#C6B8FE`
 (light lavender) or `#6846D8` (deep purple).
 
 **Logo dimensions.** The header renders the logo at a fixed 56px height; width
-scales by the source PNG's aspect ratio. For sharp rendering on retina/HiDPI
-mail clients, supply a 2x asset:
+scales by the source PNG's aspect ratio (the renderer never crops or distorts).
+Any pixel dimensions work; what matters for sharpness is supplying enough
+source pixels for the mail client to downscale cleanly to that 56px row:
 
-| Logo shape | Source PNG (2x) | Rendered (1x) |
+| Target rendering   | Minimum source height | Recommended source height |
 |---|---|---|
-| Square (1:1)        | 112 x 112 | 56 x 56  |
-| Rectangle (2:1)     | 224 x 112 | 112 x 56 |
+| Standard display   | 56 px                 | 56-100 px                 |
+| Retina / HiDPI     | 112 px (2x)           | 112-200 px                |
 
-PNG only. The renderer rejects anything larger than 512 KB or that fails PNG
-decode. Any aspect ratio works (3:1, 1.5:1 etc.); the table above just covers
-the two common cases.
+For square logos use a 1:1 source; for wordmark / landscape logos a 2:1 or
+3:1 source is typical. Keep the entire PNG canvas under 512 KB (the renderer
+rejects oversized files); a well-optimised 200x100 PNG is usually well under
+10 KB.
+
+**Don't resize logos to chase exact dimensions.** Brand assets are usually
+already supplied at suitable sizes; downscaling a logo from, say, 200x100 to
+exactly 112x56 with a generic resampling filter can subtly alter the visible
+content aspect ratio (Lanczos and friends extend anti-aliased edges, which
+skews the bounding box). Use whatever the design team ships and let the mail
+client do the 56px downscale.
 
 `email.subject_template` is a Go template; available variables: `{{.Date}}`
 (YYYY-MM-DD) and `{{.Time}}` (HH:MM).
