@@ -5,6 +5,7 @@
 
 # OS junk
 .DS_Store
+.obsidian
 
 # IDE
 .idea/
