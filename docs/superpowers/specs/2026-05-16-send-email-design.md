@@ -177,6 +177,7 @@ var (
     ErrUnauthorized = errors.New("gmail: unauthorized")
     ErrForbidden    = errors.New("gmail: forbidden")
     ErrRateLimited  = errors.New("gmail: rate limited")
+    ErrUpstream     = errors.New("gmail: upstream")
 )
 ```
 
@@ -201,12 +202,13 @@ var (
 | 401 (invalid JWT, bad audience, DWD not granted)          | `ErrUnauthorized`        | 2        |
 | 403 (delegated scope not granted, mailbox forbidden)      | `ErrForbidden`           | 2        |
 | 429                                                       | `ErrRateLimited`         | 4        |
-| 5xx                                                       | wrapped `*googleapi.Error` | 4      |
+| 5xx                                                       | `ErrUpstream` (wrapping `*googleapi.Error`) | 4      |
 | Subject missing / not a real Workspace user               | `ErrForbidden`           | 2        |
 
 Wrapping happens inside `internal/gmail` so the cmd layer only needs
-`errors.Is(err, gmail.ErrFoo)` plus an `errors.As(err, &googleapi.Error{})`
-for the 5xx case.
+`errors.Is(err, gmail.ErrFoo)` for all four cases - no SDK type-switch
+required. The underlying `*googleapi.Error` is preserved in the wrapped
+chain so `-v` debug logging still surfaces the Gmail-side error body.
 
 ## cmd-layer wiring
 
@@ -272,18 +274,18 @@ errors out if no recipient is resolved.
 
 ### `cmd/root.go`
 
-`classifyError` grows two cases:
+`classifyError` grows two cases (symmetric with the existing Iru cases):
 
 ```go
 case errors.Is(err, gmail.ErrUnauthorized), errors.Is(err, gmail.ErrForbidden):
     return 2
-case errors.Is(err, gmail.ErrRateLimited):
+case errors.Is(err, gmail.ErrRateLimited), errors.Is(err, gmail.ErrUpstream):
     return 4
 ```
 
-A 5xx that surfaces as a wrapped `*googleapi.Error` is mapped to exit 4 inside
-the `internal/gmail` package's error helper, so the cmd layer does not need to
-type-switch on Google SDK types directly.
+All Gmail error classification happens inside `internal/gmail` via the
+sentinel-wrapping helper - the cmd layer does not need to type-switch on
+Google SDK types.
 
 ## README updates
 
@@ -303,7 +305,9 @@ type-switch on Google SDK types directly.
 - Base64url encoding of a sample RFC 5322 message round-trips
   (URL-safe alphabet, no padding).
 - Error mapping: synthetic `*googleapi.Error` with codes 401, 403, 429, 500
-  wrap to the right sentinels.
+  wrap to `ErrUnauthorized`, `ErrForbidden`, `ErrRateLimited`, `ErrUpstream`
+  respectively. The original `*googleapi.Error` is preserved in the wrap
+  chain (assert with `errors.As`).
 
 ### `internal/gmail/integration_test.go` (env-gated)
 
