@@ -70,3 +70,338 @@ func TestConfigureWritesConfigAndCallsKeychain(t *testing.T) {
 		t.Fatalf("mode %o", info.Mode().Perm())
 	}
 }
+
+func TestPromptWithDefaultKeepsCurrentOnEnter(t *testing.T) {
+	out := &bytes.Buffer{}
+	r := bufio.NewReader(strings.NewReader("\n"))
+	got, err := promptWithDefault(out, r, "Email From", "old@x")
+	if err != nil {
+		t.Fatalf("promptWithDefault: %v", err)
+	}
+	if got != "old@x" {
+		t.Errorf("value: got %q want %q", got, "old@x")
+	}
+	if !strings.Contains(out.String(), "Email From [old@x]: ") {
+		t.Errorf("prompt text: got %q", out.String())
+	}
+}
+
+func TestPromptWithDefaultReplacesOnTypedValue(t *testing.T) {
+	out := &bytes.Buffer{}
+	r := bufio.NewReader(strings.NewReader("new@y\n"))
+	got, err := promptWithDefault(out, r, "Email From", "old@x")
+	if err != nil {
+		t.Fatalf("promptWithDefault: %v", err)
+	}
+	if got != "new@y" {
+		t.Errorf("value: got %q want %q", got, "new@y")
+	}
+}
+
+func TestPromptWithDefaultDashClears(t *testing.T) {
+	out := &bytes.Buffer{}
+	r := bufio.NewReader(strings.NewReader("-\n"))
+	got, err := promptWithDefault(out, r, "Email From", "old@x")
+	if err != nil {
+		t.Fatalf("promptWithDefault: %v", err)
+	}
+	if got != "" {
+		t.Errorf("value: got %q want empty", got)
+	}
+}
+
+func TestPromptWithDefaultOmitsBracketsWhenNoCurrent(t *testing.T) {
+	out := &bytes.Buffer{}
+	r := bufio.NewReader(strings.NewReader("new@y\n"))
+	got, err := promptWithDefault(out, r, "Email From", "")
+	if err != nil {
+		t.Fatalf("promptWithDefault: %v", err)
+	}
+	if got != "new@y" {
+		t.Errorf("value: got %q", got)
+	}
+	if strings.Contains(out.String(), "[") {
+		t.Errorf("prompt should not show brackets when current is empty; got %q", out.String())
+	}
+	if !strings.Contains(out.String(), "Email From: ") {
+		t.Errorf("prompt text: got %q", out.String())
+	}
+}
+
+func TestPromptWithDefaultTrimsWhitespace(t *testing.T) {
+	out := &bytes.Buffer{}
+	r := bufio.NewReader(strings.NewReader("  alice@x  \n"))
+	got, err := promptWithDefault(out, r, "Email From", "")
+	if err != nil {
+		t.Fatalf("promptWithDefault: %v", err)
+	}
+	if got != "alice@x" {
+		t.Errorf("value: got %q", got)
+	}
+}
+
+func TestValidateEmailishAcceptsWithAt(t *testing.T) {
+	if err := validateEmailish("alice@example.com", false, "From"); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateEmailishAcceptsEmptyWhenAllowed(t *testing.T) {
+	if err := validateEmailish("", true, "DefaultTo"); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateEmailishRejectsEmptyWhenNotAllowed(t *testing.T) {
+	err := validateEmailish("", false, "From")
+	if err == nil {
+		t.Fatal("expected error for empty value")
+	}
+	if !strings.Contains(err.Error(), "From") {
+		t.Errorf("error should mention field label; got %v", err)
+	}
+}
+
+func TestValidateEmailishRejectsMissingAt(t *testing.T) {
+	err := validateEmailish("no-at-sign", false, "From")
+	if err == nil {
+		t.Fatal("expected error for value without @")
+	}
+	if !strings.Contains(err.Error(), "@") {
+		t.Errorf("error should mention @; got %v", err)
+	}
+}
+
+func TestValidateEmailishAllowEmptyStillRejectsMalformed(t *testing.T) {
+	err := validateEmailish("no-at-sign", true, "DefaultTo")
+	if err == nil {
+		t.Fatal("expected error for non-empty value missing @")
+	}
+}
+
+func seedConfigFile(t *testing.T, dir string, f config.File) string {
+	t.Helper()
+	path := filepath.Join(dir, "config.yml")
+	if err := config.Save(path, f); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	return path
+}
+
+func TestConfigureEmailPromptsAndSaves(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+	}})
+
+	in := strings.NewReader("alice@example.com\nsecops@example.com\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+	})
+	if err != nil {
+		t.Fatalf("runConfigureEmail: %v", err)
+	}
+
+	loaded, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	got := loaded["default"]
+	if got.Email.From != "alice@example.com" {
+		t.Errorf("Email.From: got %q", got.Email.From)
+	}
+	if got.Email.DefaultTo != "secops@example.com" {
+		t.Errorf("Email.DefaultTo: got %q", got.Email.DefaultTo)
+	}
+	if got.Subdomain != "acme" || got.Region != "us" {
+		t.Errorf("non-email fields lost: %+v", got)
+	}
+	if !strings.Contains(out.String(), "Email config saved to") {
+		t.Errorf("expected confirmation in stdout; got %q", out.String())
+	}
+}
+
+func TestConfigureEmailPreservesOtherEmailFields(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: config.EmailConfig{
+			SubjectTemplate: "Custom - {{.Date}}",
+			CVELinkPrimary:  "https://mirror.example/{cve}",
+		},
+	}})
+
+	in := strings.NewReader("alice@example.com\nsecops@example.com\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+	})
+	if err != nil {
+		t.Fatalf("runConfigureEmail: %v", err)
+	}
+
+	loaded, _ := config.Load(cfgPath)
+	got := loaded["default"].Email
+	if got.From != "alice@example.com" || got.DefaultTo != "secops@example.com" {
+		t.Errorf("updated fields wrong: %+v", got)
+	}
+	if got.SubjectTemplate != "Custom - {{.Date}}" {
+		t.Errorf("SubjectTemplate lost: %q", got.SubjectTemplate)
+	}
+	if got.CVELinkPrimary != "https://mirror.example/{cve}" {
+		t.Errorf("CVELinkPrimary lost: %q", got.CVELinkPrimary)
+	}
+}
+
+func TestConfigureEmailEnterKeepsExisting(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: config.EmailConfig{From: "old@x", DefaultTo: "def@x"},
+	}})
+
+	in := strings.NewReader("\n\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+	})
+	if err != nil {
+		t.Fatalf("runConfigureEmail: %v", err)
+	}
+
+	loaded, _ := config.Load(cfgPath)
+	got := loaded["default"].Email
+	if got.From != "old@x" {
+		t.Errorf("From: got %q want %q", got.From, "old@x")
+	}
+	if got.DefaultTo != "def@x" {
+		t.Errorf("DefaultTo: got %q want %q", got.DefaultTo, "def@x")
+	}
+}
+
+func TestConfigureEmailDashClearsField(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: config.EmailConfig{From: "old@x", DefaultTo: "def@x"},
+	}})
+
+	in := strings.NewReader("-\n\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+	})
+	if err != nil {
+		t.Fatalf("runConfigureEmail: %v", err)
+	}
+
+	loaded, _ := config.Load(cfgPath)
+	got := loaded["default"].Email
+	if got.From != "" {
+		t.Errorf("From should have been cleared; got %q", got.From)
+	}
+	if got.DefaultTo != "def@x" {
+		t.Errorf("DefaultTo: got %q want %q", got.DefaultTo, "def@x")
+	}
+}
+
+func TestConfigureEmailRejectsInvalidFrom(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+	}})
+
+	in := strings.NewReader("no-at\nstill-no-at\nnope\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+	})
+	if err == nil {
+		t.Fatal("expected error after 3 invalid From attempts")
+	}
+	if !strings.Contains(err.Error(), "From") || !strings.Contains(err.Error(), "3 attempts") {
+		t.Errorf("error wording: got %v", err)
+	}
+}
+
+func TestConfigureEmailRejectsInvalidDefaultTo(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+	}})
+
+	in := strings.NewReader("alice@example.com\nbad\nbad\nbad\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+	})
+	if err == nil {
+		t.Fatal("expected error after 3 invalid DefaultTo attempts")
+	}
+	if !strings.Contains(err.Error(), "DefaultTo") {
+		t.Errorf("error wording: got %v", err)
+	}
+}
+
+func TestConfigureEmailAllowsEmptyDefaultTo(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+	}})
+
+	in := strings.NewReader("alice@example.com\n\n")
+	out := &bytes.Buffer{}
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: in, Stdout: out, Stderr: out,
+	})
+	if err != nil {
+		t.Fatalf("runConfigureEmail: %v", err)
+	}
+
+	loaded, _ := config.Load(cfgPath)
+	got := loaded["default"].Email
+	if got.From != "alice@example.com" {
+		t.Errorf("From: got %q", got.From)
+	}
+	if got.DefaultTo != "" {
+		t.Errorf("DefaultTo should be empty; got %q", got.DefaultTo)
+	}
+}
+
+func TestConfigureEmailErrorsWhenConfigMissing(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "does-not-exist.yml")
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: strings.NewReader(""), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing config")
+	}
+	if !strings.Contains(err.Error(), "no config found") {
+		t.Errorf("error wording: got %v", err)
+	}
+}
+
+func TestConfigureEmailErrorsWhenNoDefaultProfile(t *testing.T) {
+	tmp := t.TempDir()
+	cfgPath := seedConfigFile(t, tmp, config.File{"other": config.Profile{Subdomain: "x", Region: "us"}})
+
+	err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: cfgPath, Stdin: strings.NewReader(""), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing default profile")
+	}
+	if !strings.Contains(err.Error(), `"default" profile`) {
+		t.Errorf("error wording: got %v", err)
+	}
+}
