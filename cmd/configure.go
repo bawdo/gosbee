@@ -290,11 +290,11 @@ func promptGmailJSON(o configureEmailOpts, r *bufio.Reader, prof *config.Profile
 	if err != nil {
 		return err
 	}
-	switch {
-	case line == gmailPromptPlaceholderConfigured:
+	switch line {
+	case gmailPromptPlaceholderConfigured:
 		// User accepted the existing configured value; no change.
 		return nil
-	case line == "":
+	case "":
 		// User typed "-" (promptWithDefault collapses dash to empty).
 		if !prof.Email.GmailConfigured {
 			return nil

@@ -349,7 +349,7 @@ func runSendVulnsSummary(ctx context.Context, stderr io.Writer, opts vulnsSummar
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stderr, "sent: to=%s from=%s gmail-id=%s\n", to, emailOpts.From, id)
+	_, _ = fmt.Fprintf(stderr, "sent: to=%s from=%s gmail-id=%s\n", to, emailOpts.From, id)
 	return nil
 }
 
