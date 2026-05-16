@@ -171,3 +171,19 @@ func promptWithDefault(w io.Writer, r *bufio.Reader, label, current string) (str
 		return line, nil
 	}
 }
+
+// validateEmailish returns nil if value is empty (when allowEmpty) or contains
+// an '@'. Otherwise returns an error mentioning fieldLabel. The check is
+// deliberately loose; real validation happens when the message is sent.
+func validateEmailish(value string, allowEmpty bool, fieldLabel string) error {
+	if value == "" {
+		if allowEmpty {
+			return nil
+		}
+		return fmt.Errorf("%s must not be empty", fieldLabel)
+	}
+	if !strings.Contains(value, "@") {
+		return fmt.Errorf("%s must look like an email address (contain @)", fieldLabel)
+	}
+	return nil
+}

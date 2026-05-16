@@ -139,3 +139,42 @@ func TestPromptWithDefaultTrimsWhitespace(t *testing.T) {
 		t.Errorf("value: got %q", got)
 	}
 }
+
+func TestValidateEmailishAcceptsWithAt(t *testing.T) {
+	if err := validateEmailish("alice@example.com", false, "From"); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateEmailishAcceptsEmptyWhenAllowed(t *testing.T) {
+	if err := validateEmailish("", true, "DefaultTo"); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateEmailishRejectsEmptyWhenNotAllowed(t *testing.T) {
+	err := validateEmailish("", false, "From")
+	if err == nil {
+		t.Fatal("expected error for empty value")
+	}
+	if !strings.Contains(err.Error(), "From") {
+		t.Errorf("error should mention field label; got %v", err)
+	}
+}
+
+func TestValidateEmailishRejectsMissingAt(t *testing.T) {
+	err := validateEmailish("no-at-sign", false, "From")
+	if err == nil {
+		t.Fatal("expected error for value without @")
+	}
+	if !strings.Contains(err.Error(), "@") {
+		t.Errorf("error should mention @; got %v", err)
+	}
+}
+
+func TestValidateEmailishAllowEmptyStillRejectsMalformed(t *testing.T) {
+	err := validateEmailish("no-at-sign", true, "DefaultTo")
+	if err == nil {
+		t.Fatal("expected error for non-empty value missing @")
+	}
+}
