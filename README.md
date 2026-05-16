@@ -78,6 +78,17 @@ security find-generic-password -s au.com.flipgroup.jellyfish -a default
 security delete-generic-password -s au.com.flipgroup.jellyfish -a default
 ```
 
+### Configure email defaults
+
+```bash
+jellyfish configure email
+```
+
+Prompts for `From` and default `To`, then writes them to the `email:` block
+of `~/.config/jellyfish/config.yml`. Enter keeps the current value; type a
+literal `-` to clear a field. The subject template and CVE link templates
+can be customised by hand-editing the YAML (see [Email output](#email-output)).
+
 ## Usage
 
 ### Vulnerability detections
