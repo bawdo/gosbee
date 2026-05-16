@@ -84,10 +84,17 @@ security delete-generic-password -s au.com.flipgroup.jellyfish -a default
 jellyfish configure email
 ```
 
-Prompts for `From` and default `To`, then writes them to the `email:` block
-of `~/.config/jellyfish/config.yml`. Enter keeps the current value; type a
-literal `-` to clear a field. The subject template and CVE link templates
-can be customised by hand-editing the YAML (see [Email output](#email-output)).
+Prompts for `From`, default `To`, and a path to a Gmail service-account
+JSON file. The first two values are written to the `email:` block of
+`~/.config/jellyfish/config.yml`. When a JSON path is provided, the file
+is read, validated (must have `type: "service_account"` and `client_email`),
+then stored in the macOS Keychain under account `gmail_default`. The path
+itself is **not** persisted; the file can be moved or deleted afterwards.
+
+For each prompt: Enter keeps the current value; type a literal `-` to
+clear a field (and, for the Gmail prompt, remove the Keychain entry).
+The subject template and CVE link templates can be customised by
+hand-editing the YAML (see [Email output](#email-output)).
 
 ## Usage
 
@@ -208,8 +215,7 @@ detection_datetime
 `-o email` writes an RFC 5322 multipart/alternative message (.eml) to stdout.
 It carries a styled HTML body (executive summary + per-CVE table with
 clickable NVD/MITRE CVE links) and a plain-text alternative. Open the .eml
-file in Mail, pipe it to your mail tooling, or feed it to a future
-`--send-email` flag.
+file in Mail, pipe it to your mail tooling, or pass --send-email to send it via the Gmail API (see below).
 
 ```bash
 jellyfish vulns summary --severity critical -o email > critical.eml
@@ -246,6 +252,46 @@ email:
 ```
 
 The `{cve}` token in link templates is a literal substring replacement.
+
+#### Sending via Gmail (`--send-email`)
+
+`--send-email` on `vulns summary` or `user show` renders the .eml internally
+and sends it via the Gmail API instead of writing it to stdout. Combine with
+any of the existing email/filter flags:
+
+```bash
+jellyfish vulns summary --severity critical --send-email --email-to secops@flipgroup.com.au
+jellyfish user show keith@flipgroup.com.au --send-email
+```
+
+Recipient resolution for `user show --send-email`:
+
+1. `--email-to <addr>` if provided
+2. `email.default_to` from config if non-empty
+3. The resolved user's own email address
+
+For `vulns summary --send-email` the user fallback does not apply — pass
+`--email-to` or set `email.default_to`.
+
+On success, stdout stays empty and stderr gets one line:
+`sent: to=<addr> from=<addr> gmail-id=<id>`.
+
+Combining `--send-email` with an explicit `-o` other than `email` errors out
+(exit 1). Use one or the other.
+
+The Gmail send path uses a Workspace service account with domain-wide
+delegation. The service-account JSON is stored in the macOS Keychain under
+service `au.com.flipgroup.jellyfish`, account `gmail_default` — install it
+via `jellyfish configure email` (third prompt). Inspect or remove it via:
+
+```bash
+security find-generic-password -s au.com.flipgroup.jellyfish -a gmail_default
+security delete-generic-password -s au.com.flipgroup.jellyfish -a gmail_default
+```
+
+Gmail-side failures surface via exit codes 2 (auth/permissions: bad JWT,
+DWD scope not granted, mailbox forbidden) and 4 (rate-limited or 5xx
+upstream).
 
 ### Exit codes
 
