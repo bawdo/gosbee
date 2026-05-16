@@ -2,6 +2,7 @@ package email
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 const (
 	DefaultCVELinkPrimary   = "https://nvd.nist.gov/vuln/detail/{cve}"
 	DefaultCVELinkSecondary = "https://www.cve.org/CVERecord?id={cve}"
+	DefaultHeaderBG         = "#7566FF"
 )
 
 // Options carries everything an email renderer needs that isn't part of the
@@ -31,10 +33,14 @@ type Options struct {
 	GeneratedAt time.Time // pinned by tests; cmd layer passes time.Now()
 	Tenant      string    // shown in masthead, sourced from config.Profile.Subdomain
 
+	HeaderBG string // hex #RRGGBB; renderer applies DefaultHeaderBG if empty
+	LogoPath string // optional path to a PNG; empty disables the logo
+
 	// Injected for tests; production leaves these zero so assembleMessage
 	// pulls from crypto/rand.
-	BoundaryOverride  string
-	MessageIDOverride string
+	BoundaryOverride        string
+	RelatedBoundaryOverride string
+	MessageIDOverride       string
 }
 
 // withDefaults returns a copy of opts with empty optional fields filled in.
@@ -44,6 +50,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.CVELinkSecondary == "" {
 		o.CVELinkSecondary = DefaultCVELinkSecondary
+	}
+	if o.HeaderBG == "" {
+		o.HeaderBG = DefaultHeaderBG
 	}
 	if o.GeneratedAt.IsZero() {
 		o.GeneratedAt = time.Now()
@@ -74,11 +83,21 @@ type messageHeaders struct {
 	Date    time.Time
 }
 
-// assembleMessage produces a full RFC 5322 multipart/alternative message
-// from a plain-text body and an HTML body. boundary and messageID are
-// caller-supplied for test determinism; production callers pass values
-// from randomBoundary() and randomMessageID().
-func assembleMessage(h messageHeaders, htmlBody, textBody, boundary, messageID string) ([]byte, error) {
+// assembleMessage produces a full RFC 5322 message. When logo is nil, the
+// result is multipart/alternative carrying the text and HTML bodies. When
+// logo is non-nil, that multipart/alternative is wrapped in a
+// multipart/related envelope and the logo bytes are emitted as an inline
+// image part referenced by Content-ID.
+//
+// innerBoundary and outerBoundary are caller-supplied for test determinism;
+// outerBoundary is ignored when logo is nil.
+func assembleMessage(
+	h messageHeaders,
+	htmlBody, textBody string,
+	innerBoundary, messageID string,
+	outerBoundary string,
+	logo *logoPart,
+) ([]byte, error) {
 	var sb strings.Builder
 	writeHeader := func(name, value string) {
 		sb.WriteString(name)
@@ -98,12 +117,24 @@ func assembleMessage(h messageHeaders, htmlBody, textBody, boundary, messageID s
 	writeHeader("Date", h.Date.Format(time.RFC1123Z))
 	writeHeader("Message-ID", messageID)
 	writeHeader("MIME-Version", "1.0")
-	writeHeader("Content-Type", fmt.Sprintf("multipart/alternative; boundary=%q", sanitiseHeaderValue(boundary)))
+	if logo == nil {
+		writeHeader("Content-Type", fmt.Sprintf("multipart/alternative; boundary=%q", sanitiseHeaderValue(innerBoundary)))
+	} else {
+		writeHeader("Content-Type", fmt.Sprintf("multipart/related; type=%q; boundary=%q",
+			"multipart/alternative", sanitiseHeaderValue(outerBoundary)))
+	}
 	sb.WriteString("\r\n")
+
+	if logo != nil {
+		sb.WriteString("--")
+		sb.WriteString(outerBoundary)
+		sb.WriteString("\r\n")
+		fmt.Fprintf(&sb, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", sanitiseHeaderValue(innerBoundary))
+	}
 
 	writePart := func(contentType, body string) error {
 		sb.WriteString("--")
-		sb.WriteString(boundary)
+		sb.WriteString(innerBoundary)
 		sb.WriteString("\r\n")
 		sb.WriteString("Content-Type: ")
 		sb.WriteString(contentType)
@@ -127,12 +158,41 @@ func assembleMessage(h messageHeaders, htmlBody, textBody, boundary, messageID s
 	if err := writePart("text/html; charset=UTF-8", htmlBody); err != nil {
 		return nil, err
 	}
-
 	sb.WriteString("--")
-	sb.WriteString(boundary)
+	sb.WriteString(innerBoundary)
 	sb.WriteString("--\r\n")
 
+	if logo != nil {
+		sb.WriteString("--")
+		sb.WriteString(outerBoundary)
+		sb.WriteString("\r\n")
+		sb.WriteString("Content-Type: image/png\r\n")
+		sb.WriteString("Content-Transfer-Encoding: base64\r\n")
+		fmt.Fprintf(&sb, "Content-ID: <%s>\r\n", logo.CID)
+		fmt.Fprintf(&sb, "Content-Disposition: inline; filename=%q\r\n\r\n", logo.Name)
+		sb.WriteString(base64Wrap(logo.Bytes, 76))
+		sb.WriteString("\r\n--")
+		sb.WriteString(outerBoundary)
+		sb.WriteString("--\r\n")
+	}
+
 	return []byte(sb.String()), nil
+}
+
+// base64Wrap returns the base64 encoding of data with CRLF inserted every
+// lineWidth output chars (RFC 2045 line-length).
+func base64Wrap(data []byte, lineWidth int) string {
+	enc := base64.StdEncoding.EncodeToString(data)
+	var sb strings.Builder
+	for i := 0; i < len(enc); i += lineWidth {
+		end := i + lineWidth
+		if end > len(enc) {
+			end = len(enc)
+		}
+		sb.WriteString(enc[i:end])
+		sb.WriteString("\r\n")
+	}
+	return strings.TrimSuffix(sb.String(), "\r\n")
 }
 
 // quotedPrintableEncode runs body through stdlib quoted-printable, then
@@ -157,6 +217,14 @@ func randomBoundary() (string, error) {
 		return "", err
 	}
 	return "=_jf_" + hex.EncodeToString(b[:]), nil
+}
+
+func randomRelatedBoundary() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return "=_jfr_" + hex.EncodeToString(b[:]), nil
 }
 
 // randomMessageID returns "<nanos.<6 hex chars>@<domain>>".

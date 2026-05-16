@@ -114,13 +114,15 @@ func TestRenderVulnSummaryTextEmpty(t *testing.T) {
 }
 
 func TestRenderVulnSummaryHTML(t *testing.T) {
-	view := buildVulnSummaryView(sampleVulns(), Options{Tenant: "flipgroup"}.withDefaults())
+	opts := Options{Tenant: "flipgroup"}.withDefaults()
+	view := buildVulnSummaryView(sampleVulns(), opts)
+	view.Header = buildHeader("JELLYFISH / VULNS", "Fleet vulnerability summary", "subtitle", opts.HeaderBG, false)
 	got, err := renderVulnSummaryHTML(view)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	for _, want := range []string{
-		`bgcolor="#0f172a"`,
+		`bgcolor="#7566FF"`,
 		`>CVE-2024-3094<`,
 		`href="https://nvd.nist.gov/vuln/detail/CVE-2024-3094"`,
 		`href="https://www.cve.org/CVERecord?id=CVE-2024-3094"`,
@@ -169,14 +171,15 @@ func goldenAssert(t *testing.T, name string, got []byte) {
 	t.Helper()
 	path := filepath.Join("testdata", name)
 	if *updateGolden {
-		if err := os.MkdirAll("testdata", 0o755); err != nil {
+		if err := os.MkdirAll("testdata", 0o750); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		if err := os.WriteFile(path, got, 0o644); err != nil {
+		if err := os.WriteFile(path, got, 0o600); err != nil {
 			t.Fatalf("write golden: %v", err)
 		}
 		return
 	}
+	// #nosec G304 - golden path is under testdata/, derived from a literal test name
 	want, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read golden %s: %v (run with -update-golden to regenerate)", path, err)
@@ -262,6 +265,103 @@ func TestVulnSummaryRoundTripParses(t *testing.T) {
 	}
 	if msg.Header.Get("Subject") == "" {
 		t.Fatal("missing Subject")
+	}
+}
+
+func TestVulnSummaryHTMLHeaderColoursAndLogo(t *testing.T) {
+	cases := []struct {
+		name     string
+		bg       string
+		logoPath string
+		wantText string // a substring that proves the right text-colour branch
+		wantLogo bool
+	}{
+		{"default no-logo", "", "", "color:#f8fafc", false},
+		{"lavender no-logo", "#C6B8FE", "", "color:#0f172a", false},
+		{"deep with logo", "#6846D8", "testdata/logo_small.png", "color:#f8fafc", true},
+		{"lavender with logo", "#C6B8FE", "testdata/logo_small.png", "color:#0f172a", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := Options{
+				From:        "alice@example.com",
+				HeaderBG:    tc.bg,
+				LogoPath:    tc.logoPath,
+				GeneratedAt: time.Date(2026, 5, 16, 18, 42, 0, 0, time.UTC),
+			}.withDefaults()
+			view := buildVulnSummaryView(nil, opts)
+			view.Header = buildHeader("JELLYFISH / VULNS", "Fleet vulnerability summary",
+				"2026-05-16 18:42 - 0 CVEs", opts.HeaderBG, opts.LogoPath != "")
+			html, err := renderVulnSummaryHTML(view)
+			if err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			if !strings.Contains(html, tc.wantText) {
+				t.Errorf("expected text-colour substring %q in html", tc.wantText)
+			}
+			hasCID := strings.Contains(html, `src="cid:jf-logo"`)
+			if hasCID != tc.wantLogo {
+				t.Errorf("logo presence: got %v want %v", hasCID, tc.wantLogo)
+			}
+			if strings.Contains(html, "prefers-color-scheme") {
+				t.Errorf("dark-mode media query should be removed")
+			}
+		})
+	}
+}
+
+func TestVulnSummaryRendererWarnsOnLogoLoadFailure(t *testing.T) {
+	opts := Options{
+		From:        "alice@example.com",
+		LogoPath:    "/no/such/path/logo.png",
+		GeneratedAt: time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+	}
+	var warnBuf bytes.Buffer
+	r := NewVulnSummaryRendererWithStderr(opts, &warnBuf).(*vulnSummaryRenderer)
+	var out bytes.Buffer
+	if err := r.Render(&out, []iru.Vulnerability(nil)); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(warnBuf.String(), "warn: email logo not loaded") {
+		t.Errorf("expected warn on stderr, got:\n%s", warnBuf.String())
+	}
+	if strings.Contains(out.String(), "cid:jf-logo") {
+		t.Errorf("expected no logo img in HTML when load fails")
+	}
+	if !strings.Contains(out.String(), "multipart/alternative") {
+		t.Errorf("expected multipart/alternative on failed-logo path")
+	}
+	if strings.Contains(out.String(), "multipart/related") {
+		t.Errorf("expected NO multipart/related on failed-logo path")
+	}
+}
+
+func TestVulnSummaryRendererWithValidLogoEmitsMultipartRelated(t *testing.T) {
+	opts := Options{
+		From:                    "alice@example.com",
+		LogoPath:                "testdata/logo_small.png",
+		HeaderBG:                "#C6B8FE",
+		GeneratedAt:             time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+		BoundaryOverride:        "=_jf_TEST",
+		RelatedBoundaryOverride: "=_jfr_TEST",
+		MessageIDOverride:       "<m@example.com>",
+	}
+	var warnBuf, out bytes.Buffer
+	r := NewVulnSummaryRendererWithStderr(opts, &warnBuf).(*vulnSummaryRenderer)
+	if err := r.Render(&out, []iru.Vulnerability(nil)); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if warnBuf.Len() != 0 {
+		t.Errorf("expected no warnings, got: %s", warnBuf.String())
+	}
+	if !strings.Contains(out.String(), "multipart/related") {
+		t.Errorf("expected multipart/related, raw:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "Content-ID: <jf-logo>") {
+		t.Errorf("expected Content-ID: <jf-logo>")
+	}
+	if !strings.Contains(out.String(), `"cid:jf-logo"`) {
+		t.Errorf("expected HTML to reference cid:jf-logo")
 	}
 }
 

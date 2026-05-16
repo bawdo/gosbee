@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+
+
 func TestBuildCVELinkSubstitutes(t *testing.T) {
 	got := buildCVELink("https://nvd.nist.gov/vuln/detail/{cve}", "CVE-2024-3094")
 	want := "https://nvd.nist.gov/vuln/detail/CVE-2024-3094"
@@ -47,7 +49,9 @@ func TestAssembleMessageHeadersAndStructure(t *testing.T) {
 		Date:    time.Date(2026, 5, 16, 10, 42, 0, 0, time.FixedZone("AEST", 10*3600)),
 	}
 	out, err := assembleMessage(hdr, "<html><body>hi</body></html>", "hello plain text\n",
-		"=_jf_FIXEDBOUNDARY", "<fixed-id@example.com>")
+		"=_jf_FIXEDBOUNDARY", "<fixed-id@example.com>",
+		"", nil,
+	)
 	if err != nil {
 		t.Fatalf("assembleMessage: %v", err)
 	}
@@ -111,7 +115,7 @@ func TestAssembleMessageUsesCRLF(t *testing.T) {
 		From: "a@b.c", To: "d@e.f", Subject: "s",
 		Date: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
-	out, err := assembleMessage(hdr, "<p>h</p>", "h\n", "=_jf_X", "<i@b.c>")
+	out, err := assembleMessage(hdr, "<p>h</p>", "h\n", "=_jf_X", "<i@b.c>", "", nil)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -155,7 +159,7 @@ func TestAssembleMessageStripsHeaderInjection(t *testing.T) {
 		Subject: "Report\r\nBcc: attacker@evil.com",
 		Date:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
-	out, err := assembleMessage(hdr, "<p>h</p>", "h\n", "=_jf_X", "<i@b.c>")
+	out, err := assembleMessage(hdr, "<p>h</p>", "h\n", "=_jf_X", "<i@b.c>", "", nil)
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
@@ -168,5 +172,92 @@ func TestAssembleMessageStripsHeaderInjection(t *testing.T) {
 	}
 	if got := msg.Header.Get("Subject"); got != "ReportBcc: attacker@evil.com" {
 		t.Fatalf("Subject after strip: got %q want %q", got, "ReportBcc: attacker@evil.com")
+	}
+}
+
+func TestAssembleMessageWithLogoEmitsMultipartRelated(t *testing.T) {
+	hdr := messageHeaders{
+		From: "alice@example.com", To: "bob@example.com",
+		Subject: "x", Date: time.Date(2026, 5, 16, 10, 0, 0, 0, time.UTC),
+	}
+	logo := &logoPart{
+		Bytes: []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("a", 100)), // not a real PNG, but assembleMessage doesn't decode
+		Name:  "logo.png",
+		CID:   "jf-logo",
+	}
+	out, err := assembleMessage(hdr,
+		"<html>hi</html>", "hi plain",
+		"=_jf_INNER", "<id@example.com>",
+		"=_jfr_OUTER", logo,
+	)
+	if err != nil {
+		t.Fatalf("assembleMessage: %v", err)
+	}
+	msg, err := mail.ReadMessage(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("parse: %v\nraw:\n%s", err, out)
+	}
+	mediaType, params, err := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("Content-Type parse: %v", err)
+	}
+	if mediaType != "multipart/related" {
+		t.Fatalf("outer media type: got %q want multipart/related", mediaType)
+	}
+	if params["boundary"] != "=_jfr_OUTER" {
+		t.Errorf("outer boundary: got %q", params["boundary"])
+	}
+	if params["type"] != "multipart/alternative" {
+		t.Errorf("outer type param: got %q", params["type"])
+	}
+
+	mr := multipart.NewReader(msg.Body, params["boundary"])
+	first, err := mr.NextPart()
+	if err != nil {
+		t.Fatalf("first part: %v", err)
+	}
+	if ct := first.Header.Get("Content-Type"); !strings.HasPrefix(ct, "multipart/alternative") {
+		t.Errorf("first part type: got %q", ct)
+	}
+	second, err := mr.NextPart()
+	if err != nil {
+		t.Fatalf("second part: %v", err)
+	}
+	if ct := second.Header.Get("Content-Type"); ct != "image/png" {
+		t.Errorf("second part type: got %q want image/png", ct)
+	}
+	if cid := second.Header.Get("Content-ID"); cid != "<jf-logo>" {
+		t.Errorf("Content-ID: got %q want <jf-logo>", cid)
+	}
+	if cd := second.Header.Get("Content-Disposition"); !strings.Contains(cd, "inline") || !strings.Contains(cd, "logo.png") {
+		t.Errorf("Content-Disposition: got %q", cd)
+	}
+	if cte := second.Header.Get("Content-Transfer-Encoding"); cte != "base64" {
+		t.Errorf("Content-Transfer-Encoding: got %q want base64", cte)
+	}
+}
+
+func TestAssembleMessageNoLogoEmitsMultipartAlternative(t *testing.T) {
+	hdr := messageHeaders{
+		From: "a@example.com", To: "b@example.com",
+		Subject: "x", Date: time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+	}
+	out, err := assembleMessage(hdr, "<html>x</html>", "x",
+		"=_jf_FIXED", "<id@example.com>",
+		"", nil,
+	)
+	if err != nil {
+		t.Fatalf("assembleMessage: %v", err)
+	}
+	msg, err := mail.ReadMessage(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("parse: %v\nraw:\n%s", err, out)
+	}
+	mediaType, _, err := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("Content-Type parse: %v", err)
+	}
+	if mediaType != "multipart/alternative" {
+		t.Errorf("no-logo path: got %q want multipart/alternative", mediaType)
 	}
 }

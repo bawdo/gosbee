@@ -1,0 +1,16 @@
+{{define "header"}}
+<tr><td bgcolor="{{.Header.BG}}" style="background:{{.Header.BG}};color:{{.Header.TextFG}};padding:18px 24px;">
+  <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;"><tr>
+    {{- if .Header.HasLogo}}
+    <td valign="middle" style="padding-right:16px;">
+      <img src="cid:jf-logo" alt="" height="56" style="display:block;max-height:56px;height:56px;width:auto;border:0;outline:none;text-decoration:none;">
+    </td>
+    {{- end}}
+    <td valign="middle">
+      <div style="font:700 10px/1 'SF Mono','Menlo','Consolas',monospace;letter-spacing:.14em;padding:4px 7px;background:{{.Header.BadgeBG | safeCSS}};color:{{.Header.BadgeFG}};border-radius:3px;display:inline-block;">{{.Header.Badge}}</div>
+      <div style="font:700 20px/1.2 -apple-system,system-ui,sans-serif;margin:10px 0 4px;color:{{.Header.TextFG}};">{{.Header.Title}}</div>
+      <div style="font:12px/1.4 -apple-system,system-ui,sans-serif;opacity:.7;color:{{.Header.TextFG}};">{{.Header.Subtitle}}</div>
+    </td>
+  </tr></table>
+</td></tr>
+{{end}}

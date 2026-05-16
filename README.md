@@ -84,17 +84,19 @@ security delete-generic-password -s au.com.flipgroup.jellyfish -a default
 jellyfish configure email
 ```
 
-Prompts for `From`, default `To`, and a path to a Gmail service-account
-JSON file. The first two values are written to the `email:` block of
-`~/.config/jellyfish/config.yml`. When a JSON path is provided, the file
-is read, validated (must have `type: "service_account"` and `client_email`),
-then stored in the macOS Keychain under account `gmail_default`. The path
-itself is **not** persisted; the file can be moved or deleted afterwards.
+Prompts (in order): `From`, default `To`, path to a Gmail service-account
+JSON file, header background colour, path to a logo PNG. The first two
+values and `header_bg` are written to the `email:` block of
+`~/.config/jellyfish/config.yml`. When a Gmail JSON path is provided, the
+file is read, validated, then stored in the macOS Keychain (the source
+path is not persisted). When a logo path is provided, the PNG is validated
+(decodable PNG, no larger than 512 KB) and copied into
+`~/.config/jellyfish/logos/<basename>`; the resulting managed path is
+written to `email.logo_path`. The source file is left alone.
 
 For each prompt: Enter keeps the current value; type a literal `-` to
-clear a field (and, for the Gmail prompt, remove the Keychain entry).
-The subject template and CVE link templates can be customised by
-hand-editing the YAML (see [Email output](#email-output)).
+clear a field. Clearing the logo also deletes the copy under `logos/`
+(but never any file outside that directory).
 
 ## Usage
 
@@ -233,9 +235,39 @@ Recipient, sender, and subject default from the `email:` block in
 
 | Flag | Config key | Default |
 |---|---|---|
-| `--email-to`      | `email.default_to`       | empty (header renders as `<unspecified>`) |
-| `--email-from`    | `email.from`             | `git config user.email` |
-| `--email-subject` | `email.subject_template` | per-command default |
+| `--email-to`         | `email.default_to`       | empty (header renders as `<unspecified>`) |
+| `--email-from`       | `email.from`             | `git config user.email` |
+| `--email-subject`    | `email.subject_template` | per-command default |
+| `--email-header-bg`  | `email.header_bg`        | `#7566FF` (Flip brand purple) |
+| `--email-logo`       | `email.logo_path`        | empty (no logo) |
+
+The default `#7566FF` is the Flip brand purple. A logo whose recognisable
+element is the same purple (the Flip brand mark, for example) will blend into
+that background - pair the default with a logo whose distinguishing element
+is white or dark, or pick a contrasting header colour such as `#C6B8FE`
+(light lavender) or `#6846D8` (deep purple).
+
+**Logo dimensions.** The header renders the logo at a fixed 56px height; width
+scales by the source PNG's aspect ratio (the renderer never crops or distorts).
+Any pixel dimensions work; what matters for sharpness is supplying enough
+source pixels for the mail client to downscale cleanly to that 56px row:
+
+| Target rendering   | Minimum source height | Recommended source height |
+|---|---|---|
+| Standard display   | 56 px                 | 56-100 px                 |
+| Retina / HiDPI     | 112 px (2x)           | 112-200 px                |
+
+For square logos use a 1:1 source; for wordmark / landscape logos a 2:1 or
+3:1 source is typical. Keep the entire PNG canvas under 512 KB (the renderer
+rejects oversized files); a well-optimised 200x100 PNG is usually well under
+10 KB.
+
+**Don't resize logos to chase exact dimensions.** Brand assets are usually
+already supplied at suitable sizes; downscaling a logo from, say, 200x100 to
+exactly 112x56 with a generic resampling filter can subtly alter the visible
+content aspect ratio (Lanczos and friends extend anti-aliased edges, which
+skews the bounding box). Use whatever the design team ships and let the mail
+client do the 56px downscale.
 
 `email.subject_template` is a Go template; available variables: `{{.Date}}`
 (YYYY-MM-DD) and `{{.Time}}` (HH:MM).

@@ -4,22 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vulnerability exposure - {{.User.Name}}</title>
-<style>
-@media (prefers-color-scheme: dark) {
-  body, table { background:#0f172a !important; color:#e2e8f0 !important; }
-}
-</style>
 </head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#0f172a;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:20px 0;">
 <tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;width:600px;max-width:600px;">
 
-<tr><td bgcolor="#0f172a" style="background:#0f172a;color:#f8fafc;padding:18px 24px;">
-  <div style="font:700 10px/1 'SF Mono','Menlo','Consolas',monospace;letter-spacing:.14em;padding:4px 7px;background:rgba(255,255,255,0.12);border-radius:3px;display:inline-block;">JELLYFISH / USER</div>
-  <div style="font:700 20px/1.2 -apple-system,system-ui,sans-serif;margin:10px 0 4px;">Vulnerability exposure - {{.User.Name}}</div>
-  <div style="font:12px/1.4 -apple-system,system-ui,sans-serif;opacity:.7;">{{if .User.Email}}{{.User.Email}} - {{end}}{{.GeneratedAtStr}}{{if .Tenant}} - {{.Tenant}}{{end}} - {{.TotalCVEs}} CVEs across {{.DeviceCount}} device(s)</div>
-</td></tr>
+{{template "header" .}}
 
 <tr><td style="padding:0;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="1" bgcolor="#e2e8f0" style="border-collapse:separate;border-spacing:1px;background:#e2e8f0;width:100%;">

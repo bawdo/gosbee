@@ -5,6 +5,7 @@ import (
 	"fmt"
 	htmltmpl "html/template"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	texttmpl "text/template"
@@ -13,12 +14,13 @@ import (
 	"flipgroup.com.au/jellyfish/internal/output"
 )
 
-//go:embed templates/vulns_summary.txt.tmpl templates/vulns_summary.html.tmpl
+//go:embed templates/vulns_summary.txt.tmpl templates/vulns_summary.html.tmpl templates/_header.html.tmpl
 var vulnSummaryFS embed.FS
 
 // vulnSummaryView is the data shape vulns_summary templates render against.
 // Every field is pre-formatted so templates contain no Go logic.
 type vulnSummaryView struct {
+	Header         Header
 	Tenant         string
 	GeneratedAtStr string
 	GeneratedDate  string
@@ -136,7 +138,11 @@ func renderVulnSummaryHTML(v vulnSummaryView) (string, error) {
 		"sevRowBG":  sevRowBG,
 		"sevPillBG": sevPillBG,
 		"sevPillFG": sevPillFG,
-	}).ParseFS(vulnSummaryFS, "templates/vulns_summary.html.tmpl")
+		"safeCSS":   safeCSS,
+	}).ParseFS(vulnSummaryFS,
+		"templates/_header.html.tmpl",
+		"templates/vulns_summary.html.tmpl",
+	)
 	if err != nil {
 		return "", err
 	}
@@ -149,12 +155,20 @@ func renderVulnSummaryHTML(v vulnSummaryView) (string, error) {
 
 type vulnSummaryRenderer struct {
 	opts Options
+	warn io.Writer
 }
 
 // NewVulnSummaryRenderer returns an output.Renderer whose Render(w, v) expects
 // v to be []iru.Vulnerability and writes a complete .eml message to w.
 func NewVulnSummaryRenderer(opts Options) output.Renderer {
 	return &vulnSummaryRenderer{opts: opts.withDefaults()}
+}
+
+// NewVulnSummaryRendererWithStderr is like NewVulnSummaryRenderer but routes
+// renderer-level warnings (e.g. logo load failures) to the supplied writer
+// instead of os.Stderr.
+func NewVulnSummaryRendererWithStderr(opts Options, stderr io.Writer) output.Renderer {
+	return &vulnSummaryRenderer{opts: opts.withDefaults(), warn: stderr}
 }
 
 func (r *vulnSummaryRenderer) Render(w io.Writer, v any) error {
@@ -173,6 +187,28 @@ func (r *vulnSummaryRenderer) Render(w io.Writer, v any) error {
 	}
 
 	view := buildVulnSummaryView(vs, r.opts)
+
+	warn := r.warn
+	if warn == nil {
+		warn = os.Stderr
+	}
+	logo, logoErr := loadLogo(r.opts.LogoPath)
+	if logoErr != nil {
+		_, _ = fmt.Fprintf(warn, "warn: email logo not loaded (%v); rendering without logo\n", logoErr)
+	}
+
+	subtitle := view.GeneratedAtStr
+	if view.Tenant != "" {
+		subtitle += " - " + view.Tenant
+	}
+	subtitle += fmt.Sprintf(" - %d CVEs across %d devices (max per CVE)", view.TotalCVEs, view.DeviceCount)
+	view.Header = buildHeader(
+		"JELLYFISH / VULNS",
+		"Fleet vulnerability summary",
+		subtitle,
+		r.opts.HeaderBG,
+		logo != nil,
+	)
 
 	subject := r.opts.Subject
 	if subject == "" {
@@ -203,12 +239,19 @@ func (r *vulnSummaryRenderer) Render(w io.Writer, v any) error {
 		}
 	}
 
+	outerBoundary := r.opts.RelatedBoundaryOverride
+	if outerBoundary == "" && logo != nil {
+		outerBoundary, err = randomRelatedBoundary()
+		if err != nil {
+			return err
+		}
+	}
 	bytesOut, err := assembleMessage(messageHeaders{
 		From:    r.opts.From,
 		To:      r.opts.To,
 		Subject: subject,
 		Date:    r.opts.GeneratedAt,
-	}, htmlBody, textBody, boundary, messageID)
+	}, htmlBody, textBody, boundary, messageID, outerBoundary, logo)
 	if err != nil {
 		return err
 	}

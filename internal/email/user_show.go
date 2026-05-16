@@ -5,6 +5,7 @@ import (
 	"fmt"
 	htmltmpl "html/template"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	texttmpl "text/template"
@@ -26,10 +27,11 @@ type UserBundleDevice struct {
 	Detections []iru.Detection
 }
 
-//go:embed templates/user_show.txt.tmpl templates/user_show.html.tmpl
+//go:embed templates/user_show.txt.tmpl templates/user_show.html.tmpl templates/_header.html.tmpl
 var userShowFS embed.FS
 
 type userShowView struct {
+	Header         Header
 	User           iru.User
 	Tenant         string
 	GeneratedAtStr string
@@ -132,7 +134,11 @@ func renderUserShowHTML(v userShowView) (string, error) {
 		"sevRowBG":  sevRowBG,
 		"sevPillBG": sevPillBG,
 		"sevPillFG": sevPillFG,
-	}).ParseFS(userShowFS, "templates/user_show.html.tmpl")
+		"safeCSS":   safeCSS,
+	}).ParseFS(userShowFS,
+		"templates/_header.html.tmpl",
+		"templates/user_show.html.tmpl",
+	)
 	if err != nil {
 		return "", err
 	}
@@ -145,12 +151,20 @@ func renderUserShowHTML(v userShowView) (string, error) {
 
 type userShowRenderer struct {
 	opts Options
+	warn io.Writer
 }
 
 // NewUserShowRenderer returns an output.Renderer whose Render(w, v) expects
 // v to be a UserBundleInput and writes a complete .eml message to w.
 func NewUserShowRenderer(opts Options) output.Renderer {
 	return &userShowRenderer{opts: opts.withDefaults()}
+}
+
+// NewUserShowRendererWithStderr is like NewUserShowRenderer but routes
+// renderer-level warnings (e.g. logo load failures) to the supplied writer
+// instead of os.Stderr.
+func NewUserShowRendererWithStderr(opts Options, stderr io.Writer) output.Renderer {
+	return &userShowRenderer{opts: opts.withDefaults(), warn: stderr}
 }
 
 func (r *userShowRenderer) Render(w io.Writer, v any) error {
@@ -169,6 +183,28 @@ func (r *userShowRenderer) Render(w io.Writer, v any) error {
 	}
 
 	view := buildUserShowView(bundle, r.opts)
+
+	warn := r.warn
+	if warn == nil {
+		warn = os.Stderr
+	}
+	logo, logoErr := loadLogo(r.opts.LogoPath)
+	if logoErr != nil {
+		_, _ = fmt.Fprintf(warn, "warn: email logo not loaded (%v); rendering without logo\n", logoErr)
+	}
+
+	subtitle := r.opts.GeneratedAt.Format("2 Jan 2006 - 15:04 MST")
+	if bundle.User.Email != "" {
+		subtitle = bundle.User.Email + " - " + subtitle
+	}
+	if view.Tenant != "" {
+		subtitle += " - " + view.Tenant
+	}
+	subtitle += fmt.Sprintf(" - %d CVEs across %d device(s)", view.TotalCVEs, view.DeviceCount)
+	view.Header = buildHeader("JELLYFISH / USER",
+		"Vulnerability exposure - "+bundle.User.Name,
+		subtitle, r.opts.HeaderBG, logo != nil,
+	)
 
 	subject := r.opts.Subject
 	if subject == "" {
@@ -203,12 +239,19 @@ func (r *userShowRenderer) Render(w io.Writer, v any) error {
 		}
 	}
 
+	outerBoundary := r.opts.RelatedBoundaryOverride
+	if outerBoundary == "" && logo != nil {
+		outerBoundary, err = randomRelatedBoundary()
+		if err != nil {
+			return err
+		}
+	}
 	bytesOut, err := assembleMessage(messageHeaders{
 		From:    r.opts.From,
 		To:      r.opts.To,
 		Subject: subject,
 		Date:    r.opts.GeneratedAt,
-	}, htmlBody, textBody, boundary, messageID)
+	}, htmlBody, textBody, boundary, messageID, outerBoundary, logo)
 	if err != nil {
 		return err
 	}

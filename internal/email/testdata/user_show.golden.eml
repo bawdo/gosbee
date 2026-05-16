@@ -36,11 +36,6 @@ Content-Transfer-Encoding: quoted-printable
 <meta name=3D"viewport" content=3D"width=3Ddevice-width, initial-scale=3D1"=
 >
 <title>Vulnerability exposure - Alice Example</title>
-<style>
-@media (prefers-color-scheme: dark) {
-  body, table { background:#0f172a !important; color:#e2e8f0 !important; }
-}
-</style>
 </head>
 <body style=3D"margin:0;padding:0;background:#f1f5f9;font-family:-apple-sys=
 tem,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#0f172a;=
@@ -51,17 +46,25 @@ tem,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#0f172a;=
 <table role=3D"presentation" width=3D"600" cellpadding=3D"0" cellspacing=3D=
 "0" style=3D"background:#ffffff;width:600px;max-width:600px;">
 
-<tr><td bgcolor=3D"#0f172a" style=3D"background:#0f172a;color:#f8fafc;paddi=
+
+<tr><td bgcolor=3D"#7566FF" style=3D"background:#7566FF;color:#f8fafc;paddi=
 ng:18px 24px;">
-  <div style=3D"font:700 10px/1 'SF Mono','Menlo','Consolas',monospace;lett=
-er-spacing:.14em;padding:4px 7px;background:rgba(255,255,255,0.12);border-r=
-adius:3px;display:inline-block;">JELLYFISH / USER</div>
-  <div style=3D"font:700 20px/1.2 -apple-system,system-ui,sans-serif;margin=
-:10px 0 4px;">Vulnerability exposure - Alice Example</div>
-  <div style=3D"font:12px/1.4 -apple-system,system-ui,sans-serif;opacity:.7=
-;">alice@example.com - 16 May 2026 - 10:42 AEST - flipgroup - 2 CVEs across=
- 2 device(s)</div>
+  <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" style=3D=
+"border-collapse:collapse;"><tr>
+    <td valign=3D"middle">
+      <div style=3D"font:700 10px/1 'SF Mono','Menlo','Consolas',monospace;=
+letter-spacing:.14em;padding:4px 7px;background:rgba(255,255,255,0.18);colo=
+r:#f8fafc;border-radius:3px;display:inline-block;">JELLYFISH / USER</div>
+      <div style=3D"font:700 20px/1.2 -apple-system,system-ui,sans-serif;ma=
+rgin:10px 0 4px;color:#f8fafc;">Vulnerability exposure - Alice Example</div=
+>
+      <div style=3D"font:12px/1.4 -apple-system,system-ui,sans-serif;opacit=
+y:.7;color:#f8fafc;">alice@example.com - 16 May 2026 - 10:42 AEST - flipgro=
+up - 2 CVEs across 2 device(s)</div>
+    </td>
+  </tr></table>
 </td></tr>
+
 
 <tr><td style=3D"padding:0;">
 <table role=3D"presentation" width=3D"100%" cellpadding=3D"0" cellspacing=

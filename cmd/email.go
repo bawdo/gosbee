@@ -18,10 +18,12 @@ import (
 // emailFlagValues holds the literal flag inputs from cobra; empty string means
 // the flag was not set. Send is true iff --send-email was passed.
 type emailFlagValues struct {
-	To      string
-	From    string
-	Subject string
-	Send    bool
+	To       string
+	From     string
+	Subject  string
+	HeaderBG string
+	LogoPath string
+	Send     bool
 }
 
 // gitEmailLookup is the function signature for "find a from address by asking
@@ -34,15 +36,19 @@ func readEmailFlags(cmd *cobra.Command) emailFlagValues {
 	to, _ := cmd.Flags().GetString("email-to")
 	from, _ := cmd.Flags().GetString("email-from")
 	subject, _ := cmd.Flags().GetString("email-subject")
+	headerBG, _ := cmd.Flags().GetString("email-header-bg")
+	logoPath, _ := cmd.Flags().GetString("email-logo")
 	send, _ := cmd.Flags().GetBool("send-email")
-	return emailFlagValues{To: to, From: from, Subject: subject, Send: send}
+	return emailFlagValues{To: to, From: from, Subject: subject, HeaderBG: headerBG, LogoPath: logoPath, Send: send}
 }
 
 // resolveEmailOptions applies the precedence:
 //
-//	From    : flag > config.Email.From > git user.email > error
-//	To      : flag > config.Email.DefaultTo > "" (renderer prints <unspecified>)
-//	Subject : flag > rendered config.Email.SubjectTemplate > "" (renderer's default)
+//	From     : flag > config.Email.From > git user.email > error
+//	To       : flag > config.Email.DefaultTo > "" (renderer prints <unspecified>)
+//	Subject  : flag > rendered config.Email.SubjectTemplate > "" (renderer's default)
+//	HeaderBG : flag > config.Email.HeaderBG > "" (validates hex colour if non-empty)
+//	LogoPath : flag > config.Email.LogoPath > ""
 func resolveEmailOptions(flags emailFlagValues, prof config.Profile, lookupGit gitEmailLookup, now time.Time) (email.Options, error) {
 	opts := email.Options{
 		Tenant:           prof.Subdomain,
@@ -51,6 +57,14 @@ func resolveEmailOptions(flags emailFlagValues, prof config.Profile, lookupGit g
 		CVELinkPrimary:   prof.Email.CVELinkPrimary,
 		CVELinkSecondary: prof.Email.CVELinkSecondary,
 	}
+
+	opts.HeaderBG = firstNonEmpty(flags.HeaderBG, prof.Email.HeaderBG)
+	if opts.HeaderBG != "" {
+		if err := email.ValidateHexColour(opts.HeaderBG); err != nil {
+			return email.Options{}, fmt.Errorf("email header bg: %w", err)
+		}
+	}
+	opts.LogoPath = firstNonEmpty(flags.LogoPath, prof.Email.LogoPath)
 
 	opts.From = firstNonEmpty(flags.From, prof.Email.From)
 	if opts.From == "" && lookupGit != nil {

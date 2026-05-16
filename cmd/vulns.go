@@ -224,6 +224,8 @@ minutes; pass --no-cache to force a fresh fetch.`,
 	c.Flags().String("email-to", "", "Email To: header (default: email.default_to from config)")
 	c.Flags().String("email-from", "", "Email From: header (default: email.from from config, then git user.email)")
 	c.Flags().String("email-subject", "", "Email Subject: header (default: rendered email.subject_template or a per-command default)")
+	c.Flags().String("email-header-bg", "", "Email header background colour as #RRGGBB (default: email.header_bg or #7566FF)")
+	c.Flags().String("email-logo", "", "Path to a PNG to show in the email header (default: email.logo_path)")
 	c.Flags().Bool("send-email", false, "Send the rendered email via Gmail (requires `jellyfish configure email` to be run first)")
 	return c
 }
@@ -258,7 +260,7 @@ func runVulnsSummary(ctx context.Context, client iruClient, w, stderr io.Writer,
 		return runSendVulnsSummary(ctx, stderr, opts, filtered)
 	}
 
-	return renderVulns(w, opts, filtered)
+	return renderVulns(w, stderr, opts, filtered)
 }
 
 func sortVulns(vs []iru.Vulnerability, key string) {
@@ -282,7 +284,7 @@ func sortVulns(vs []iru.Vulnerability, key string) {
 	}
 }
 
-func renderVulns(w io.Writer, opts vulnsSummaryOpts, vs []iru.Vulnerability) error {
+func renderVulns(w io.Writer, stderr io.Writer, opts vulnsSummaryOpts, vs []iru.Vulnerability) error {
 	switch opts.Output {
 	case "table", "":
 		t := output.Table().WithColumns(vulnColumns())
@@ -303,7 +305,7 @@ func renderVulns(w io.Writer, opts vulnsSummaryOpts, vs []iru.Vulnerability) err
 		if err != nil {
 			return err
 		}
-		return email.NewVulnSummaryRenderer(emailOpts).Render(w, vs)
+		return email.NewVulnSummaryRendererWithStderr(emailOpts, stderr).Render(w, vs)
 	}
 	r, err := output.For(opts.Output)
 	if err != nil {
@@ -341,7 +343,7 @@ func runSendVulnsSummary(ctx context.Context, stderr io.Writer, opts vulnsSummar
 	emailOpts.To = to
 
 	var buf bytes.Buffer
-	if err := email.NewVulnSummaryRenderer(emailOpts).Render(&buf, vs); err != nil {
+	if err := email.NewVulnSummaryRendererWithStderr(emailOpts, stderr).Render(&buf, vs); err != nil {
 		return err
 	}
 

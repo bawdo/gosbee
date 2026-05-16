@@ -160,3 +160,30 @@ func TestSaveLoadPreservesGmailConfigured(t *testing.T) {
 		t.Errorf("GmailConfigured did not round-trip; got %+v", out["default"].Email)
 	}
 }
+
+func TestEmailConfigRoundTripIncludesHeaderBGAndLogoPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	in := File{"default": Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: EmailConfig{
+			From:      "alice@example.com",
+			HeaderBG:  "#C6B8FE",
+			LogoPath:  "/Users/keith/.config/jellyfish/logos/flip-logo.png",
+		},
+	}}
+	if err := Save(path, in); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	out, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := out["default"].Email
+	if got.HeaderBG != "#C6B8FE" {
+		t.Errorf("HeaderBG: got %q want #C6B8FE", got.HeaderBG)
+	}
+	if got.LogoPath != "/Users/keith/.config/jellyfish/logos/flip-logo.png" {
+		t.Errorf("LogoPath: got %q", got.LogoPath)
+	}
+}
