@@ -14,11 +14,11 @@ import (
 // is optional. Flags override these values; if both are empty the renderer
 // falls back to built-in defaults (or, for "from", git user.email).
 type EmailConfig struct {
-	From             string `yaml:"from"`
-	DefaultTo        string `yaml:"default_to"`
-	SubjectTemplate  string `yaml:"subject_template"`
-	CVELinkPrimary   string `yaml:"cve_link_primary"`
-	CVELinkSecondary string `yaml:"cve_link_secondary"`
+	From             string `yaml:"from,omitempty"`
+	DefaultTo        string `yaml:"default_to,omitempty"`
+	SubjectTemplate  string `yaml:"subject_template,omitempty"`
+	CVELinkPrimary   string `yaml:"cve_link_primary,omitempty"`
+	CVELinkSecondary string `yaml:"cve_link_secondary,omitempty"`
 }
 
 type Profile struct {
