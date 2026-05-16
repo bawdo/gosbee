@@ -9,3 +9,6 @@
 # IDE
 .idea/
 .vscode/
+
+# Claude/Superpowers stuff
+.superpowers/
