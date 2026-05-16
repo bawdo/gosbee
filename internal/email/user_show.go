@@ -208,7 +208,7 @@ func (r *userShowRenderer) Render(w io.Writer, v any) error {
 		To:      r.opts.To,
 		Subject: subject,
 		Date:    r.opts.GeneratedAt,
-	}, htmlBody, textBody, boundary, messageID)
+	}, htmlBody, textBody, boundary, messageID, "", nil)
 	if err != nil {
 		return err
 	}
