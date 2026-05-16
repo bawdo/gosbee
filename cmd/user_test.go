@@ -66,6 +66,68 @@ func TestUserShowUserNotFound(t *testing.T) {
 	}
 }
 
+func TestUserShowCSVSortsBySeverity(t *testing.T) {
+	client := &fakeClient{
+		users:   []iru.User{{ID: "u-1", Name: "Alice", Email: "alice@example.com"}},
+		devices: []iru.Device{{DeviceID: "d-1", DeviceName: "MBP", SerialNumber: "SN1"}},
+		detections: []iru.Detection{
+			{DeviceID: "d-1", CVEID: "CVE-low", Severity: "Low", CVSSScore: 3.0},
+			{DeviceID: "d-1", CVEID: "CVE-crit", Severity: "Critical", CVSSScore: 9.5},
+			{DeviceID: "d-1", CVEID: "CVE-med", Severity: "Medium", CVSSScore: 5.0},
+			{DeviceID: "d-1", CVEID: "CVE-high", Severity: "High", CVSSScore: 8.0},
+		},
+	}
+	buf := &bytes.Buffer{}
+	err := runUserShow(context.Background(), client, buf, io.Discard, userShowOpts{
+		Identifier: "u-1", Output: "csv", NoCache: true,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	out := buf.String()
+	critIdx := strings.Index(out, "CVE-crit")
+	highIdx := strings.Index(out, "CVE-high")
+	medIdx := strings.Index(out, "CVE-med")
+	lowIdx := strings.Index(out, "CVE-low")
+	if critIdx < 0 || highIdx < 0 || medIdx < 0 || lowIdx < 0 {
+		t.Fatalf("missing rows in CSV:\n%s", out)
+	}
+	if critIdx >= highIdx || highIdx >= medIdx || medIdx >= lowIdx {
+		t.Fatalf("expected severity ordering Critical < High < Medium < Low in CSV, got:\n%s", out)
+	}
+}
+
+func TestUserShowTextSortsDetectionsBySeverity(t *testing.T) {
+	client := &fakeClient{
+		users:   []iru.User{{ID: "u-1", Name: "Alice", Email: "alice@example.com"}},
+		devices: []iru.Device{{DeviceID: "d-1", DeviceName: "MBP", SerialNumber: "SN1"}},
+		detections: []iru.Detection{
+			{DeviceID: "d-1", CVEID: "CVE-low", Severity: "Low", CVSSScore: 3.0},
+			{DeviceID: "d-1", CVEID: "CVE-crit", Severity: "Critical", CVSSScore: 9.5},
+			{DeviceID: "d-1", CVEID: "CVE-med", Severity: "Medium", CVSSScore: 5.0},
+			{DeviceID: "d-1", CVEID: "CVE-high", Severity: "High", CVSSScore: 8.0},
+		},
+	}
+	buf := &bytes.Buffer{}
+	err := runUserShow(context.Background(), client, buf, io.Discard, userShowOpts{
+		Identifier: "u-1", Output: "table", NoCache: true,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	out := buf.String()
+	critIdx := strings.Index(out, "CVE-crit")
+	highIdx := strings.Index(out, "CVE-high")
+	medIdx := strings.Index(out, "CVE-med")
+	lowIdx := strings.Index(out, "CVE-low")
+	if critIdx < 0 || highIdx < 0 || medIdx < 0 || lowIdx < 0 {
+		t.Fatalf("missing rows in text table:\n%s", out)
+	}
+	if critIdx >= highIdx || highIdx >= medIdx || medIdx >= lowIdx {
+		t.Fatalf("expected severity ordering Critical < High < Medium < Low in detection table, got:\n%s", out)
+	}
+}
+
 func TestUserShowEmailWritesEml(t *testing.T) {
 	client := &fakeClient{
 		users:   []iru.User{{ID: "u-1", Name: "Alice", Email: "alice@example.com"}},

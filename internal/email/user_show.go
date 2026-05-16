@@ -5,6 +5,7 @@ import (
 	"fmt"
 	htmltmpl "html/template"
 	"io"
+	"sort"
 	"strings"
 	texttmpl "text/template"
 
@@ -67,8 +68,16 @@ func buildUserShowView(b UserBundleInput, opts Options) userShowView {
 		Devices:        make([]userShowDeviceView, len(b.Devices)),
 	}
 	for i, dev := range b.Devices {
-		rows := make([]userShowRow, 0, len(dev.Detections))
-		for _, det := range dev.Detections {
+		dets := append([]iru.Detection(nil), dev.Detections...)
+		sort.SliceStable(dets, func(i, j int) bool {
+			ri, rj := iru.SeverityRank(dets[i].Severity), iru.SeverityRank(dets[j].Severity)
+			if ri != rj {
+				return ri < rj
+			}
+			return dets[i].CVSSScore > dets[j].CVSSScore
+		})
+		rows := make([]userShowRow, 0, len(dets))
+		for _, det := range dets {
 			switch strings.ToLower(det.Severity) {
 			case "critical":
 				view.CriticalCount++

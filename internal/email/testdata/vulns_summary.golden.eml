@@ -17,17 +17,17 @@ Generated 16 May 2026 - 10:42 AEST for tenant flipgroup.
 
 CVE              SEVERITY  CVSS  KEV  DEVICES  STATUS      SOFTWARE
 CVE-2024-3094    Critical  10.0  KEV  4        Active      xz-utils
+CVE-2023-50164   Critical  9.8   KEV  2        Active      struts2-core
 CVE-2024-6387    Critical  8.1   -    11       Active      openssh-server
 CVE-2024-1086    High      7.8   KEV  17       Active      linux-image
 CVE-2024-21626   High      7.2   -    3        Active      runc
-CVE-2023-50164   Critical  9.8   KEV  2        Active      struts2-core
 
 NVD links:
 CVE-2024-3094: https://nvd.nist.gov/vuln/detail/CVE-2024-3094
+CVE-2023-50164: https://nvd.nist.gov/vuln/detail/CVE-2023-50164
 CVE-2024-6387: https://nvd.nist.gov/vuln/detail/CVE-2024-6387
 CVE-2024-1086: https://nvd.nist.gov/vuln/detail/CVE-2024-1086
 CVE-2024-21626: https://nvd.nist.gov/vuln/detail/CVE-2024-21626
-CVE-2023-50164: https://nvd.nist.gov/vuln/detail/CVE-2023-50164
 
 
 KEV =3D CISA Known Exploited Vulnerabilities catalogue.
@@ -207,6 +207,58 @@ ns-serif;color:#334155;">xz-utils</td>
 dc2626;">&nbsp;</td>
         <td style=3D"padding:12px 8px 12px 21px;font:600 12px/1 'SF Mono','=
 Menlo','Consolas',monospace;">
+          <a href=3D"https://nvd.nist.gov/vuln/detail/CVE-2023-50164" style=
+=3D"color:#0f172a;text-decoration:none;border-bottom:1px dotted #94a3b8;pad=
+ding-bottom:1px;">CVE-2023-50164</a>
+          <a href=3D"https://www.cve.org/CVERecord?id=3DCVE-2023-50164" sty=
+le=3D"font-size:10px;color:#94a3b8;text-decoration:none;margin-left:4px;">(=
+M)</a>
+        </td>
+      </tr>
+    </table>
+  </td>
+  <td valign=3D"middle" style=3D"padding:12px 8px;border-bottom:1px solid #=
+f1f5f9;">
+    <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" style=
+=3D"border-collapse:collapse;">
+      <tr><td bgcolor=3D"#fee2e2" style=3D"background:#fee2e2;color:#991b1b=
+;font:700 9px/1 -apple-system,system-ui,sans-serif;letter-spacing:.08em;tex=
+t-transform:uppercase;padding:4px 6px;border-radius:3px;">Critical</td></tr=
+>
+    </table>
+  </td>
+  <td valign=3D"middle" align=3D"right" style=3D"padding:12px 8px;border-bo=
+ttom:1px solid #f1f5f9;font:600 13px/1 'SF Mono','Menlo','Consolas',monospa=
+ce;color:#0f172a;">9.8</td>
+  <td valign=3D"middle" style=3D"padding:12px 8px;border-bottom:1px solid #=
+f1f5f9;">
+   =20
+    <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" style=
+=3D"border-collapse:collapse;">
+      <tr><td bgcolor=3D"#ede9fe" style=3D"background:#ede9fe;color:#6d28d9=
+;font:700 9px/1 -apple-system,system-ui,sans-serif;letter-spacing:.08em;tex=
+t-transform:uppercase;padding:4px 6px;border-radius:3px;">KEV</td></tr>
+    </table>
+   =20
+  </td>
+  <td valign=3D"middle" align=3D"right" style=3D"padding:12px 8px;border-bo=
+ttom:1px solid #f1f5f9;font:600 13px/1 'SF Mono','Menlo','Consolas',monospa=
+ce;color:#0f172a;">2</td>
+  <td valign=3D"middle" style=3D"padding:12px 8px 12px 8px;padding-right:24=
+px;border-bottom:1px solid #f1f5f9;font:12px/1.4 -apple-system,system-ui,sa=
+ns-serif;color:#334155;">struts2-core</td>
+</tr>
+
+<tr>
+  <td valign=3D"middle" style=3D"padding:0;border-bottom:1px solid #f1f5f9;=
+">
+    <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" style=
+=3D"border-collapse:collapse;">
+      <tr>
+        <td bgcolor=3D"#dc2626" width=3D"3" style=3D"width:3px;background:#=
+dc2626;">&nbsp;</td>
+        <td style=3D"padding:12px 8px 12px 21px;font:600 12px/1 'SF Mono','=
+Menlo','Consolas',monospace;">
           <a href=3D"https://nvd.nist.gov/vuln/detail/CVE-2024-6387" style=
 =3D"color:#0f172a;text-decoration:none;border-bottom:1px dotted #94a3b8;pad=
 ding-bottom:1px;">CVE-2024-6387</a>
@@ -335,58 +387,6 @@ ce;color:#0f172a;">3</td>
   <td valign=3D"middle" style=3D"padding:12px 8px 12px 8px;padding-right:24=
 px;border-bottom:1px solid #f1f5f9;font:12px/1.4 -apple-system,system-ui,sa=
 ns-serif;color:#334155;">runc</td>
-</tr>
-
-<tr>
-  <td valign=3D"middle" style=3D"padding:0;border-bottom:1px solid #f1f5f9;=
-">
-    <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" style=
-=3D"border-collapse:collapse;">
-      <tr>
-        <td bgcolor=3D"#dc2626" width=3D"3" style=3D"width:3px;background:#=
-dc2626;">&nbsp;</td>
-        <td style=3D"padding:12px 8px 12px 21px;font:600 12px/1 'SF Mono','=
-Menlo','Consolas',monospace;">
-          <a href=3D"https://nvd.nist.gov/vuln/detail/CVE-2023-50164" style=
-=3D"color:#0f172a;text-decoration:none;border-bottom:1px dotted #94a3b8;pad=
-ding-bottom:1px;">CVE-2023-50164</a>
-          <a href=3D"https://www.cve.org/CVERecord?id=3DCVE-2023-50164" sty=
-le=3D"font-size:10px;color:#94a3b8;text-decoration:none;margin-left:4px;">(=
-M)</a>
-        </td>
-      </tr>
-    </table>
-  </td>
-  <td valign=3D"middle" style=3D"padding:12px 8px;border-bottom:1px solid #=
-f1f5f9;">
-    <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" style=
-=3D"border-collapse:collapse;">
-      <tr><td bgcolor=3D"#fee2e2" style=3D"background:#fee2e2;color:#991b1b=
-;font:700 9px/1 -apple-system,system-ui,sans-serif;letter-spacing:.08em;tex=
-t-transform:uppercase;padding:4px 6px;border-radius:3px;">Critical</td></tr=
->
-    </table>
-  </td>
-  <td valign=3D"middle" align=3D"right" style=3D"padding:12px 8px;border-bo=
-ttom:1px solid #f1f5f9;font:600 13px/1 'SF Mono','Menlo','Consolas',monospa=
-ce;color:#0f172a;">9.8</td>
-  <td valign=3D"middle" style=3D"padding:12px 8px;border-bottom:1px solid #=
-f1f5f9;">
-   =20
-    <table role=3D"presentation" cellpadding=3D"0" cellspacing=3D"0" style=
-=3D"border-collapse:collapse;">
-      <tr><td bgcolor=3D"#ede9fe" style=3D"background:#ede9fe;color:#6d28d9=
-;font:700 9px/1 -apple-system,system-ui,sans-serif;letter-spacing:.08em;tex=
-t-transform:uppercase;padding:4px 6px;border-radius:3px;">KEV</td></tr>
-    </table>
-   =20
-  </td>
-  <td valign=3D"middle" align=3D"right" style=3D"padding:12px 8px;border-bo=
-ttom:1px solid #f1f5f9;font:600 13px/1 'SF Mono','Menlo','Consolas',monospa=
-ce;color:#0f172a;">2</td>
-  <td valign=3D"middle" style=3D"padding:12px 8px 12px 8px;padding-right:24=
-px;border-bottom:1px solid #f1f5f9;font:12px/1.4 -apple-system,system-ui,sa=
-ns-serif;color:#334155;">struts2-core</td>
 </tr>
 
 </tbody>

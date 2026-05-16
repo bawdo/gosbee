@@ -56,6 +56,26 @@ func TestBuildVulnSummaryView(t *testing.T) {
 	}
 }
 
+func TestBuildVulnSummaryViewSortsRowsBySeverity(t *testing.T) {
+	in := []iru.Vulnerability{
+		{CVEID: "CVE-low", Severity: "Low", CVSSScore: 3.0},
+		{CVEID: "CVE-crit", Severity: "Critical", CVSSScore: 9.5},
+		{CVEID: "CVE-med", Severity: "Medium", CVSSScore: 5.0},
+		{CVEID: "CVE-high", Severity: "High", CVSSScore: 8.0},
+	}
+	view := buildVulnSummaryView(in, Options{}.withDefaults())
+	if len(view.Rows) != 4 {
+		t.Fatalf("Rows: got %d want 4", len(view.Rows))
+	}
+	got := []string{view.Rows[0].CVEID, view.Rows[1].CVEID, view.Rows[2].CVEID, view.Rows[3].CVEID}
+	want := []string{"CVE-crit", "CVE-high", "CVE-med", "CVE-low"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("severity sort order wrong:\n got:  %v\n want: %v", got, want)
+		}
+	}
+}
+
 func TestRenderVulnSummaryText(t *testing.T) {
 	view := buildVulnSummaryView(sampleVulns(), Options{Tenant: "flipgroup"}.withDefaults())
 	got, err := renderVulnSummaryText(view)

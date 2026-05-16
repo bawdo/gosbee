@@ -88,6 +88,28 @@ func TestVulnsListJSON(t *testing.T) {
 	}
 }
 
+func TestVulnsListSortsBySeverity(t *testing.T) {
+	client := &fakeClient{detections: []iru.Detection{
+		{CVEID: "CVE-low", Severity: "Low", CVSSScore: 3.0, DeviceID: "d-1"},
+		{CVEID: "CVE-crit", Severity: "Critical", CVSSScore: 9.5, DeviceID: "d-1"},
+		{CVEID: "CVE-med", Severity: "Medium", CVSSScore: 5.0, DeviceID: "d-1"},
+		{CVEID: "CVE-high", Severity: "High", CVSSScore: 8.0, DeviceID: "d-1"},
+	}}
+	buf := &bytes.Buffer{}
+	err := runVulnsList(context.Background(), client, buf, io.Discard, vulnsListOpts{Output: "json", NoCache: true})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	out := buf.String()
+	critIdx := strings.Index(out, "CVE-crit")
+	highIdx := strings.Index(out, "CVE-high")
+	medIdx := strings.Index(out, "CVE-med")
+	lowIdx := strings.Index(out, "CVE-low")
+	if critIdx >= highIdx || highIdx >= medIdx || medIdx >= lowIdx {
+		t.Fatalf("expected severity ordering Critical < High < Medium < Low, got:\n%s", out)
+	}
+}
+
 func TestVulnsListSerialResolvesDeviceID(t *testing.T) {
 	client := &fakeClient{
 		bySerial: func(s string) (iru.Device, error) {

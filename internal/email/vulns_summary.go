@@ -5,6 +5,7 @@ import (
 	"fmt"
 	htmltmpl "html/template"
 	"io"
+	"sort"
 	"strings"
 	texttmpl "text/template"
 
@@ -60,15 +61,23 @@ func severityClass(sev string) string {
 }
 
 func buildVulnSummaryView(vs []iru.Vulnerability, opts Options) vulnSummaryView {
+	sorted := append([]iru.Vulnerability(nil), vs...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		ri, rj := iru.SeverityRank(sorted[i].Severity), iru.SeverityRank(sorted[j].Severity)
+		if ri != rj {
+			return ri < rj
+		}
+		return sorted[i].CVSSScore > sorted[j].CVSSScore
+	})
 	view := vulnSummaryView{
 		Tenant:         opts.Tenant,
 		GeneratedAtStr: opts.GeneratedAt.Format("2 Jan 2006 - 15:04 MST"),
 		GeneratedDate:  opts.GeneratedAt.Format("2006-01-02"),
-		TotalCVEs:      len(vs),
-		Rows:           make([]vulnSummaryRow, 0, len(vs)),
+		TotalCVEs:      len(sorted),
+		Rows:           make([]vulnSummaryRow, 0, len(sorted)),
 	}
 	maxDevices := 0
-	for _, v := range vs {
+	for _, v := range sorted {
 		isKEV := v.KEVScore > 0
 		if isKEV {
 			view.KEVCount++

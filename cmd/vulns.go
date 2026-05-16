@@ -114,6 +114,7 @@ func runVulnsList(ctx context.Context, client iruClient, w, stderr io.Writer, op
 }
 
 func renderDetections(w io.Writer, format string, detections []iru.Detection) error {
+	sortDetectionsBySeverity(detections)
 	if format == "table" || format == "" {
 		t := output.Table().WithColumns(detectionColumns())
 		return t.Render(w, detections)
@@ -127,6 +128,19 @@ func renderDetections(w io.Writer, format string, detections []iru.Detection) er
 		return err
 	}
 	return r.Render(w, detections)
+}
+
+// sortDetectionsBySeverity orders detections Critical first, with CVSS desc
+// as the tiebreaker within a severity tier. Stable so callers can rely on
+// original order for fully-equal records.
+func sortDetectionsBySeverity(ds []iru.Detection) {
+	sort.SliceStable(ds, func(i, j int) bool {
+		ri, rj := iru.SeverityRank(ds[i].Severity), iru.SeverityRank(ds[j].Severity)
+		if ri != rj {
+			return ri < rj
+		}
+		return ds[i].CVSSScore > ds[j].CVSSScore
+	})
 }
 
 func detectionColumns() []output.Column {
@@ -227,24 +241,6 @@ func runVulnsSummary(ctx context.Context, client iruClient, w, stderr io.Writer,
 	return renderVulns(w, opts, filtered)
 }
 
-// severityRank gives a fixed ordering: Critical > High > Medium > Low > Undefined > anything else.
-func severityRank(s string) int {
-	switch strings.ToLower(s) {
-	case "critical":
-		return 0
-	case "high":
-		return 1
-	case "medium":
-		return 2
-	case "low":
-		return 3
-	case "undefined":
-		return 4
-	default:
-		return 5
-	}
-}
-
 func sortVulns(vs []iru.Vulnerability, key string) {
 	switch strings.ToLower(key) {
 	case "cvss":
@@ -256,9 +252,8 @@ func sortVulns(vs []iru.Vulnerability, key string) {
 	case "cve":
 		sort.Slice(vs, func(i, j int) bool { return vs[i].CVEID < vs[j].CVEID })
 	case "severity", "":
-		// Severity (Critical first), then CVSS desc within a severity tier.
 		sort.SliceStable(vs, func(i, j int) bool {
-			ri, rj := severityRank(vs[i].Severity), severityRank(vs[j].Severity)
+			ri, rj := iru.SeverityRank(vs[i].Severity), iru.SeverityRank(vs[j].Severity)
 			if ri != rj {
 				return ri < rj
 			}

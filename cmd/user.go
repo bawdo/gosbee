@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -200,8 +201,10 @@ func renderUserBundleTable(w io.Writer, b UserBundle) error {
 			_, _ = fmt.Fprintln(w, "  (none)")
 			continue
 		}
+		dets := append([]iru.Detection(nil), d.Detections...)
+		sortDetectionsBySeverity(dets)
 		detTbl := output.Table().WithColumns(detectionColumns())
-		if err := detTbl.Render(w, d.Detections); err != nil {
+		if err := detTbl.Render(w, dets); err != nil {
 			return err
 		}
 	}
@@ -236,6 +239,13 @@ func renderUserBundleCSV(w io.Writer, b UserBundle) error {
 			})
 		}
 	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		ri, rj := iru.SeverityRank(rows[i].severity), iru.SeverityRank(rows[j].severity)
+		if ri != rj {
+			return ri < rj
+		}
+		return rows[i].cvssScore > rows[j].cvssScore
+	})
 	c := output.CSV().WithColumns([]output.Column{
 		{Header: "user_id", Extract: func(v any) string { return v.(row).userID }},
 		{Header: "user_email", Extract: func(v any) string { return v.(row).userEmail }},

@@ -54,6 +54,37 @@ func TestBuildUserShowView(t *testing.T) {
 	}
 }
 
+func TestBuildUserShowViewSortsRowsBySeverity(t *testing.T) {
+	bundle := UserBundleInput{
+		User: iru.User{ID: "u-1", Name: "Alice", Email: "alice@example.com"},
+		Devices: []UserBundleDevice{
+			{
+				Device: iru.Device{DeviceID: "d-1", DeviceName: "MBP", SerialNumber: "SN1"},
+				Detections: []iru.Detection{
+					{CVEID: "CVE-low", Severity: "Low", CVSSScore: 3.0},
+					{CVEID: "CVE-crit", Severity: "Critical", CVSSScore: 9.5},
+					{CVEID: "CVE-med", Severity: "Medium", CVSSScore: 5.0},
+					{CVEID: "CVE-high", Severity: "High", CVSSScore: 8.0},
+				},
+			},
+		},
+	}
+	view := buildUserShowView(bundle, Options{}.withDefaults())
+	if len(view.Devices) != 1 || len(view.Devices[0].Rows) != 4 {
+		t.Fatalf("unexpected view shape: %+v", view)
+	}
+	got := make([]string, 0, len(view.Devices[0].Rows))
+	for _, r := range view.Devices[0].Rows {
+		got = append(got, r.CVEID)
+	}
+	want := []string{"CVE-crit", "CVE-high", "CVE-med", "CVE-low"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("severity sort order wrong:\n got:  %v\n want: %v", got, want)
+		}
+	}
+}
+
 func TestRenderUserShowText(t *testing.T) {
 	view := buildUserShowView(sampleUserBundle(), Options{}.withDefaults())
 	got, err := renderUserShowText(view)
