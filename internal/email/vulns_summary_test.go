@@ -214,6 +214,19 @@ func TestNewVulnSummaryRendererRejectsBadLinkTemplate(t *testing.T) {
 	}
 }
 
+func TestNewVulnSummaryRendererRejectsEmptyFrom(t *testing.T) {
+	opts := newPinnedOpts()
+	opts.From = ""
+	r := NewVulnSummaryRenderer(opts)
+	err := r.Render(&bytes.Buffer{}, sampleVulns())
+	if err == nil {
+		t.Fatal("expected error for empty From address")
+	}
+	if !strings.Contains(err.Error(), "From") {
+		t.Errorf("error should mention From; got %v", err)
+	}
+}
+
 func TestNewVulnSummaryRendererSatisfiesOutputRenderer(t *testing.T) {
 	var _ output.Renderer = NewVulnSummaryRenderer(newPinnedOpts())
 }
