@@ -12,3 +12,6 @@
 
 # Claude/Superpowers stuff
 .superpowers/
+
+# Git worktrees
+.worktrees/
