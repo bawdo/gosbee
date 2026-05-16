@@ -84,17 +84,19 @@ security delete-generic-password -s au.com.flipgroup.jellyfish -a default
 jellyfish configure email
 ```
 
-Prompts for `From`, default `To`, and a path to a Gmail service-account
-JSON file. The first two values are written to the `email:` block of
-`~/.config/jellyfish/config.yml`. When a JSON path is provided, the file
-is read, validated (must have `type: "service_account"` and `client_email`),
-then stored in the macOS Keychain under account `gmail_default`. The path
-itself is **not** persisted; the file can be moved or deleted afterwards.
+Prompts (in order): `From`, default `To`, path to a Gmail service-account
+JSON file, header background colour, path to a logo PNG. The first two
+values and `header_bg` are written to the `email:` block of
+`~/.config/jellyfish/config.yml`. When a Gmail JSON path is provided, the
+file is read, validated, then stored in the macOS Keychain (the source
+path is not persisted). When a logo path is provided, the PNG is validated
+(decodable PNG, no larger than 512 KB) and copied into
+`~/.config/jellyfish/logos/<basename>`; the resulting managed path is
+written to `email.logo_path`. The source file is left alone.
 
 For each prompt: Enter keeps the current value; type a literal `-` to
-clear a field (and, for the Gmail prompt, remove the Keychain entry).
-The subject template and CVE link templates can be customised by
-hand-editing the YAML (see [Email output](#email-output)).
+clear a field. Clearing the logo also deletes the copy under `logos/`
+(but never any file outside that directory).
 
 ## Usage
 
@@ -233,9 +235,17 @@ Recipient, sender, and subject default from the `email:` block in
 
 | Flag | Config key | Default |
 |---|---|---|
-| `--email-to`      | `email.default_to`       | empty (header renders as `<unspecified>`) |
-| `--email-from`    | `email.from`             | `git config user.email` |
-| `--email-subject` | `email.subject_template` | per-command default |
+| `--email-to`         | `email.default_to`       | empty (header renders as `<unspecified>`) |
+| `--email-from`       | `email.from`             | `git config user.email` |
+| `--email-subject`    | `email.subject_template` | per-command default |
+| `--email-header-bg`  | `email.header_bg`        | `#7566FF` (Flip brand purple) |
+| `--email-logo`       | `email.logo_path`        | empty (no logo) |
+
+The default `#7566FF` is the Flip brand purple. A logo whose recognisable
+element is the same purple (the Flip brand mark, for example) will blend into
+that background - pair the default with a logo whose distinguishing element
+is white or dark, or pick a contrasting header colour such as `#C6B8FE`
+(light lavender) or `#6846D8` (deep purple).
 
 `email.subject_template` is a Go template; available variables: `{{.Date}}`
 (YYYY-MM-DD) and `{{.Time}}` (HH:MM).
