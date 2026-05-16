@@ -1,0 +1,17 @@
+Vulnerability exposure for {{.User.Name}}{{if .User.Email}} ({{.User.Email}}){{end}}.
+
+{{.CriticalCount}} Critical, {{.HighCount}} High, {{.MediumCount}} Medium, {{.LowCount}} Low across {{.DeviceCount}} device(s).
+Generated {{.GeneratedAtStr}}{{if .Tenant}} for tenant {{.Tenant}}{{end}}.
+
+{{range .Devices}}
+{{.Device.DeviceName}} ({{.Device.SerialNumber}}){{if .Device.OSVersion}} - macOS {{.Device.OSVersion}}{{end}}
+{{if eq (len .Rows) 0 -}}
+  (no detections)
+{{else -}}
+  CVE              SEVERITY  CVSS  PACKAGE
+{{range .Rows -}}
+  {{printf "%-16s %-9s %-5s %s" .CVEID .Severity .CVSSStr .Package}}
+{{end -}}
+{{- end -}}
+{{end}}
+KEV = CISA Known Exploited Vulnerabilities catalogue.

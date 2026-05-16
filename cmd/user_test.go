@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/mail"
 	"strings"
 	"testing"
+	"time"
 
 	"flipgroup.com.au/jellyfish/internal/iru"
 )
@@ -61,5 +63,52 @@ func TestUserShowUserNotFound(t *testing.T) {
 	err := runUserShow(context.Background(), client, &bytes.Buffer{}, io.Discard, userShowOpts{Identifier: "u-x", Output: "json", NoCache: true})
 	if !errors.Is(err, iru.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestUserShowEmailWritesEml(t *testing.T) {
+	client := &fakeClient{
+		users:   []iru.User{{ID: "u-1", Name: "Alice", Email: "alice@example.com"}},
+		devices: []iru.Device{{DeviceID: "d-1", DeviceName: "Alice MBP", SerialNumber: "SN1"}},
+		detections: []iru.Detection{
+			{DeviceID: "d-1", CVEID: "CVE-A", Severity: "Critical", CVSSScore: 9.5, Name: "x", Version: "1.0"},
+		},
+	}
+	buf := &bytes.Buffer{}
+	opts := userShowOpts{
+		Identifier: "u-1",
+		Output:     "email",
+		NoCache:    true,
+		EmailFlags: emailFlagValues{From: "alice@example.com", To: "alice@example.com", Subject: "test"},
+		EmailNow:   time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+	}
+	if err := runUserShow(context.Background(), client, buf, io.Discard, opts); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	msg, err := mail.ReadMessage(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse: %v\nraw:\n%s", err, buf.String())
+	}
+	if got := msg.Header.Get("Subject"); got != "test" {
+		t.Errorf("Subject: got %q", got)
+	}
+	if !strings.Contains(buf.String(), "CVE-A") {
+		t.Errorf("expected CVE-A in body")
+	}
+}
+
+func TestUserShowEmailErrorsWithoutFrom(t *testing.T) {
+	client := &fakeClient{
+		users:   []iru.User{{ID: "u-1", Name: "Alice", Email: "alice@example.com"}},
+		devices: []iru.Device{{DeviceID: "d-1", DeviceName: "Alice MBP", SerialNumber: "SN1"}},
+	}
+	err := runUserShow(context.Background(), client, &bytes.Buffer{}, io.Discard, userShowOpts{
+		Identifier: "u-1",
+		Output:     "email",
+		NoCache:    true,
+		gitEmail:   fixedGitEmail(""),
+	})
+	if err == nil {
+		t.Fatal("expected error when no From address available")
 	}
 }

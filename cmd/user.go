@@ -6,9 +6,12 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"flipgroup.com.au/jellyfish/internal/config"
+	"flipgroup.com.au/jellyfish/internal/email"
 	"flipgroup.com.au/jellyfish/internal/iru"
 	"flipgroup.com.au/jellyfish/internal/output"
 )
@@ -17,6 +20,10 @@ type userShowOpts struct {
 	Identifier string
 	Output     string
 	NoCache    bool
+	EmailFlags emailFlagValues
+	EmailNow   time.Time
+	Profile    config.Profile
+	gitEmail   gitEmailLookup
 }
 
 // UserBundle is the composite shape `user show` returns.
@@ -53,10 +60,22 @@ func newUserShowCmd() *cobra.Command {
 			}
 			opts.Identifier = args[0]
 			opts.Output = outFmt
+			opts.EmailFlags = readEmailFlags(cmd)
+			opts.EmailNow = time.Now()
+			if outFmt == "email" {
+				prof, err := activeProfile(cmd)
+				if err != nil {
+					return err
+				}
+				opts.Profile = prof
+			}
 			return runUserShow(cmd.Context(), client, cmd.OutOrStdout(), cmd.ErrOrStderr(), opts)
 		},
 	}
 	c.Flags().BoolVar(&opts.NoCache, "no-cache", false, "Skip the detection cache; always fetch fresh")
+	c.Flags().String("email-to", "", "Email To: header (default: email.default_to from config)")
+	c.Flags().String("email-from", "", "Email From: header (default: email.from from config, then git user.email)")
+	c.Flags().String("email-subject", "", "Email Subject: header (default: rendered email.subject_template or a per-command default)")
 	return c
 }
 
@@ -99,7 +118,7 @@ func runUserShow(ctx context.Context, client iruClient, w, stderr io.Writer, opt
 		}
 	}
 
-	return renderUserBundle(w, opts.Output, bundle)
+	return renderUserBundle(w, opts, bundle)
 }
 
 func resolveUser(ctx context.Context, client iruClient, id string) (iru.User, error) {
@@ -109,10 +128,10 @@ func resolveUser(ctx context.Context, client iruClient, id string) (iru.User, er
 	return client.GetUser(ctx, id)
 }
 
-func renderUserBundle(w io.Writer, format string, b UserBundle) error {
-	switch format {
+func renderUserBundle(w io.Writer, opts userShowOpts, b UserBundle) error {
+	switch opts.Output {
 	case "json", "yaml":
-		r, err := output.For(format)
+		r, err := output.For(opts.Output)
 		if err != nil {
 			return err
 		}
@@ -121,9 +140,31 @@ func renderUserBundle(w io.Writer, format string, b UserBundle) error {
 		return renderUserBundleCSV(w, b)
 	case "table", "":
 		return renderUserBundleTable(w, b)
+	case "email":
+		now := opts.EmailNow
+		if now.IsZero() {
+			now = time.Now()
+		}
+		gitLookup := opts.gitEmail
+		if gitLookup == nil {
+			gitLookup = gitUserEmail
+		}
+		emailOpts, err := resolveEmailOptions(opts.EmailFlags, opts.Profile, gitLookup, now)
+		if err != nil {
+			return err
+		}
+		return email.NewUserShowRenderer(emailOpts).Render(w, bundleToEmailInput(b))
 	default:
-		return fmt.Errorf("unsupported output format %q", format)
+		return fmt.Errorf("unsupported output format %q", opts.Output)
 	}
+}
+
+func bundleToEmailInput(b UserBundle) email.UserBundleInput {
+	devs := make([]email.UserBundleDevice, len(b.Devices))
+	for i, d := range b.Devices {
+		devs[i] = email.UserBundleDevice{Device: d.Device, Detections: d.Detections}
+	}
+	return email.UserBundleInput{User: b.User, Devices: devs}
 }
 
 func renderUserBundleTable(w io.Writer, b UserBundle) error {

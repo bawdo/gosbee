@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/mail"
 	"strings"
 	"testing"
+	"time"
 
 	"flipgroup.com.au/jellyfish/internal/iru"
 )
@@ -205,5 +207,42 @@ func TestVulnsSummaryAppliesLimit(t *testing.T) {
 	}
 	if strings.Contains(out, "CVE-3") {
 		t.Fatalf("expected CVE-3 to be limited out: %s", out)
+	}
+}
+
+func TestVulnsSummaryEmailWritesEml(t *testing.T) {
+	client := &fakeClient{vulnerabilities: []iru.Vulnerability{
+		{CVEID: "CVE-A", Severity: "Critical", CVSSScore: 9.5, KEVScore: 1, DeviceCount: 2, Status: "Active", Software: []string{"foo"}},
+	}}
+	buf := &bytes.Buffer{}
+	opts := vulnsSummaryOpts{Output: "email", NoCache: true, EmailFlags: emailFlagValues{
+		From:    "alice@example.com",
+		To:      "secops@example.com",
+		Subject: "test subject",
+	}, EmailNow: time.Date(2026, 5, 16, 10, 42, 0, 0, time.UTC)}
+	if err := runVulnsSummary(context.Background(), client, buf, io.Discard, opts); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	msg, err := mail.ReadMessage(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("parse: %v\nraw:\n%s", err, buf.String())
+	}
+	if got := msg.Header.Get("Subject"); got != "test subject" {
+		t.Errorf("Subject: got %q", got)
+	}
+	if got := msg.Header.Get("From"); got != "alice@example.com" {
+		t.Errorf("From: got %q", got)
+	}
+}
+
+func TestVulnsSummaryEmailErrorsWithoutFrom(t *testing.T) {
+	client := &fakeClient{vulnerabilities: []iru.Vulnerability{{CVEID: "CVE-A", Severity: "Critical"}}}
+	err := runVulnsSummary(context.Background(), client, &bytes.Buffer{}, io.Discard, vulnsSummaryOpts{
+		Output:    "email",
+		NoCache:   true,
+		gitEmail:  fixedGitEmail(""),
+	})
+	if err == nil {
+		t.Fatal("expected error when no From address available")
 	}
 }
