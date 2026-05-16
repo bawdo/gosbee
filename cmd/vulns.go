@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,7 +15,9 @@ import (
 
 	"flipgroup.com.au/jellyfish/internal/config"
 	"flipgroup.com.au/jellyfish/internal/email"
+	"flipgroup.com.au/jellyfish/internal/gmail"
 	"flipgroup.com.au/jellyfish/internal/iru"
+	"flipgroup.com.au/jellyfish/internal/keychain"
 	"flipgroup.com.au/jellyfish/internal/output"
 )
 
@@ -158,16 +161,19 @@ func detectionColumns() []output.Column {
 }
 
 type vulnsSummaryOpts struct {
-	Status     string
-	Severity   string
-	Sort       string
-	Limit      int
-	Output     string
-	NoCache    bool
-	EmailFlags emailFlagValues
-	EmailNow   time.Time
-	Profile    config.Profile
-	gitEmail   gitEmailLookup
+	Status         string
+	Severity       string
+	Sort           string
+	Limit          int
+	Output         string
+	NoCache        bool
+	EmailFlags     emailFlagValues
+	EmailNow       time.Time
+	Profile        config.Profile
+	gitEmail       gitEmailLookup
+	ExplicitOutput string
+	KeychainGet    func() ([]byte, error)
+	NewSender      gmailNewSender
 }
 
 func newVulnsSummaryCmd() *cobra.Command {
@@ -186,13 +192,22 @@ minutes; pass --no-cache to force a fresh fetch.`,
 			outFmt, _ := cmd.Flags().GetString("output")
 			opts.Output = outFmt
 			opts.EmailFlags = readEmailFlags(cmd)
+			if cmd.Flags().Changed("output") {
+				opts.ExplicitOutput = outFmt
+			}
 			opts.EmailNow = time.Now()
-			if outFmt == "email" {
+			if outFmt == "email" || opts.EmailFlags.Send {
 				prof, err := activeProfile(cmd)
 				if err != nil {
 					return err
 				}
 				opts.Profile = prof
+			}
+			if opts.KeychainGet == nil {
+				opts.KeychainGet = keychain.GetGmailServiceAccount
+			}
+			if opts.NewSender == nil {
+				opts.NewSender = gmail.NewSender
 			}
 			client, err := buildClient(cmd)
 			if err != nil {
@@ -209,6 +224,7 @@ minutes; pass --no-cache to force a fresh fetch.`,
 	c.Flags().String("email-to", "", "Email To: header (default: email.default_to from config)")
 	c.Flags().String("email-from", "", "Email From: header (default: email.from from config, then git user.email)")
 	c.Flags().String("email-subject", "", "Email Subject: header (default: rendered email.subject_template or a per-command default)")
+	c.Flags().Bool("send-email", false, "Send the rendered email via Gmail (requires `jellyfish configure email` to be run first)")
 	return c
 }
 
@@ -236,6 +252,10 @@ func runVulnsSummary(ctx context.Context, client iruClient, w, stderr io.Writer,
 
 	if opts.Limit > 0 && len(filtered) > opts.Limit {
 		filtered = filtered[:opts.Limit]
+	}
+
+	if opts.EmailFlags.Send {
+		return runSendVulnsSummary(ctx, stderr, opts, filtered)
 	}
 
 	return renderVulns(w, opts, filtered)
@@ -290,6 +310,47 @@ func renderVulns(w io.Writer, opts vulnsSummaryOpts, vs []iru.Vulnerability) err
 		return err
 	}
 	return r.Render(w, vs)
+}
+
+func runSendVulnsSummary(ctx context.Context, stderr io.Writer, opts vulnsSummaryOpts, vs []iru.Vulnerability) error {
+	now := opts.EmailNow
+	if now.IsZero() {
+		now = time.Now()
+	}
+	gitLookup := opts.gitEmail
+	if gitLookup == nil {
+		gitLookup = gitUserEmail
+	}
+	emailOpts, err := resolveEmailOptions(opts.EmailFlags, opts.Profile, gitLookup, now)
+	if err != nil {
+		return err
+	}
+
+	sender, to, err := resolveSendOptions(
+		ctx,
+		emailOpts,
+		opts.ExplicitOutput,
+		opts.Profile,
+		"",
+		opts.KeychainGet,
+		opts.NewSender,
+	)
+	if err != nil {
+		return err
+	}
+	emailOpts.To = to
+
+	var buf bytes.Buffer
+	if err := email.NewVulnSummaryRenderer(emailOpts).Render(&buf, vs); err != nil {
+		return err
+	}
+
+	id, err := sender.Send(ctx, buf.Bytes())
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stderr, "sent: to=%s from=%s gmail-id=%s\n", to, emailOpts.From, id)
+	return nil
 }
 
 func vulnColumns() []output.Column {
