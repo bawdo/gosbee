@@ -612,6 +612,29 @@ func TestConfigureEmailPromptHeaderBGValidAndClear(t *testing.T) {
 	}
 }
 
+func TestConfigureEmailPromptHeaderBGEnterWritesDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	if err := config.Save(path, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: config.EmailConfig{From: "a@example.com"},
+	}}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Inputs: from kept, defaultTo kept, gmail kept, header_bg Enter (keep default), logo Enter.
+	in := strings.NewReader("\n\n\n\n\n")
+	var out, errBuf bytes.Buffer
+	if err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: path, Stdin: in, Stdout: &out, Stderr: &errBuf,
+	}); err != nil {
+		t.Fatalf("runConfigureEmail: %v\nstderr:\n%s", err, errBuf.String())
+	}
+	file, _ := config.Load(path)
+	if got := file["default"].Email.HeaderBG; got != "#7566FF" {
+		t.Errorf("HeaderBG: got %q want #7566FF (default written on Enter)", got)
+	}
+}
+
 func TestConfigureEmailPromptHeaderBGRejectsInvalidThenAccepts(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
@@ -706,6 +729,9 @@ func TestConfigureEmailLogoClearDeletesManagedFile(t *testing.T) {
 	}
 	if _, err := os.Stat(managed); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("expected managed file deleted, stat err: %v", err)
+	}
+	if !strings.Contains(errBuf.String(), "removed: "+managed) {
+		t.Errorf("expected stderr 'removed: %s', got:\n%s", managed, errBuf.String())
 	}
 	file, _ := config.Load(cfgPath)
 	if file["default"].Email.LogoPath != "" {

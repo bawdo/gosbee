@@ -266,7 +266,11 @@ func runConfigureEmail(ctx context.Context, o configureEmailOpts) error {
 		return err
 	}
 
-	headerBG, err := promptHeaderBG(o.Stdout, o.Stderr, r, prof.Email.HeaderBG)
+	headerSeed := prof.Email.HeaderBG
+	if headerSeed == "" {
+		headerSeed = email.DefaultHeaderBG
+	}
+	headerBG, err := promptHeaderBG(o.Stdout, o.Stderr, r, headerSeed)
 	if err != nil {
 		return err
 	}
@@ -282,8 +286,12 @@ func runConfigureEmail(ctx context.Context, o configureEmailOpts) error {
 	}
 	if newLogo != prof.Email.LogoPath {
 		if prof.Email.LogoPath != "" {
-			if rmErr := removeManagedLogo(prof.Email.LogoPath, logosDir); rmErr != nil {
+			removed, rmErr := removeManagedLogo(prof.Email.LogoPath, logosDir)
+			switch {
+			case rmErr != nil:
 				_, _ = fmt.Fprintf(o.Stderr, "warn: failed to remove previous logo %s: %v\n", prof.Email.LogoPath, rmErr)
+			case removed:
+				_, _ = fmt.Fprintf(o.Stderr, "removed: %s\n", prof.Email.LogoPath)
 			}
 		}
 	}
@@ -447,25 +455,26 @@ func copyLogoToManagedDir(src, logosDir string) (string, error) {
 }
 
 // removeManagedLogo deletes the file at path iff it sits inside logosDir.
-// Anything outside that directory is left alone.
-func removeManagedLogo(path, logosDir string) error {
+// Anything outside that directory is left alone. removed reports whether
+// the file was inside the managed dir and a delete was attempted.
+func removeManagedLogo(path, logosDir string) (removed bool, err error) {
 	if path == "" || logosDir == "" {
-		return nil
+		return false, nil
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return err
+		return false, err
 	}
 	absDir, err := filepath.Abs(logosDir)
 	if err != nil {
-		return err
+		return false, err
 	}
 	rel, err := filepath.Rel(absDir, abs)
 	if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
-		return nil // outside the managed dir
+		return false, nil
 	}
 	if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
