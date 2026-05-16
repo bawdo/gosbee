@@ -582,3 +582,55 @@ func TestConfigureEmailGmailPromptRejectsWrongType(t *testing.T) {
 		t.Error("StoreGmailJSON should not have been called")
 	}
 }
+
+func TestConfigureEmailPromptHeaderBGValidAndClear(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	// Seed: requires existing default profile (configure email refuses otherwise).
+	if err := config.Save(path, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: config.EmailConfig{From: "a@example.com"},
+	}}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Inputs (one per prompt, in order): from kept, defaultTo kept, gmail kept (none),
+	// header_bg = #C6B8FE.
+	in := strings.NewReader("\n\n\n#C6B8FE\n")
+	var out, errBuf bytes.Buffer
+	if err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: path, Stdin: in, Stdout: &out, Stderr: &errBuf,
+	}); err != nil {
+		t.Fatalf("runConfigureEmail: %v\nstderr:\n%s", err, errBuf.String())
+	}
+	file, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if file["default"].Email.HeaderBG != "#C6B8FE" {
+		t.Errorf("HeaderBG: got %q want #C6B8FE", file["default"].Email.HeaderBG)
+	}
+}
+
+func TestConfigureEmailPromptHeaderBGRejectsInvalidThenAccepts(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	_ = config.Save(path, config.File{"default": config.Profile{
+		Subdomain: "acme", Region: "us", BaseURL: "https://acme.api.kandji.io/api/v1",
+		Email: config.EmailConfig{From: "a@example.com"},
+	}})
+	// Inputs: from kept, defaultTo kept, gmail kept, bad colour twice, then valid.
+	in := strings.NewReader("\n\n\npurple\nnotahex\n#7566FF\n")
+	var out, errBuf bytes.Buffer
+	if err := runConfigureEmail(context.Background(), configureEmailOpts{
+		ConfigPath: path, Stdin: in, Stdout: &out, Stderr: &errBuf,
+	}); err != nil {
+		t.Fatalf("runConfigureEmail: %v", err)
+	}
+	if !strings.Contains(errBuf.String(), "invalid hex colour") {
+		t.Errorf("expected stderr to mention invalid hex; got:\n%s", errBuf.String())
+	}
+	file, _ := config.Load(path)
+	if file["default"].Email.HeaderBG != "#7566FF" {
+		t.Errorf("HeaderBG: got %q", file["default"].Email.HeaderBG)
+	}
+}

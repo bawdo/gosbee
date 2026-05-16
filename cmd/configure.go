@@ -13,6 +13,7 @@ import (
 	"golang.org/x/term"
 
 	"flipgroup.com.au/jellyfish/internal/config"
+	"flipgroup.com.au/jellyfish/internal/email"
 	"flipgroup.com.au/jellyfish/internal/gmail"
 	"flipgroup.com.au/jellyfish/internal/iru"
 	"flipgroup.com.au/jellyfish/internal/keychain"
@@ -263,6 +264,12 @@ func runConfigureEmail(ctx context.Context, o configureEmailOpts) error {
 		return err
 	}
 
+	headerBG, err := promptHeaderBG(o.Stdout, o.Stderr, r, prof.Email.HeaderBG)
+	if err != nil {
+		return err
+	}
+	prof.Email.HeaderBG = headerBG
+
 	file["default"] = prof
 
 	if err := config.Save(o.ConfigPath, file); err != nil {
@@ -353,4 +360,22 @@ func promptValidated(stdout, stderr io.Writer, r *bufio.Reader, label, current s
 		return value, nil
 	}
 	return "", fmt.Errorf("invalid %s address after %d attempts", fieldName, configureEmailMaxAttempts)
+}
+
+func promptHeaderBG(stdout, stderr io.Writer, r *bufio.Reader, current string) (string, error) {
+	for attempt := 1; attempt <= configureEmailMaxAttempts; attempt++ {
+		value, err := promptWithDefault(stdout, r, "Header background colour", current)
+		if err != nil {
+			return "", err
+		}
+		if value == "" {
+			return "", nil // user cleared
+		}
+		if vErr := email.ValidateHexColour(value); vErr != nil {
+			_, _ = fmt.Fprintln(stderr, vErr)
+			continue
+		}
+		return value, nil
+	}
+	return "", fmt.Errorf("invalid header background colour after %d attempts", configureEmailMaxAttempts)
 }
