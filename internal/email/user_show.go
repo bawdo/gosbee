@@ -3,6 +3,7 @@ package email
 import (
 	"embed"
 	"fmt"
+	htmltmpl "html/template"
 	"strings"
 	texttmpl "text/template"
 
@@ -22,8 +23,7 @@ type UserBundleDevice struct {
 	Detections []iru.Detection
 }
 
-// Task 10 widens this directive to also embed user_show.html.tmpl.
-//go:embed templates/user_show.txt.tmpl
+//go:embed templates/user_show.txt.tmpl templates/user_show.html.tmpl
 var userShowFS embed.FS
 
 type userShowView struct {
@@ -106,6 +106,22 @@ func renderUserShowText(v userShowView) (string, error) {
 			return f
 		},
 	}).ParseFS(userShowFS, "templates/user_show.txt.tmpl")
+	if err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	if err := tmpl.Execute(&sb, v); err != nil {
+		return "", err
+	}
+	return sb.String(), nil
+}
+
+func renderUserShowHTML(v userShowView) (string, error) {
+	tmpl, err := htmltmpl.New("user_show.html.tmpl").Funcs(htmltmpl.FuncMap{
+		"sevRowBG":  sevRowBG,
+		"sevPillBG": sevPillBG,
+		"sevPillFG": sevPillFG,
+	}).ParseFS(userShowFS, "templates/user_show.html.tmpl")
 	if err != nil {
 		return "", err
 	}

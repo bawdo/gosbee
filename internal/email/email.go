@@ -173,3 +173,42 @@ func randomMessageID(domain string) (string, error) {
 func sanitiseHeaderValue(v string) string {
 	return strings.NewReplacer("\r", "", "\n", "").Replace(v)
 }
+
+func sevRowBG(class string) string {
+	switch class {
+	case "crit":
+		return "#dc2626"
+	case "high":
+		return "#ea580c"
+	case "med":
+		return "#ca8a04"
+	default:
+		return "#64748b"
+	}
+}
+
+func sevPillBG(class string) string {
+	switch class {
+	case "crit":
+		return "#fee2e2"
+	case "high":
+		return "#ffedd5"
+	case "med":
+		return "#fef3c7"
+	default:
+		return "#f1f5f9"
+	}
+}
+
+func sevPillFG(class string) string {
+	switch class {
+	case "crit":
+		return "#991b1b"
+	case "high":
+		return "#9a3412"
+	case "med":
+		return "#854d0e"
+	default:
+		return "#334155"
+	}
+}

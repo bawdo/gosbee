@@ -70,3 +70,23 @@ func TestRenderUserShowText(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderUserShowHTML(t *testing.T) {
+	view := buildUserShowView(sampleUserBundle(), Options{}.withDefaults())
+	got, err := renderUserShowHTML(view)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	for _, want := range []string{
+		`bgcolor="#0f172a"`,
+		"Alice Example",
+		"Alice MBP",
+		"Alice iPad",
+		`>CVE-2024-3094<`,
+		"(no detections)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("HTML missing %q", want)
+		}
+	}
+}

@@ -124,42 +124,9 @@ func renderVulnSummaryText(v vulnSummaryView) (string, error) {
 
 func renderVulnSummaryHTML(v vulnSummaryView) (string, error) {
 	tmpl, err := htmltmpl.New("vulns_summary.html.tmpl").Funcs(htmltmpl.FuncMap{
-		"sevRowBG": func(class string) string {
-			switch class {
-			case "crit":
-				return "#dc2626"
-			case "high":
-				return "#ea580c"
-			case "med":
-				return "#ca8a04"
-			default:
-				return "#64748b"
-			}
-		},
-		"sevPillBG": func(class string) string {
-			switch class {
-			case "crit":
-				return "#fee2e2"
-			case "high":
-				return "#ffedd5"
-			case "med":
-				return "#fef3c7"
-			default:
-				return "#f1f5f9"
-			}
-		},
-		"sevPillFG": func(class string) string {
-			switch class {
-			case "crit":
-				return "#991b1b"
-			case "high":
-				return "#9a3412"
-			case "med":
-				return "#854d0e"
-			default:
-				return "#334155"
-			}
-		},
+		"sevRowBG":  sevRowBG,
+		"sevPillBG": sevPillBG,
+		"sevPillFG": sevPillFG,
 	}).ParseFS(vulnSummaryFS, "templates/vulns_summary.html.tmpl")
 	if err != nil {
 		return "", err
