@@ -1179,7 +1179,9 @@ func (s *Session) cmdDot(args string) error {
 	dv.SetProvenance(prov)
 	core.Accept(dv)
 
-	if err := os.WriteFile(fpath, []byte(dv.ToDot()), 0600); err != nil {
+	// The path is supplied by the person driving this interactive REPL, who is
+	// the same user the process runs as, so writing where they ask is the feature.
+	if err := os.WriteFile(fpath, []byte(dv.ToDot()), 0600); err != nil { //nolint:gosec // G703: user-chosen output path in a local REPL
 		return fmt.Errorf("failed to write DOT file: %w", err)
 	}
 	_, _ = fmt.Fprintf(s.out, "  Wrote DOT to %s\n", fpath)
