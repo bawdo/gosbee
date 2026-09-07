@@ -58,3 +58,6 @@ go.work.sum
 # Obsidian vault files
 /docs/.obsidian
 .obsidian
+
+# Build output
+bin/
