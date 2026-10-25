@@ -78,13 +78,13 @@ check_go_version() {
     GO_VERSION=$(go version | awk '{print $3}')
     echo "Detected: $GO_VERSION"
 
-    # CI uses Go 1.25.x and 1.24.x
-    if [[ "$GO_VERSION" =~ go1\.(25|24)\. ]]; then
+    # CI uses Go 1.26.x
+    if [[ "$GO_VERSION" =~ go1\.26\. ]]; then
         record_result "Go Version" "PASS" ""
         echo -e "${GREEN}✓ Go version compatible with CI${NC}"
     else
-        record_result "Go Version" "PASS" "Warning: Using $GO_VERSION (CI uses 1.25.x/1.24.x)"
-        echo -e "${YELLOW}⚠ Warning: CI uses Go 1.25.x and 1.24.x, you have $GO_VERSION${NC}"
+        record_result "Go Version" "PASS" "Warning: Using $GO_VERSION (CI uses 1.26.x)"
+        echo -e "${YELLOW}⚠ Warning: CI uses Go 1.26.x, you have $GO_VERSION${NC}"
     fi
 }
 
