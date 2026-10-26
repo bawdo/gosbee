@@ -9,8 +9,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bawdo/gosbee/managers"
 	"github.com/bawdo/gosbee/nodes"
+	"github.com/bawdo/gosbee/plugins"
 	"github.com/bawdo/gosbee/visitors"
+)
+
+var (
+	_ plugins.ScopedTransformer = (*OPA)(nil)
+	_ plugins.StrictTransformer = (*OPA)(nil)
 )
 
 func toSQL(t *testing.T, core *nodes.SelectCore) string {
@@ -540,5 +547,117 @@ func TestMaskAppliedPerJoinedTable(t *testing.T) {
 	expected := `SELECT "orders"."id", "orders"."customer_id", '***' AS "total", "customers"."id", "customers"."name" FROM "orders" INNER JOIN "customers" ON "orders"."customer_id" = "customers"."id"`
 	if got != expected {
 		t.Errorf("expected:\n  %s\ngot:\n  %s", expected, got)
+	}
+}
+
+// --- Nested queries, CTEs, raw SQL, memoisation ---
+
+func pgVisitor() *visitors.PostgresVisitor {
+	return visitors.NewPostgresVisitor(visitors.WithoutParams())
+}
+
+// tenantPolicy returns a PolicyFunc that restricts every table to tenant_id = 1
+// and records each table name it is asked about.
+func tenantPolicy(calls *[]string) PolicyFunc {
+	return func(name string) ([]nodes.Node, error) {
+		*calls = append(*calls, name)
+		return []nodes.Node{nodes.NewTable(name).Col("tenant_id").Eq(1)}, nil
+	}
+}
+
+func TestOPAFiltersSubqueryAndJoinedSubquery(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	orders := nodes.NewTable("orders")
+	sub := managers.NewSelectManager(posts).Select(posts.Col("user_id"))
+	joined := managers.NewSelectManager(orders).As("o")
+	var calls []string
+	q := managers.NewSelectManager(users).
+		Where(&nodes.InNode{Expr: users.Col("id"), Vals: []nodes.Node{sub.Core}}).
+		Join(joined).On(users.Col("id").Eq(joined.Col("user_id"))).
+		Use(New(tenantPolicy(&calls)))
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{
+		`(SELECT "posts"."user_id" FROM "posts" WHERE "posts"."tenant_id" = 1)`,
+		`(SELECT * FROM "orders" WHERE "orders"."tenant_id" = 1) AS "o"`,
+		`"users"."tenant_id" = 1`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %s in:\n  %s", want, got)
+		}
+	}
+	if strings.Contains(got, `"o"."tenant_id"`) {
+		t.Errorf("derived table alias was policed as a table in:\n  %s", got)
+	}
+	for _, name := range calls {
+		if name == "o" {
+			t.Errorf("policy was called with the derived table alias; calls: %v", calls)
+		}
+	}
+}
+
+func TestOPASkipsCTEName(t *testing.T) {
+	t.Parallel()
+	posts := nodes.NewTable("posts")
+	body := managers.NewSelectManager(posts)
+	var calls []string
+	q := managers.NewSelectManager(nodes.NewTable("c")).
+		With("c", body.Core).
+		Use(New(tenantPolicy(&calls)))
+
+	if _, _, err := q.ToSQL(pgVisitor()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, name := range calls {
+		if name == "c" {
+			t.Errorf("policy was called with the CTE name; calls: %v", calls)
+		}
+	}
+	if len(calls) != 1 || calls[0] != "posts" {
+		t.Errorf("expected one call for posts, got %v", calls)
+	}
+}
+
+func TestOPARefusesRawSQL(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	var calls []string
+	q := managers.NewSelectManager(users).
+		StringJoin(nodes.RawSQL("INNER JOIN secrets ON 1 = 1")).
+		Use(New(tenantPolicy(&calls)))
+
+	_, _, err := q.ToSQL(pgVisitor())
+	if !errors.Is(err, plugins.ErrUnpoliceable) {
+		t.Fatalf("expected ErrUnpoliceable, got %v", err)
+	}
+}
+
+func TestOPACompilesEachTableOncePerWalk(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	sub1 := managers.NewSelectManager(users).Select(users.Col("id"))
+	sub2 := managers.NewSelectManager(users).Select(users.Col("id"))
+	var calls []string
+	q := managers.NewSelectManager(users).
+		Where(&nodes.InNode{Expr: users.Col("id"), Vals: []nodes.Node{sub1.Core}}).
+		Where(nodes.Exists(sub2)).
+		Use(New(tenantPolicy(&calls)))
+
+	if _, _, err := q.ToSQL(pgVisitor()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Errorf("expected 1 policy call per walk, got %d: %v", len(calls), calls)
+	}
+	if _, _, err := q.ToSQL(pgVisitor()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(calls) != 2 {
+		t.Errorf("expected 2 policy calls after a second ToSQL, got %d: %v", len(calls), calls)
 	}
 }

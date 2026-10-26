@@ -40,6 +40,13 @@
 // The OPA plugin is code-only — it requires a [PolicyFunc] at
 // construction time, so it is not exposed in the interactive REPL.
 // For REPL-friendly plugins see the softdelete package.
+//
+// # Nested queries and raw SQL
+//
+// Via a manager, the policy is applied inside subqueries, CTE bodies and
+// set-operation branches, and is evaluated once per table per query. A name
+// that refers to a CTE is not a table and is skipped. Queries containing raw
+// SQL (SqlLiteral, StringJoin) are refused with plugins.ErrUnpoliceable.
 package opa
 
 import (
@@ -103,38 +110,50 @@ func NewFromServer(url, policyPath string, input map[string]any, opts ...Option)
 	return o
 }
 
-// TransformSelect evaluates the policy for each table referenced in the query
-// (FROM and JOINs) and appends any returned conditions to the WHERE clause.
-// If the policy returns an error for any table, the query is rejected.
-// In server mode masks are fetched once from the OPA Data API and applied
-// to the projections. In PolicyFunc mode the user-supplied function is
-// called directly (no masking support).
+// TransformSelect is TransformSelectScoped with no CTE scope and no memo, so
+// every table is compiled afresh. Managers use TransformSelectScoped via the
+// plugin walker.
 func (o *OPA) TransformSelect(core *nodes.SelectCore) (*nodes.SelectCore, error) {
+	return o.TransformSelectScoped(core, plugins.Scope{})
+}
+
+// TransformSelectScoped evaluates the policy for each table referenced in the
+// query (FROM and JOINs) and appends any returned conditions to the WHERE
+// clause. Names that refer to a CTE, and derived-table aliases, are not
+// tables and are skipped. If the policy returns an error for any table, the
+// query is rejected.
+//
+// Policy results are memoised per table for the duration of one walk, so a
+// table referenced in several nested queries is compiled once. In server mode
+// masks are fetched once per walk from the OPA Data API and applied to the
+// projections. In PolicyFunc mode the user-supplied function is called
+// directly (no masking support).
+func (o *OPA) TransformSelectScoped(core *nodes.SelectCore, scope plugins.Scope) (*nodes.SelectCore, error) {
 	var allMasks map[string]map[string]MaskAction
 
-	// Fetch masks once (server mode only).
+	// Fetch masks once per walk (server mode only).
 	if o.client != nil {
-		masks, err := o.client.FetchMasks()
+		v, err := scope.Memo("opa:masks", func() (any, error) {
+			return o.client.FetchMasks()
+		})
 		if err != nil {
 			return nil, err
 		}
-		allMasks = masks
+		allMasks = v.(map[string]map[string]MaskAction)
 	}
 
-	for _, ref := range plugins.CollectTables(core) {
-		if o.client != nil {
-			conditions, err := o.client.Compile(ref.Name)
-			if err != nil {
-				return nil, err
+	for _, ref := range scope.Tables(core) {
+		name := ref.Name
+		v, err := scope.Memo("opa:compile:"+name, func() (any, error) {
+			if o.client != nil {
+				return o.client.Compile(name)
 			}
-			core.Wheres = append(core.Wheres, conditions...)
-		} else {
-			conditions, err := o.evalPolicy(ref.Name)
-			if err != nil {
-				return nil, err
-			}
-			core.Wheres = append(core.Wheres, conditions...)
+			return o.evalPolicy(name)
+		})
+		if err != nil {
+			return nil, err
 		}
+		core.Wheres = append(core.Wheres, v.([]nodes.Node)...)
 	}
 
 	if len(allMasks) > 0 {
@@ -147,6 +166,11 @@ func (o *OPA) TransformSelect(core *nodes.SelectCore) (*nodes.SelectCore, error)
 
 	return core, nil
 }
+
+// RefusesRawSQL always reports true: a raw SQL fragment (SqlLiteral,
+// StringJoin) may read from a table the policy has not been asked about, so
+// the walker refuses it with an error wrapping plugins.ErrUnpoliceable.
+func (o *OPA) RefusesRawSQL() bool { return true }
 
 // applyMasks rewrites the projections of a SelectCore to replace masked
 // columns with SqlLiteral nodes containing the replacement value.
