@@ -401,10 +401,16 @@ If your change breaks backwards compatibility:
 deleting `main` are all blocked. A pull request can merge (squash or rebase)
 once these checks pass:
 
-- `Test (1.26.x, ubuntu-latest)` and `Test (1.26.x, macos-latest)`
-- `Lint`
-- `Changelog`
+- `CI OK`, which passes only when every job in the CI workflow passed:
+  - `Lint and audit`: golangci-lint, `go mod tidy -diff`, the changelog check,
+    govulncheck and a zizmor audit of the workflows
+  - `Test`: Linux on the oldest supported Go (`oldstable`) and the current one
+    (`stable`), both with the race detector, plus macOS on `stable`. Coverage
+    is uploaded from the Linux `stable` run.
 - `Analyze (go)` (CodeQL)
+
+CI also runs on every push to `main` and weekly, so a newly published
+vulnerability fails the build without waiting for a pull request.
 
 Every commit must be signed (GPG, SSH or S/MIME) and every conversation on
 the pull request resolved. No approving review is required. Pull requests from

@@ -5,60 +5,39 @@ permissions:
 
 on:
   push:
-    branches: [ '*' ]
+    branches: [ main ]
   pull_request:
-    branches: [ '*' ]
   workflow_dispatch:
+  # Weekly run so newly published vulnerabilities and toolchain changes
+  # surface without waiting for a pull request.
+  schedule:
+    - cron: '17 3 * * 1'
+
+# Cancel superseded runs on a pull request, never on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
-    name: Test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        go-version: ['1.26.x']
-        os: [ubuntu-latest, macos-latest]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ matrix.go-version }}
-          cache: true
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Run tests (with race detector on Linux)
-        run: |
-          if [ "$RUNNER_OS" == "Linux" ]; then
-            go test -race -v ./...
-          else
-            go test -v ./...
-          fi
-        shell: bash
-
   lint:
-    name: Lint
+    name: Lint and audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Full history and tags, so the changelog check can see every tag.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.x'
-          cache: true
+          go-version: stable
+          # golangci-lint-action caches the Go build itself; two caches clash.
+          cache: false
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
@@ -66,9 +45,34 @@ jobs:
           version: v2.12.2
           args: --timeout=5m
 
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
+      - name: Check go.mod and go.sum are tidy
+        run: go mod tidy -diff
+
+      - name: Check CHANGELOG.md
+        run: scripts/changelog.sh check
+
+      - name: Scan for known vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+      - name: Audit workflows with zizmor
+        uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          version: 1.31.1
+          advanced-security: false
+          annotations: true
+
+  test:
+    name: Test (${{ matrix.go }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # oldstable is the floor go.mod declares; stable is the current release.
+        include:
+          - { os: ubuntu-latest, go: oldstable, race: true }
+          - { os: ubuntu-latest, go: stable, race: true, coverage: true }
+          - { os: macos-latest, go: stable }
 
     steps:
       - name: Checkout code
@@ -79,18 +83,31 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.x'
+          go-version: ${{ matrix.go }}
           cache: true
 
       - name: Download dependencies
         run: go mod download
 
-      - name: Run tests with coverage
+      # -count=1 stops the restored build cache from replaying earlier results.
+      - name: Run tests
+        env:
+          RACE: ${{ matrix.race && 'true' || 'false' }}
+          COVERAGE: ${{ matrix.coverage && 'true' || 'false' }}
         run: |
-          COVERPKG=$(go list ./... | grep -v testutil | tr '\n' ',' | sed 's/,$//')
-          go test -race -coverprofile=coverage.txt -covermode=atomic -coverpkg="$COVERPKG" ./...
+          args=(-count=1 -v)
+          if [ "$RACE" = true ]; then
+            args+=(-race)
+          fi
+          if [ "$COVERAGE" = true ]; then
+            COVERPKG=$(go list ./... | grep -v testutil | tr '\n' ',' | sed 's/,$//')
+            args+=(-coverprofile=coverage.txt -covermode=atomic -coverpkg="$COVERPKG")
+          fi
+          go test "${args[@]}" ./...
+        shell: bash
 
       - name: Upload coverage to Codecov
+        if: matrix.coverage
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -98,16 +115,17 @@ jobs:
           fail_ci_if_error: false
           verbose: true
 
-  changelog:
-    name: Changelog
+  # The single required check: passes only when every job above passed, so
+  # the ruleset never has to track matrix job names.
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [ lint, test ]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check all jobs passed
+        uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
         with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Check CHANGELOG.md
-        run: scripts/changelog.sh check
+          jobs: ${{ toJSON(needs) }}

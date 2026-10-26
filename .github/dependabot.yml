@@ -6,6 +6,10 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # Wait a week before proposing a new release, so a compromised version is
+    # likely to be caught and yanked first. Security updates are not delayed.
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "Bump"
     groups:
@@ -21,6 +25,10 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # Wait a week before proposing a new release, so a compromised version is
+    # likely to be caught and yanked first. Security updates are not delayed.
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "Bump"
     groups:
