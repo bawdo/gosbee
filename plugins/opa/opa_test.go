@@ -1032,3 +1032,77 @@ func TestOPARefusesDML(t *testing.T) {
 		})
 	}
 }
+
+// --- Conditions bind to the alias they police ---
+
+func TestOPABindsConditionsToAliasInCorrelatedSubquery(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	u := users.Alias("u")
+	sub := managers.NewSelectManager(u).Select(u.Col("id")).Where(u.Col("boss_id").Eq(users.Col("id")))
+	var calls []string
+	q := managers.NewSelectManager(users).Where(nodes.Exists(sub)).Use(New(tenantPolicy(&calls)))
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `SELECT * FROM "users" WHERE EXISTS (SELECT "u"."id" FROM "users" AS "u" WHERE "u"."boss_id" = "users"."id" AND "u"."tenant_id" = 1) AND "users"."tenant_id" = 1`
+	if got != want {
+		t.Errorf("expected:\n  %s\ngot:\n  %s", want, got)
+	}
+}
+
+func TestOPABindsConditionsToEachSideOfSelfJoin(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	u := users.Alias("u")
+	var calls []string
+	q := managers.NewSelectManager(users).
+		Join(u).On(u.Col("boss_id").Eq(users.Col("id"))).
+		Use(New(tenantPolicy(&calls)))
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `SELECT * FROM "users" INNER JOIN "users" AS "u" ON "u"."boss_id" = "users"."id" WHERE "users"."tenant_id" = 1 AND "u"."tenant_id" = 1`
+	if got != want {
+		t.Errorf("expected:\n  %s\ngot:\n  %s", want, got)
+	}
+}
+
+func TestOPAAliasRebindLeavesPolicyNodesUntouched(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	u := users.Alias("u")
+	// One condition shared by every call, as a policy might cache it. It
+	// nests the column under containers and holds a subquery whose own
+	// references to users must not be rebound.
+	inner := managers.NewSelectManager(users).Select(users.Col("org_id")).Where(users.Col("active").Eq(true))
+	shared := users.Col("tenant_id").Eq(1).Or(nodes.NewNotNode(users.Col("org_id").In(inner)))
+	sharedSQL := shared.Accept(pgVisitor())
+	policy := func(string) ([]nodes.Node, error) { return []nodes.Node{shared}, nil }
+
+	aliased := managers.NewSelectManager(u).Select(u.Col("id")).Use(New(policy))
+	got, _, err := aliased.ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `SELECT "u"."id" FROM "users" AS "u" WHERE ("u"."tenant_id" = 1 OR NOT ("u"."org_id" IN (SELECT "users"."org_id" FROM "users" WHERE "users"."active" = TRUE)))`
+	if got != want {
+		t.Errorf("expected:\n  %s\ngot:\n  %s", want, got)
+	}
+
+	if after := shared.Accept(pgVisitor()); after != sharedSQL {
+		t.Errorf("shared policy condition was mutated\nbefore: %s\n after: %s", sharedSQL, after)
+	}
+	plain := managers.NewSelectManager(users).Use(New(policy))
+	got, _, err = plain.ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := `SELECT * FROM "users" WHERE ` + sharedSQL; got != want {
+		t.Errorf("second query sees a changed condition\nexpected:\n  %s\ngot:\n  %s", want, got)
+	}
+}

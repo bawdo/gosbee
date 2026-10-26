@@ -406,3 +406,27 @@ func TestSoftDeleteRepeatedToSQLIsStable(t *testing.T) {
 		t.Errorf("subquery was mutated: %s", plain)
 	}
 }
+
+// customFrom is a node softdelete cannot see into; it renders fixed SQL.
+type customFrom struct{}
+
+func (customFrom) Accept(nodes.Visitor) string { return `"users"` }
+
+func TestSoftDeleteRefusesRelationsItCannotSee(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	cases := map[string]*managers.SelectManager{
+		"custom node from": managers.NewSelectManager(customFrom{}),
+		"grouping from":    managers.NewSelectManager(nodes.NewGroupingNode(users)),
+		"alias over alias": managers.NewSelectManager(&nodes.TableAlias{Relation: users.Alias("x"), AliasName: "u"}),
+	}
+	for name, m := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, _, err := m.Use(New()).ToSQL(pgVisitor())
+			if !errors.Is(err, plugins.ErrUnpoliceable) {
+				t.Fatalf("expected ErrUnpoliceable, got %v (SQL %s)", err, got)
+			}
+		})
+	}
+}

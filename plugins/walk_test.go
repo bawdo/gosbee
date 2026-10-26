@@ -723,3 +723,258 @@ func TestScopeQualifiersLateralBodySeesSiblingTables(t *testing.T) {
 		t.Errorf("expected lateral body qualifiers %v, got %v", want, tr.calls[1].qualifiers)
 	}
 }
+
+type ander interface {
+	And(nodes.Node) *nodes.AndNode
+}
+
+// andChainer replaces every WHERE condition w with w.And(<extra>), the way a
+// custom transformer chains onto an existing condition with fluent calls.
+type andChainer struct {
+	plugins.BaseTransformer
+}
+
+func (andChainer) TransformSelectScoped(core *nodes.SelectCore, scope plugins.Scope) (*nodes.SelectCore, error) {
+	for i, w := range core.Wheres {
+		if c, ok := w.(ander); ok {
+			core.Wheres[i] = c.And(nodes.NewTable("users").Col("extra").Eq(1))
+		}
+	}
+	return core, nil
+}
+
+func TestApplySelectCopiedNodesChainFromTheCopy(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	newSub := func() *nodes.SelectCore {
+		return managers.NewSelectManager(posts).Select(posts.Col("user_id")).Core
+	}
+	id := users.Col("id")
+
+	cases := map[string]nodes.Node{
+		"in":       id.In(newSub()),
+		"and":      id.In(newSub()).And(id.Gt(0)),
+		"or":       nodes.NewOrNode(id.In(newSub()), id.Gt(0)),
+		"not":      nodes.NewNotNode(nodes.Exists(newSub())),
+		"grouping": nodes.NewGroupingNode(id.In(newSub())),
+		"between":  nodes.NewBetweenNode(id, newSub(), nodes.Literal(9), false),
+		"unary":    nodes.NewUnaryNode(newSub(), nodes.OpIsNull),
+	}
+	for name, where := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			m := managers.NewSelectManager(users).Where(where)
+			first, err := plugins.ApplySelect(&recordingTransformer{}, m.Core)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			second, err := plugins.ApplySelect(andChainer{}, first)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			got := render(second)
+			assertContains(t, got, `"posts"."seen" IS NULL`)
+			assertContains(t, got, `"users"."extra" = 1`)
+		})
+	}
+}
+
+func TestApplySelectCopiedOrderingChainsFromTheCopy(t *testing.T) {
+	t.Parallel()
+	posts := nodes.NewTable("posts")
+	sub := managers.NewSelectManager(posts).Select(posts.Col("id")).Core
+	m := managers.NewSelectManager(nodes.NewTable("users")).Order(nodes.NewOrderingNode(sub, nodes.Desc, nodes.NullsDefault))
+
+	out, err := plugins.ApplySelect(&recordingTransformer{}, m.Core)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ordering := out.Orders[0].(*nodes.OrderingNode)
+	if ordering == m.Core.Orders[0] {
+		t.Fatal("expected the ordering to be copied")
+	}
+	if got := ordering.And(posts.Col("x")).Left; got != nodes.Node(ordering) {
+		t.Errorf("fluent call on the copy references another node: %s", render(got))
+	}
+}
+
+// nilCoreTransformer returns a nil core and no error.
+type nilCoreTransformer struct {
+	plugins.BaseTransformer
+}
+
+func (nilCoreTransformer) TransformSelect(*nodes.SelectCore) (*nodes.SelectCore, error) {
+	return nil, nil
+}
+
+func TestApplySelectRefusesNilCoreFromTransformer(t *testing.T) {
+	t.Parallel()
+	posts := nodes.NewTable("posts")
+	users := nodes.NewTable("users")
+	m := managers.NewSelectManager(users).Where(users.Col("id").In(managers.NewSelectManager(posts).Select(posts.Col("id"))))
+
+	out, err := plugins.ApplySelect(nilCoreTransformer{}, m.Core)
+	if err == nil || !strings.Contains(err.Error(), "plugins: transformer returned nil core") {
+		t.Fatalf("expected a nil core error, got %v", err)
+	}
+	if out != nil {
+		t.Errorf("expected nil core on error, got %s", render(out))
+	}
+}
+
+func TestApplySelectRecursiveCTEForwardReferenceIsATable(t *testing.T) {
+	t.Parallel()
+	// MySQL lets a CTE refer only to CTEs defined before it, even under WITH
+	// RECURSIVE, so "users" in the body of "a" is the real table and must be
+	// filtered. The recursive "users" body still sees its own name.
+	users := nodes.NewTable("users")
+	a := nodes.NewTable("a")
+	for name, firstRecursive := range map[string]bool{"plain first": false, "recursive first": true} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			m := managers.NewSelectManager(a)
+			if firstRecursive {
+				m.WithRecursive("a", managers.NewSelectManager(users))
+			} else {
+				m.With("a", managers.NewSelectManager(users))
+			}
+			m.WithRecursive("users", managers.NewSelectManager(users))
+
+			got := applySelect(t, &recordingTransformer{}, m)
+			want := `WITH RECURSIVE "a" AS (SELECT * FROM "users" WHERE "users"."seen" IS NULL), "users" AS (SELECT * FROM "users") SELECT * FROM "a"`
+			if got != want {
+				t.Errorf("\nwant: %s\n got: %s", want, got)
+			}
+		})
+	}
+}
+
+// opaqueNode is a custom node the walker does not know. Its Accept renders
+// fixed SQL without calling the visitor.
+type opaqueNode struct{ sql string }
+
+func (o *opaqueNode) Accept(nodes.Visitor) string { return o.sql }
+
+// wrapperNode is a custom node whose Accept renders its child through the
+// visitor, so a careless walker would mistake it for the child.
+type wrapperNode struct{ child nodes.Node }
+
+func (w *wrapperNode) Accept(v nodes.Visitor) string { return "SECRET_WRAP(" + w.child.Accept(v) + ")" }
+
+func customNodeQueries() map[string]func() *managers.SelectManager {
+	users := nodes.NewTable("users")
+	return map[string]func() *managers.SelectManager{
+		"opaque from": func() *managers.SelectManager {
+			return managers.NewSelectManager(&opaqueNode{sql: `"secrets"`})
+		},
+		"opaque projection": func() *managers.SelectManager {
+			return managers.NewSelectManager(users).Select(&opaqueNode{sql: "secret_fn()"})
+		},
+		"wrapper where": func() *managers.SelectManager {
+			return managers.NewSelectManager(users).Where(&wrapperNode{child: users.Col("id").Eq(1)})
+		},
+	}
+}
+
+func TestApplySelectStrictRefusesCustomNodes(t *testing.T) {
+	t.Parallel()
+	for name, build := range customNodeQueries() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			out, err := plugins.ApplySelect(&recordingTransformer{strict: true}, build().Core)
+			if !errors.Is(err, plugins.ErrUnpoliceable) {
+				t.Fatalf("expected ErrUnpoliceable, got %v (SQL %s)", err, render(out))
+			}
+			if out != nil {
+				t.Errorf("expected nil core on error, got %s", render(out))
+			}
+			if msg := err.Error(); strings.Contains(msg, "secret") || strings.Contains(msg, "SECRET") {
+				t.Errorf("error leaks SQL text: %s", msg)
+			}
+		})
+	}
+}
+
+func TestApplySelectNonStrictKeepsCustomNodes(t *testing.T) {
+	t.Parallel()
+	want := map[string]string{
+		"opaque from":       `SELECT * FROM "secrets"`,
+		"opaque projection": `SELECT secret_fn() FROM "users" WHERE "users"."seen" IS NULL`,
+		"wrapper where":     `SELECT * FROM "users" WHERE SECRET_WRAP("users"."id" = 1) AND "users"."seen" IS NULL`,
+	}
+	for name, build := range customNodeQueries() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := applySelect(t, &recordingTransformer{}, build())
+			if got != want[name] {
+				t.Errorf("\nwant: %s\n got: %s", want[name], got)
+			}
+		})
+	}
+}
+
+func TestApplySelectStrictRefusesUnseenRelationShapes(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	cases := map[string]func() *managers.SelectManager{
+		"grouping from": func() *managers.SelectManager {
+			return managers.NewSelectManager(nodes.NewGroupingNode(users))
+		},
+		"alias over grouping": func() *managers.SelectManager {
+			return managers.NewSelectManager(&nodes.TableAlias{Relation: nodes.NewGroupingNode(users), AliasName: "u"})
+		},
+		"alias over alias": func() *managers.SelectManager {
+			return managers.NewSelectManager(&nodes.TableAlias{Relation: users.Alias("x"), AliasName: "u"})
+		},
+		"grouping join": func() *managers.SelectManager {
+			posts := nodes.NewTable("posts")
+			return managers.NewSelectManager(posts).Join(nodes.NewGroupingNode(users)).On(posts.Col("user_id").Eq(users.Col("id")))
+		},
+		"nested grouping from": func() *managers.SelectManager {
+			sub := managers.NewSelectManager(nodes.NewGroupingNode(users)).Select(users.Col("id"))
+			return managers.NewSelectManager(nodes.NewTable("posts")).Where(nodes.Exists(sub))
+		},
+	}
+	for name, build := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			out, err := plugins.ApplySelect(&recordingTransformer{strict: true}, build().Core)
+			if !errors.Is(err, plugins.ErrUnpoliceable) {
+				t.Fatalf("expected ErrUnpoliceable, got %v (SQL %s)", err, render(out))
+			}
+		})
+		t.Run(name+" non-strict", func(t *testing.T) {
+			t.Parallel()
+			if _, err := plugins.ApplySelect(&recordingTransformer{}, build().Core); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestApplySelectStrictAllowsSeenRelationShapes(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	cases := map[string]*managers.SelectManager{
+		"nil from":            managers.NewSelectManager(nil).Select(nodes.Literal(1)),
+		"table":               managers.NewSelectManager(users),
+		"alias over table":    managers.NewSelectManager(users.Alias("u")),
+		"alias over subquery": managers.NewSelectManager(managers.NewSelectManager(posts).As("p")),
+		"alias over set operation": managers.NewSelectManager(&nodes.TableAlias{
+			Relation:  managers.NewSelectManager(users).Union(managers.NewSelectManager(posts)),
+			AliasName: "s",
+		}),
+		"manager join": managers.NewSelectManager(users).
+			Join(managers.NewSelectManager(posts)).On(users.Col("id").Eq(posts.Col("user_id"))),
+	}
+	for name, m := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := plugins.ApplySelect(&recordingTransformer{strict: true}, m.Core); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}

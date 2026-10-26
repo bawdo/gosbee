@@ -55,6 +55,7 @@ import (
 
 	"github.com/bawdo/gosbee/nodes"
 	"github.com/bawdo/gosbee/plugins"
+	"github.com/bawdo/gosbee/plugins/internal/hooks"
 )
 
 // ErrMaskedColumnUse is returned when a masked column is used anywhere other
@@ -135,7 +136,8 @@ func (o *OPA) TransformSelect(core *nodes.SelectCore) (*nodes.SelectCore, error)
 // query (FROM and JOINs) and appends any returned conditions to the WHERE
 // clause. Names that refer to a CTE, and derived-table aliases, are not
 // tables and are skipped. If the policy returns an error for any table, the
-// query is rejected.
+// query is rejected. Conditions for an aliased table (FROM users AS u) are
+// rebound onto the alias, so they filter u rather than another users row.
 //
 // Policy results are memoised per table for the duration of one walk, so a
 // table referenced in several nested queries is compiled once. In server mode
@@ -171,7 +173,7 @@ func (o *OPA) TransformSelectScoped(core *nodes.SelectCore, scope plugins.Scope)
 		if err != nil {
 			return nil, err
 		}
-		core.Wheres = append(core.Wheres, v.([]nodes.Node)...)
+		core.Wheres = append(core.Wheres, bindConditions(v.([]nodes.Node), ref)...)
 	}
 
 	if len(allMasks) > 0 {
@@ -183,6 +185,24 @@ func (o *OPA) TransformSelectScoped(core *nodes.SelectCore, scope plugins.Scope)
 	}
 
 	return core, nil
+}
+
+// bindConditions returns the policy conditions for ref. The policy builds
+// them against the bare table, nodes.NewTable(ref.Name), which renders as
+// "users"."col". When ref is an alias (FROM users AS u) that qualifier would
+// bind to some other users row in scope, such as the outer row of a
+// correlated subquery or the other side of a self-join, leaving u unfiltered.
+// So each condition is rebound onto the alias. The conditions are memoised
+// and shared, so they are copied on write, never modified.
+func bindConditions(conds []nodes.Node, ref plugins.TableRef) []nodes.Node {
+	if _, ok := ref.Relation.(*nodes.TableAlias); !ok || len(conds) == 0 {
+		return conds
+	}
+	out := make([]nodes.Node, len(conds))
+	for i, cond := range conds {
+		out[i] = hooks.RebindAttributes(cond, ref.Name, ref.Relation)
+	}
+	return out
 }
 
 // RefusesRawSQL always reports true: a raw SQL fragment (SqlLiteral,
