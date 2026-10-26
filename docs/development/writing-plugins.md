@@ -6,16 +6,30 @@ registering a plugin, see the [plugins guide](../guide/plugins.md).
 
 ## How the walker applies a transformer
 
-A manager does not call your `TransformSelect` on the outermost query alone.
-Built-in plugins delegate to `plugins.ApplySelect`, which walks the whole tree
-and hands your transformer every `SelectCore` it finds: subqueries, CTE bodies,
-joined subqueries (including `LATERAL`) and each branch of a set operation.
+A manager does not call your transformer on the outermost query alone. It
+calls `plugins.ApplySelect`, which walks the whole tree and hands your
+transformer every `SelectCore` it finds: subqueries, CTE bodies, joined
+subqueries (including `LATERAL`) and each branch of a set operation. A plugin
+that implements only `TransformSelect` is called once for each of those cores,
+so a transformer that adds a `LIMIT`, for example, now limits every subquery
+too. Check what kind of core you have been handed if that matters to you.
+
+The built-in plugins also let a direct call to `TransformSelect` (outside a
+manager) walk the tree, by delegating to the walker:
 
 ```go
 func (p *MyPlugin) TransformSelect(core *nodes.SelectCore) (*nodes.SelectCore, error) {
     return plugins.ApplySelect(p, core)
 }
 ```
+
+**This pattern requires `TransformSelectScoped`.** The walker calls
+`TransformSelectScoped` when your plugin implements it, and `TransformSelect`
+otherwise. A plugin with a delegating `TransformSelect` and no
+`TransformSelectScoped` calls `ApplySelect`, which calls `TransformSelect`,
+which calls `ApplySelect`, and so on until the program dies with a fatal stack
+overflow. If your plugin has only `TransformSelect`, transform the core you
+are given and return it; do not call `ApplySelect` from it.
 
 The walk gives you three guarantees:
 
@@ -76,14 +90,35 @@ func (sd *SoftDelete) TransformSelectScoped(core *nodes.SelectCore, scope plugin
 
 The managers start the walk themselves: `SelectManager` calls
 `plugins.ApplySelect` and `SetOperationManager` calls `plugins.ApplyNode`, and
-the walker then calls your `TransformSelectScoped` for each core. Your
-`TransformSelect` is not on that path. Still keep one that delegates to
+the walker then calls your `TransformSelectScoped` for each core. When your
+plugin implements `TransformSelectScoped`, your `TransformSelect` is not on
+that path. Still keep one that delegates to
 `plugins.ApplySelect(p, core)`: the `Transformer` interface requires it, and it
 gives anyone calling your plugin directly the same behaviour as the managers.
 
 `TransformSelectScoped` is already running inside a walk, so it must not start
 another one (no `ApplySelect` or `ApplyNode` calls from it). Transform only the
-core you are handed.
+core you are handed, and return a core: returning `nil` with no error fails the
+walk with `plugins: transformer returned nil core`.
+
+The maps in `Scope` (`CTENames` and `Qualifiers`) are read-only. The walker
+shares them across many cores, so writing to them would change the scope of
+cores your transformer was never shown.
+
+Nodes the walker copies on the way to a changed node are built with the `nodes`
+constructors (`nodes.NewAndNode`, `nodes.NewInNode` and friends), so fluent
+calls such as `.And(...)` or `.Not()` on a copied node build on the copy, not
+on the original it was copied from. Use the same constructors when you build
+such nodes by hand rather than struct literals, which leave the fluent methods
+pointing at nothing.
+
+### CTE visibility
+
+A CTE body sees the CTEs declared before it, plus its own name when that CTE
+is marked recursive (`WithRecursive`). This holds even in a `WITH RECURSIVE`
+list: MySQL only lets a CTE refer to CTEs defined earlier, so a later name is
+the real table and is treated as one. A name that is visible as a CTE is left
+out of `Scope.Tables`.
 
 ## StrictTransformer
 
@@ -102,6 +137,21 @@ When `RefusesRawSQL` returns true, the walk fails with an error wrapping
 can test for it with `errors.Is`. The softdelete plugin returns
 `!sd.allowRaw`, so `WithAllowRawSQL()` opts out. The OPA plugin always returns
 true.
+
+A strict transformer also refuses two other things the walker cannot see
+through, with the same error:
+
+- **Custom node types.** A `nodes.Node` implementation outside the `nodes`
+  package (other than a query manager, which stands for its `SelectCore`) is
+  opaque: the walker cannot tell what it renders. Under a strict transformer
+  it is refused. Under a non-strict one it is kept exactly as it is, and
+  nothing inside it is transformed.
+- **Relations it cannot report.** Every `FROM` and `JOIN` target must be a
+  `*nodes.Table`, a nested query (`*nodes.SelectCore` or
+  `*nodes.SetOperationNode`), or a `*nodes.TableAlias` over one of those. A
+  shape such as `FROM ("users")` (a `GroupingNode`) or an alias over another
+  alias would not show up in `Scope.Tables`, so it is refused. A `nil` `FROM`
+  is fine.
 
 One exemption: the type argument of `CAST(expr AS type)` is stored as a
 `SqlLiteral` by `nodes.Cast`, but the SQL visitor validates it as a type name

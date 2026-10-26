@@ -105,15 +105,8 @@ you know your raw fragments are safe, opt in:
 sd := softdelete.New(softdelete.WithAllowRawSQL())
 ```
 
-#### Upgrading
-
-Earlier versions only filtered the outermost SELECT and let raw SQL through.
-After upgrading:
-
-- Subqueries, CTE bodies and set-operation branches now gain the
-  `IS NULL` condition, so the generated SQL changes.
-- Queries containing raw SQL now fail with `plugins.ErrUnpoliceable`. Either
-  replace the raw fragment with AST nodes or add `WithAllowRawSQL()`.
+Upgrading from an earlier version changes the SQL this plugin generates; see
+[Upgrading](#upgrading) below.
 
 ### OPA (Open Policy Agent)
 
@@ -206,6 +199,13 @@ query := managers.NewSelectManager(users).
     Use(&AuditLogger{})
 ```
 
+A transformer is called for every SELECT in the query, not just the outermost
+one, so this stamps the comment on each subquery, CTE body and set-operation
+branch too. That is harmless for a comment. If you want it once, set it on the
+manager instead with `query.Comment("audit: query by service-x")`. See
+[Writing Plugins](../development/writing-plugins.md) for how the walker calls
+your plugin.
+
 ### Returning an error
 
 If a transformer returns a non-nil error, `ToSQL()` will propagate it and no SQL
@@ -219,6 +219,67 @@ func (p *MyPolicy) TransformSelect(core *nodes.SelectCore) (*nodes.SelectCore, e
     return core, nil
 }
 ```
+
+## Upgrading
+
+Plugins now police every query nested inside the one you build, and refuse
+what they cannot see rather than let it through. If you are upgrading from a
+version that only transformed the outermost SELECT, expect these changes:
+
+**Every plugin, including your own**
+
+- A transformer now runs on every nested `SelectCore`: subqueries, CTE
+  bodies, joined subqueries and each branch of a set operation, inner ones
+  first. A plugin that adds a `LIMIT`, for example, now limits every subquery
+  as well. Check the core you are handed if that is not what you want.
+- A plugin whose `TransformSelect` delegates to `plugins.ApplySelect` must
+  also implement `TransformSelectScoped`, or it recurses until the stack
+  overflows.
+- A transformer that returns a `nil` core with no error now fails the query
+  with `plugins: transformer returned nil core`, instead of panicking when the
+  SQL is rendered.
+- Under a strict plugin (softdelete by default, OPA always), a custom
+  `nodes.Node` type the walker does not know is refused with
+  `plugins.ErrUnpoliceable`. Under a non-strict plugin it is kept unchanged.
+- Under a strict plugin, a `FROM` or `JOIN` target that is not a table, a
+  nested query, or an alias over one of those (for example `FROM ("users")` or
+  an alias over another alias) is refused with `plugins.ErrUnpoliceable`.
+- In a `WITH RECURSIVE` list a CTE body now sees only the CTEs declared before
+  it, plus its own name when it is recursive. A reference to a CTE declared
+  later is treated as the real table and filtered, as MySQL resolves it. On
+  dialects that allow forward references this adds a filter, or an SQL error,
+  rather than letting the table through.
+
+**Soft delete**
+
+- Subqueries, CTE bodies and set-operation branches now gain the `IS NULL`
+  condition, so the generated SQL changes.
+- Queries containing raw SQL (`SqlLiteral`, `StringJoin`) now fail with
+  `plugins.ErrUnpoliceable`. Either replace the raw fragment with AST nodes or
+  add `WithAllowRawSQL()`.
+
+**OPA**
+
+- Policy conditions are applied inside nested queries too, and each table is
+  evaluated once per query.
+- A condition for an aliased table (`FROM users AS u`) is now written against
+  the alias, so it filters `u` rather than some other `users` row in scope,
+  such as the outer row of a correlated subquery or the other side of a
+  self-join.
+- Queries containing raw SQL fail with `plugins.ErrUnpoliceable`.
+- INSERT, UPDATE and DELETE fail with `opa.ErrUnsupportedStatement`; the
+  plugin only polices SELECT.
+- A masked column used anywhere other than as a plain projection (in a
+  `WHERE`, an expression, `ORDER BY` and so on) fails with
+  `opa.ErrMaskedColumnUse`.
+- A masked projection is now rendered as a bind parameter aliased to the
+  column (`$1 AS "ssn"` on PostgreSQL), not an inline quoted literal.
+
+**Calling `TransformSelect` directly**
+
+- `TransformSelect` on the softdelete and OPA plugins, called outside a
+  manager, now walks the whole tree the same way a manager does and no longer
+  modifies the core you pass in. Use the returned core.
 
 ## Next steps
 
