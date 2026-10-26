@@ -42,7 +42,9 @@ func Substring(expr, start, length Node) *NamedFunctionNode {
 }
 
 // Cast creates a CAST(expr AS typeName) expression.
-// The type name is stored as a SqlLiteral so it renders verbatim.
+// The type name is stored as a SqlLiteral and validated by the visitor when
+// rendered, so it must look like a SQL type (e.g. "VARCHAR(255)"); anything
+// else panics rather than reaching the SQL output.
 func Cast(expr Node, typeName string) *NamedFunctionNode {
 	return NewNamedFunction("CAST", expr, NewSqlLiteral(RawSQL(typeName)))
 }

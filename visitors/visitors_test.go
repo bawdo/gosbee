@@ -2872,6 +2872,18 @@ func TestVisitCastSpecialRendering(t *testing.T) {
 	testutil.AssertSQL(t, NewMySQLVisitor(WithoutParams()), fn, "CAST(`t`.`age` AS VARCHAR)")
 }
 
+func TestVisitCastRejectsInjectedTypeName(t *testing.T) {
+	t.Parallel()
+	col := nodes.NewTable("t").Col("age")
+	fn := nodes.Cast(col, "int), (SELECT password FROM admins LIMIT 1), CAST(1 AS int")
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for injected CAST type name")
+		}
+	}()
+	fn.Accept(NewPostgresVisitor())
+}
+
 func TestVisitNamedFunctionNoArgs(t *testing.T) {
 	t.Parallel()
 	fn := nodes.NewNamedFunction("NOW")
@@ -3229,6 +3241,11 @@ func TestValidateSQLTypeNameValid(t *testing.T) {
 	validateSQLTypeName("VARCHAR(255)")
 	validateSQLTypeName("DECIMAL(10, 2)")
 	validateSQLTypeName("user_defined_type")
+	validateSQLTypeName("NUMERIC(10,2)")
+	validateSQLTypeName("double precision")
+	validateSQLTypeName("character varying(20)")
+	validateSQLTypeName("timestamp(3) with time zone")
+	validateSQLTypeName("NUMERIC ( 10 , 2 )") // REPL joins type tokens with spaces
 }
 
 func TestValidateSQLTypeNameInvalidChars(t *testing.T) {
@@ -3241,6 +3258,11 @@ func TestValidateSQLTypeNameInvalidChars(t *testing.T) {
 		{"single quote", "VARCHAR'"},
 		{"dash", "VARCHAR-100"},
 		{"equals", "VARCHAR=100"},
+		{"paren breakout", "int), (SELECT password FROM admins LIMIT 1), CAST(1 AS int"},
+		{"unbalanced paren", "VARCHAR(255"},
+		{"word in parens", "VARCHAR(abc)"},
+		{"empty", ""},
+		{"leading space", " int"},
 	}
 
 	for _, tt := range tests {

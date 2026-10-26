@@ -3,6 +3,7 @@ package visitors
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/bawdo/gosbee/internal/quoting"
@@ -678,6 +679,9 @@ func (b *baseVisitor) VisitNamedFunction(n *nodes.NamedFunctionNode) string {
 	validateSQLFunctionName(n.Name)
 	// Special case: CAST(expr AS type)
 	if n.Name == "CAST" && len(n.Args) == 2 {
+		if typeName, ok := n.Args[1].(*nodes.SqlLiteral); ok {
+			validateSQLTypeName(string(typeName.Raw))
+		}
 		sb.WriteString("CAST(")
 		sb.WriteString(n.Args[0].Accept(b.outer))
 		sb.WriteString(" AS ")
@@ -783,16 +787,20 @@ func (b *baseVisitor) VisitCasted(n *nodes.CastedNode) string {
 	return valSQL
 }
 
-// validateSQLTypeName panics if the type name contains characters outside
-// the set of letters, digits, spaces, parentheses, and commas.
-// This prevents SQL injection through crafted type names.
+// sqlTypeNamePattern matches one or more space-separated identifier words,
+// each optionally followed by a numeric modifier such as (255) or (10, 2).
+// Parentheses may only hold digits, so a type name can never close the
+// surrounding CAST( ... ) and inject further SQL.
+var sqlTypeNamePattern = regexp.MustCompile(
+	`^[A-Za-z_][A-Za-z0-9_]*( ?\( ?\d+( ?, ?\d+)? ?\))?( [A-Za-z_][A-Za-z0-9_]*( ?\( ?\d+( ?, ?\d+)? ?\))?)*$`)
+
+// validateSQLTypeName panics if the type name is not a sequence of identifier
+// words with optional numeric modifiers (e.g. "VARCHAR(255)",
+// "timestamp(3) with time zone"). This prevents SQL injection through crafted
+// type names.
 func validateSQLTypeName(name string) {
-	for _, c := range name {
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') &&
-			(c < '0' || c > '9') && c != ' ' && c != '(' &&
-			c != ')' && c != ',' && c != '_' {
-			panic(fmt.Sprintf("gosbee: invalid SQL type name character %q in %q", string(c), name))
-		}
+	if !sqlTypeNamePattern.MatchString(name) {
+		panic(fmt.Sprintf("gosbee: invalid SQL type name %q", name))
 	}
 }
 
