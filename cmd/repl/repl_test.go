@@ -4109,6 +4109,75 @@ func TestWithErrorNoName(t *testing.T) {
 	}
 }
 
+// --- Plugins police set operations and CTEs ---
+
+func TestSQLUnionAppliesSoftDelete(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	cmds := []string{"plugin softdelete", "from users", "union", "from posts"}
+	for _, cmd := range cmds {
+		if err := sess.Execute(cmd); err != nil {
+			t.Fatalf("command %q failed: %v", cmd, err)
+		}
+	}
+	out, err := sess.Exec("sql")
+	if err != nil {
+		t.Fatalf("sql failed: %v", err)
+	}
+	for _, want := range []string{`"users"."deleted_at" IS NULL`, `"posts"."deleted_at" IS NULL`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %s in output, got: %s", want, out)
+		}
+	}
+}
+
+func TestSQLCTEAppliesSoftDelete(t *testing.T) {
+	t.Parallel()
+	sess := NewSession("postgres", nil)
+	cmds := []string{"plugin softdelete", "from posts", "with c", "from c"}
+	for _, cmd := range cmds {
+		if err := sess.Execute(cmd); err != nil {
+			t.Fatalf("command %q failed: %v", cmd, err)
+		}
+	}
+	out, err := sess.Exec("sql")
+	if err != nil {
+		t.Fatalf("sql failed: %v", err)
+	}
+	body := strings.Index(out, `"posts"."deleted_at" IS NULL`)
+	if body < 0 {
+		t.Fatalf("expected the filter inside the CTE body, got: %s", out)
+	}
+	if end := strings.Index(out, ")"); end < body {
+		t.Errorf("expected the filter before the CTE body closes, got: %s", out)
+	}
+	if strings.Contains(out, `"c"."deleted_at"`) {
+		t.Errorf("expected no filter on the CTE reference, got: %s", out)
+	}
+}
+
+func TestExecUnionAppliesSoftDelete(t *testing.T) {
+	// Needs the sqlite driver. The SQL is printed before the DB call, so the
+	// assertion holds even though SQLite rejects the parenthesised UNION.
+	sess := NewSession("sqlite", nil)
+	if err := sess.Execute("connect :memory:"); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = sess.conn.close() }()
+
+	for _, cmd := range []string{"plugin softdelete", "from users", "union", "from posts"} {
+		if err := sess.Execute(cmd); err != nil {
+			t.Fatalf("command %q failed: %v", cmd, err)
+		}
+	}
+	out, _ := sess.Exec("exec")
+	for _, want := range []string{`"users"."deleted_at" IS NULL`, `"posts"."deleted_at" IS NULL`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %s in exec output, got: %s", want, out)
+		}
+	}
+}
+
 func TestCTEResetClearsStack(t *testing.T) {
 	t.Parallel()
 	sess := NewSession("postgres", nil)
