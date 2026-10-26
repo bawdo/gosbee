@@ -74,8 +74,16 @@ func (sd *SoftDelete) TransformSelectScoped(core *nodes.SelectCore, scope plugin
 }
 ```
 
-Keep a plain `TransformSelect` that calls `plugins.ApplySelect(p, core)` as
-well. It is what the managers invoke, and it is what starts the walk.
+The managers start the walk themselves: `SelectManager` calls
+`plugins.ApplySelect` and `SetOperationManager` calls `plugins.ApplyNode`, and
+the walker then calls your `TransformSelectScoped` for each core. Your
+`TransformSelect` is not on that path. Still keep one that delegates to
+`plugins.ApplySelect(p, core)`: the `Transformer` interface requires it, and it
+gives anyone calling your plugin directly the same behaviour as the managers.
+
+`TransformSelectScoped` is already running inside a walk, so it must not start
+another one (no `ApplySelect` or `ApplyNode` calls from it). Transform only the
+core you are handed.
 
 ## StrictTransformer
 
