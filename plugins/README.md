@@ -83,6 +83,10 @@ for _, ref := range refs {
 ```
 
 This handles `*nodes.Table` and `*nodes.TableAlias` and skips subqueries.
+Inside a scoped transformer prefer `scope.Tables(core)`, which also leaves out
+CTE names and derived-table aliases. See
+[Writing Plugins](../docs/development/writing-plugins.md) for how the walker
+hands every nested query to your plugin.
 
 ## Built-in Plugins
 
@@ -128,21 +132,34 @@ func New(tenantID int) *MultiTenant {
     return &MultiTenant{TenantID: tenantID}
 }
 
+// TransformSelect lets a direct call (outside a manager) police every nested
+// query too. It relies on TransformSelectScoped below: without it the walker
+// would call TransformSelect again and recurse until the stack overflows.
 func (mt *MultiTenant) TransformSelect(core *nodes.SelectCore) (*nodes.SelectCore, error) {
-    for _, ref := range plugins.CollectTables(core) {
+    return plugins.ApplySelect(mt, core)
+}
+
+// TransformSelectScoped is called by the walker once for every SelectCore in
+// the query: the outer query, subqueries, CTE bodies and set-operation branches.
+func (mt *MultiTenant) TransformSelectScoped(core *nodes.SelectCore, scope plugins.Scope) (*nodes.SelectCore, error) {
+    for _, ref := range scope.Tables(core) {
         attr := nodes.NewAttribute(ref.Relation, "tenant_id")
         core.Wheres = append(core.Wheres, attr.Eq(mt.TenantID))
     }
     return core, nil
 }
 
+// RefusesRawSQL makes the walker refuse raw SQL, custom nodes and FROM or JOIN
+// shapes the plugin cannot see, rather than letting them through unfiltered.
+func (mt *MultiTenant) RefusesRawSQL() bool { return true }
+
 // TransformUpdate, TransformInsert, TransformDelete inherited as no-ops from BaseTransformer
 ```
 
 Key points:
 
-- Use `plugins.CollectTables(core)` to iterate over all tables in the query (FROM + JOINs)
-- Use `ref.Relation` (not a new `nodes.NewTable()`) when creating column references — this preserves table aliases
+- Use `scope.Tables(core)` to iterate over the tables this core reads (FROM + JOINs). It leaves out CTE names and derived tables, which are not tables; the walker reaches nested queries itself
+- Use `ref.Relation` (not a new `nodes.NewTable()`) when creating column references, so a condition on `users AS u` is written against `u` and filters that row, not some other `users` row in scope
 - Use `ref.Name` when you need to match against a table name for filtering logic
 - Append conditions to `core.Wheres` — they are AND'd together automatically
 - Return `nil, error` to reject the query entirely (e.g. access denied)
@@ -167,12 +184,12 @@ func TestInjectsTenantCondition(t *testing.T) {
     core := &nodes.SelectCore{From: users}
 
     mt := New(42)
-    result, err := mt.Transform(core)
+    result, err := mt.TransformSelect(core)
     if err != nil {
         t.Fatalf("unexpected error: %v", err)
     }
 
-    got := result.Accept(visitors.NewPostgresVisitor())
+    got := result.Accept(visitors.NewPostgresVisitor(visitors.WithoutParams()))
     expected := `SELECT * FROM "users" WHERE "users"."tenant_id" = 42`
     if got != expected {
         t.Errorf("expected:\n  %s\ngot:\n  %s", expected, got)
@@ -199,12 +216,12 @@ func TestAppliedToJoinedTables(t *testing.T) {
     }
 
     mt := New(42)
-    result, err := mt.Transform(core)
+    result, err := mt.TransformSelect(core)
     if err != nil {
         t.Fatalf("unexpected error: %v", err)
     }
 
-    got := result.Accept(visitors.NewPostgresVisitor())
+    got := result.Accept(visitors.NewPostgresVisitor(visitors.WithoutParams()))
     expected := `SELECT * FROM "users" INNER JOIN "posts" ON "users"."id" = "posts"."user_id" WHERE "users"."tenant_id" = 42 AND "posts"."tenant_id" = 42`
     if got != expected {
         t.Errorf("expected:\n  %s\ngot:\n  %s", expected, got)
@@ -218,7 +235,7 @@ func TestAppliedToJoinedTables(t *testing.T) {
 query := managers.NewSelectManager(users)
 query.Use(mytenant.New(42))
 
-sql, err := query.ToSQL(visitors.NewPostgresVisitor())
+sql, _, err := query.ToSQL(visitors.NewPostgresVisitor(visitors.WithoutParams()))
 // SELECT * FROM "users" WHERE "users"."tenant_id" = 42
 ```
 
