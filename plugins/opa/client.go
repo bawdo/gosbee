@@ -96,8 +96,9 @@ type compileResult struct {
 }
 
 type compileExpression struct {
-	Index int
-	Terms []compileTerm
+	Index   int
+	Negated bool
+	Terms   []compileTerm
 }
 
 // UnmarshalJSON handles the polymorphic "terms" field in OPA compile
@@ -108,13 +109,15 @@ type compileExpression struct {
 // The object form is normalised into a one-element slice.
 func (ce *compileExpression) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		Index int             `json:"index"`
-		Terms json.RawMessage `json:"terms"`
+		Index   int             `json:"index"`
+		Negated bool            `json:"negated"`
+		Terms   json.RawMessage `json:"terms"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 	ce.Index = raw.Index
+	ce.Negated = raw.Negated
 	if len(raw.Terms) == 0 {
 		return nil
 	}
@@ -267,10 +270,30 @@ func isDataRef(term compileTerm) bool {
 	return ok && name == "data"
 }
 
+// mirroredOps maps each ordering operator to its mirror, used when OPA puts
+// the value before the data ref: lt(5, col) means col > 5.
+var mirroredOps = map[string]string{
+	"lt":  "gt",
+	"lte": "gte",
+	"gt":  "lt",
+	"gte": "lte",
+}
+
 // translateExpression converts an OPA compile expression into an AST node
-// using the given table for column references. OPA does not guarantee operand
-// order, so we identify the data ref and value term by type rather than position.
+// using the given table for column references. A negated expression (Rego
+// "not") is wrapped in NOT (...).
 func translateExpression(expr compileExpression, table *nodes.Table) (nodes.Node, error) {
+	node, err := translateComparison(expr, table)
+	if err != nil || !expr.Negated {
+		return node, err
+	}
+	return node.(interface{ Not() *nodes.NotNode }).Not(), nil
+}
+
+// translateComparison converts the operator and operands of an OPA compile
+// expression into a comparison node. OPA does not guarantee operand order, so
+// we identify the data ref and value term by type rather than position.
+func translateComparison(expr compileExpression, table *nodes.Table) (nodes.Node, error) {
 	if len(expr.Terms) < 3 {
 		return nil, fmt.Errorf("opa: expression has %d terms, need at least 3", len(expr.Terms))
 	}
@@ -287,6 +310,13 @@ func translateExpression(expr compileExpression, table *nodes.Table) (nodes.Node
 		colTerm, valTerm = expr.Terms[1], expr.Terms[2]
 	case isDataRef(expr.Terms[2]):
 		colTerm, valTerm = expr.Terms[2], expr.Terms[1]
+		switch op {
+		case "startswith", "endswith", "contains":
+			return nil, fmt.Errorf("opa: %s with the data ref as second operand cannot be expressed as LIKE", op)
+		}
+		if mirrored, ok := mirroredOps[op]; ok {
+			op = mirrored
+		}
 	default:
 		return nil, errors.New("opa: expression has no data ref term")
 	}
