@@ -16,3 +16,10 @@ type UnaryNode struct {
 }
 
 func (n *UnaryNode) Accept(v Visitor) string { return v.VisitUnary(n) }
+
+// NewUnaryNode creates a UnaryNode with properly initialised embedded structs.
+func NewUnaryNode(expr Node, op UnaryOp) *UnaryNode {
+	n := &UnaryNode{Expr: expr, Op: op}
+	n.self = n
+	return n
+}

@@ -26,3 +26,10 @@ type OrderingNode struct {
 }
 
 func (n *OrderingNode) Accept(v Visitor) string { return v.VisitOrdering(n) }
+
+// NewOrderingNode creates an OrderingNode with properly initialised embedded structs.
+func NewOrderingNode(expr Node, dir OrderDirection, nulls NullsDirection) *OrderingNode {
+	n := &OrderingNode{Expr: expr, Direction: dir, Nulls: nulls}
+	n.self = n
+	return n
+}
