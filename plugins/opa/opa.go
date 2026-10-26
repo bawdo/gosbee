@@ -61,6 +61,11 @@ import (
 // than as a bare projection, where it cannot be replaced by its mask.
 var ErrMaskedColumnUse = errors.New("opa: masked column used outside a plain projection")
 
+// ErrUnsupportedStatement is returned when the plugin is applied to an INSERT,
+// UPDATE or DELETE. The plugin only polices SELECT, so it refuses other
+// statements rather than letting them through unpoliced.
+var ErrUnsupportedStatement = errors.New("opa: only SELECT statements can be policed")
+
 // PolicyFunc evaluates a policy for the given table name and returns
 // conditions to inject into the query's WHERE clause. Returning a non-nil
 // error rejects the query entirely (e.g., "access denied").
@@ -332,4 +337,19 @@ func refuseMaskedUse(core *nodes.SelectCore, scope plugins.Scope, masks map[stri
 // tableNameFromRelation extracts the underlying table name from a relation node.
 func tableNameFromRelation(rel nodes.Node) string {
 	return nodes.TableSourceName(rel)
+}
+
+// TransformInsert refuses the statement: the plugin only polices SELECT.
+func (o *OPA) TransformInsert(*nodes.InsertStatement) (*nodes.InsertStatement, error) {
+	return nil, ErrUnsupportedStatement
+}
+
+// TransformUpdate refuses the statement: the plugin only polices SELECT.
+func (o *OPA) TransformUpdate(*nodes.UpdateStatement) (*nodes.UpdateStatement, error) {
+	return nil, ErrUnsupportedStatement
+}
+
+// TransformDelete refuses the statement: the plugin only polices SELECT.
+func (o *OPA) TransformDelete(*nodes.DeleteStatement) (*nodes.DeleteStatement, error) {
+	return nil, ErrUnsupportedStatement
 }
