@@ -1,0 +1,120 @@
+name: Release
+
+# Releases are built from CHANGELOG.md, never written by hand:
+#   - pushing a v* tag publishes a release whose notes are that version's
+#     changelog section, with REPL binaries attached;
+#   - a change to CHANGELOG.md on main rewrites the notes of every existing
+#     release, so the two cannot drift.
+# Run it by hand on main to resync all release notes.
+
+permissions:
+  contents: read
+
+on:
+  push:
+    tags: [ 'v*' ]
+    branches: [ main ]
+    paths: [ CHANGELOG.md ]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write     # create the release and upload its assets
+      id-token: write     # sign the build provenance attestation
+      attestations: write # store the attestation
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the tag is on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$TAG points at a commit that is not on main"
+            exit 1
+          fi
+
+      - name: Check the changelog
+        run: scripts/changelog.sh check
+
+      - name: Extract release notes
+        run: scripts/changelog.sh notes "$TAG" "$GITHUB_REPOSITORY" > "$RUNNER_TEMP/notes.md"
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Build REPL binaries
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            GOOS="${target%/*}" GOARCH="${target#*/}" go build -trimpath \
+              -o "dist/gosbee-repl_${TAG}_${target%/*}_${target#*/}" ./cmd/repl
+          done
+          (cd dist && sha256sum gosbee-repl_* > SHA256SUMS)
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/gosbee-repl_*
+
+      - name: Publish the release
+        run: |
+          flags=()
+          case "$TAG" in *-*) flags+=(--prerelease) ;; esac
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" \
+              --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}" dist/*
+          fi
+
+  sync-notes:
+    name: Sync release notes
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # edit release notes
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the changelog
+        run: scripts/changelog.sh check
+
+      - name: Rewrite release notes from the changelog
+        run: |
+          for tag in $(scripts/changelog.sh versions); do
+            if ! gh release view "$tag" > /dev/null 2>&1; then
+              echo "$tag has no release yet, skipping"
+              continue
+            fi
+            scripts/changelog.sh notes "$tag" "$GITHUB_REPOSITORY" > "$RUNNER_TEMP/notes.md"
+            gh release edit "$tag" --title "$tag" --notes-file "$RUNNER_TEMP/notes.md"
+            echo "synced $tag"
+          done

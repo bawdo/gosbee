@@ -21,6 +21,7 @@ more expressive and powerful.
 - [Testing](#testing)
 - [Documentation](#documentation)
 - [Pull Request Process](#pull-request-process)
+- [Releasing](#releasing)
 
 ## Code of Conduct
 
@@ -393,6 +394,62 @@ If your change breaks backwards compatibility:
 1. Mark it clearly in the PR description
 2. Explain why it's necessary
 3. Provide migration guidance if possible
+
+### Branch Rules
+
+`main` only changes through pull requests. Direct pushes, force pushes and
+deleting `main` are all blocked. Pull requests are squash merged, so GitHub
+signs the resulting commit (a rebase merge cannot be signed). The pull request
+title becomes the commit subject, so write it in the past tense. A pull
+request can merge once these checks pass:
+
+- `CI OK`, which passes only when every job in the CI workflow passed:
+  - `Lint and audit`: golangci-lint, `go mod tidy -diff`, the changelog check,
+    govulncheck and a zizmor audit of the workflows
+  - `Test`: Linux on the oldest supported Go (`oldstable`) and the current one
+    (`stable`), both with the race detector, plus macOS on `stable`. Coverage
+    is uploaded from the Linux `stable` run.
+- `Analyze (go)` (CodeQL)
+
+CI also runs on every push to `main` and weekly, so a newly published
+vulnerability fails the build without waiting for a pull request.
+
+Every commit must be signed (GPG, SSH or S/MIME) and every conversation on
+the pull request resolved. No approving review is required. Pull requests from
+forks need a maintainer to approve their CI run before it starts.
+
+## Releasing
+
+Releases are built from [CHANGELOG.md](CHANGELOG.md), so the changelog is the
+only place release notes are written.
+
+1. In a pull request, add a section for the new version at the top of
+   `CHANGELOG.md`, following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
+   ```markdown
+   ## [v0.3.0] - 2026-11-15
+   ...
+   [v0.3.0]: https://github.com/bawdo/gosbee/compare/v0.2.0...v0.3.0
+   ```
+   The `Changelog` check (`scripts/changelog.sh check`) fails the pull request
+   if a heading is malformed, a version is missing its date or link reference,
+   or an existing tag has no section.
+2. Merge it, then tag the merged commit on `main` and push the tag:
+   ```bash
+   git pull
+   git tag -s v0.3.0 -m v0.3.0
+   git push origin v0.3.0
+   ```
+3. The `Release` workflow checks that the tag is on `main` and has a changelog
+   section, builds the REPL binaries for Linux and macOS with a `SHA256SUMS`
+   file and build provenance attestations, then publishes the GitHub release
+   using that section as its notes. A tag with a suffix (`v0.3.0-rc.1`) is
+   published as a pre-release.
+
+Editing `CHANGELOG.md` on `main` later rewrites the notes of every existing
+release to match, and running the `Release` workflow by hand on `main` does
+the same. Release tags (`v*`) cannot be moved or deleted once pushed.
+
+Preview a release's notes locally with `scripts/changelog.sh notes v0.3.0`.
 
 ## Questions?
 
