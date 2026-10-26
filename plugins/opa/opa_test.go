@@ -1002,3 +1002,33 @@ func TestDirectTransformSelectMasksAliasQualifiedProjection(t *testing.T) {
 		t.Errorf("expected:\n  %s\ngot:\n  %s", want, toSQL(t, result))
 	}
 }
+
+// --- DML is refused ---
+
+func TestOPARefusesDML(t *testing.T) {
+	policy := func(string) ([]nodes.Node, error) { return nil, nil }
+	table := nodes.NewTable("users")
+	v := visitors.NewPostgresVisitor(visitors.WithoutParams())
+
+	cases := map[string]func() error{
+		"update": func() error {
+			_, _, err := managers.NewUpdateManager(table).Use(New(policy)).ToSQL(v)
+			return err
+		},
+		"delete": func() error {
+			_, _, err := managers.NewDeleteManager(table).Use(New(policy)).ToSQL(v)
+			return err
+		},
+		"insert": func() error {
+			_, _, err := managers.NewInsertManager(table).Use(New(policy)).ToSQL(v)
+			return err
+		},
+	}
+	for name, run := range cases {
+		t.Run(name, func(t *testing.T) {
+			if err := run(); !errors.Is(err, ErrUnsupportedStatement) {
+				t.Fatalf("expected ErrUnsupportedStatement, got %v", err)
+			}
+		})
+	}
+}

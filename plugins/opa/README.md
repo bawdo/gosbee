@@ -34,8 +34,10 @@ generation. It does two things:
    cannot be masked, so the query is refused with `opa.ErrMaskedColumnUse`.
    Masks apply inside subqueries, CTE bodies and set-operation branches too.
 
-The plugin currently only supports SELECT queries. UPDATE, INSERT, and DELETE
-are left untouched.
+The plugin only polices SELECT queries. INSERT, UPDATE and DELETE are refused:
+applying the plugin to one of those managers makes `ToSQL` return
+`opa.ErrUnsupportedStatement` rather than silently emitting an unpoliced
+statement.
 
 ### Supported Operators
 
