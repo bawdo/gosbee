@@ -7,6 +7,7 @@ import (
 	"github.com/bawdo/gosbee/internal/testutil"
 	"github.com/bawdo/gosbee/nodes"
 	"github.com/bawdo/gosbee/plugins"
+	"github.com/bawdo/gosbee/visitors"
 )
 
 // --- NewSelectManager ---
@@ -1143,5 +1144,26 @@ func TestLateralJoinWithComplexSubquery(t *testing.T) {
 	}
 	if sql == "" {
 		t.Error("expected non-empty SQL")
+	}
+}
+
+// --- Nested query policing ---
+
+func TestSelectManagerTransformsSubquery(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	sub := NewSelectManager(posts).Select(posts.Col("user_id"))
+	m := NewSelectManager(users).
+		Where(users.Col("id").In(sub)).
+		Use(&tenantTransformer{val: "a"})
+
+	got, _, err := m.ToSQL(visitors.NewPostgresVisitor(visitors.WithoutParams()))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `SELECT * FROM "users" WHERE "users"."id" IN (SELECT "posts"."user_id" FROM "posts" WHERE "posts"."tenant" = 'a') AND "users"."tenant" = 'a'`
+	if got != want {
+		t.Errorf("\nwant: %s\n got: %s", want, got)
 	}
 }

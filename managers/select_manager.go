@@ -261,13 +261,14 @@ func (m *SelectManager) Use(t plugins.Transformer) *SelectManager {
 	return m
 }
 
-// toSQLCore applies all registered transformers to a copy of the SelectCore,
-// then generates SQL using the given visitor.
+// toSQLCore applies all registered transformers to a copy of the SelectCore
+// and to every query nested inside it (subqueries, CTEs, joined subqueries,
+// set-operation branches), then generates SQL using the given visitor.
 func (m *SelectManager) toSQLCore(v nodes.Visitor) (string, error) {
 	core := m.CloneCore()
 	for _, t := range m.transformers {
 		var err error
-		core, err = t.TransformSelect(core)
+		core, err = plugins.ApplySelect(t, core)
 		if err != nil {
 			return "", err
 		}
