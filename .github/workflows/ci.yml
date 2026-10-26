@@ -21,7 +21,7 @@ concurrency:
 jobs:
   lint:
     name: Lint and audit
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
@@ -82,8 +82,8 @@ jobs:
       matrix:
         # oldstable is the floor go.mod declares; stable is the current release.
         include:
-          - { os: ubuntu-26.04, go: oldstable, race: true }
-          - { os: ubuntu-26.04, go: stable, race: true, coverage: true }
+          - { os: ubuntu-latest, go: oldstable, race: true }
+          - { os: ubuntu-latest, go: stable, race: true, coverage: true }
           - { os: macos-latest, go: stable }
 
     steps:
@@ -135,7 +135,7 @@ jobs:
     name: CI OK
     if: always()
     needs: [ lint, test ]
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
