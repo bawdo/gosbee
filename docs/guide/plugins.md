@@ -61,18 +61,9 @@ sd = softdelete.New(
 )
 ```
 
-The plugin applies to all DML operations:
-
-```go
-// SELECT — adds WHERE "users"."deleted_at" IS NULL
-gosbee.NewSelect(users).Use(sd)
-
-// UPDATE — adds WHERE "users"."deleted_at" IS NULL
-gosbee.NewUpdate(users).Set(users.Col("status"), gosbee.BindParam("inactive")).Use(sd)
-
-// DELETE — adds WHERE "users"."deleted_at" IS NULL
-gosbee.NewDelete(users).Use(sd)
-```
+The plugin filters SELECT queries only. It does not touch INSERT, UPDATE or
+DELETE statements, or subqueries inside them, so add the condition yourself on
+those.
 
 When a query involves joins, the soft-delete condition is added for each joined
 table (unless restricted with `WithTables`).
@@ -85,10 +76,18 @@ one: subqueries, CTE bodies, joined subqueries and each branch of a
 so `FROM "c"` is left alone (the filter lives inside the CTE body instead).
 
 ```go
+import (
+    "github.com/bawdo/gosbee"
+    "github.com/bawdo/gosbee/plugins/softdelete"
+)
+
+sd := softdelete.New()
+users := gosbee.NewTable("users")
 posts := gosbee.NewTable("posts")
+
 sub := gosbee.NewSelect(posts).Select(posts.Col("user_id"))
 q := gosbee.NewSelect(users).
-    Where(&nodes.InNode{Expr: users.Col("id"), Vals: []nodes.Node{sub.Core}}).
+    Where(users.Col("id").In(sub)).
     Use(sd)
 // SELECT * FROM "users" WHERE "users"."id" IN
 //   (SELECT "posts"."user_id" FROM "posts" WHERE "posts"."deleted_at" IS NULL)
@@ -103,7 +102,7 @@ Rather than guess, it returns an error wrapping `plugins.ErrUnpoliceable`. If
 you know your raw fragments are safe, opt in:
 
 ```go
-sd = softdelete.New(softdelete.WithAllowRawSQL())
+sd := softdelete.New(softdelete.WithAllowRawSQL())
 ```
 
 #### Upgrading

@@ -226,31 +226,37 @@ func (m *SelectManager) WithRecursive(name string, query nodes.Node) *SelectMana
 }
 
 // Union creates a UNION set operation between this query and another.
+// The node runs no transformers; use NewSetOperationManager to apply them.
 func (m *SelectManager) Union(other *SelectManager) *nodes.SetOperationNode {
 	return &nodes.SetOperationNode{Left: m.Core, Right: other.Core, Type: nodes.Union}
 }
 
 // UnionAll creates a UNION ALL set operation between this query and another.
+// The node runs no transformers; use NewSetOperationManager to apply them.
 func (m *SelectManager) UnionAll(other *SelectManager) *nodes.SetOperationNode {
 	return &nodes.SetOperationNode{Left: m.Core, Right: other.Core, Type: nodes.UnionAll}
 }
 
 // Intersect creates an INTERSECT set operation between this query and another.
+// The node runs no transformers; use NewSetOperationManager to apply them.
 func (m *SelectManager) Intersect(other *SelectManager) *nodes.SetOperationNode {
 	return &nodes.SetOperationNode{Left: m.Core, Right: other.Core, Type: nodes.Intersect}
 }
 
 // IntersectAll creates an INTERSECT ALL set operation between this query and another.
+// The node runs no transformers; use NewSetOperationManager to apply them.
 func (m *SelectManager) IntersectAll(other *SelectManager) *nodes.SetOperationNode {
 	return &nodes.SetOperationNode{Left: m.Core, Right: other.Core, Type: nodes.IntersectAll}
 }
 
 // Except creates an EXCEPT set operation between this query and another.
+// The node runs no transformers; use NewSetOperationManager to apply them.
 func (m *SelectManager) Except(other *SelectManager) *nodes.SetOperationNode {
 	return &nodes.SetOperationNode{Left: m.Core, Right: other.Core, Type: nodes.Except}
 }
 
 // ExceptAll creates an EXCEPT ALL set operation between this query and another.
+// The node runs no transformers; use NewSetOperationManager to apply them.
 func (m *SelectManager) ExceptAll(other *SelectManager) *nodes.SetOperationNode {
 	return &nodes.SetOperationNode{Left: m.Core, Right: other.Core, Type: nodes.ExceptAll}
 }
