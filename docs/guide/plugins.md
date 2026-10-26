@@ -77,6 +77,45 @@ gosbee.NewDelete(users).Use(sd)
 When a query involves joins, the soft-delete condition is added for each joined
 table (unless restricted with `WithTables`).
 
+#### Nested queries
+
+The condition is applied to every SELECT in the query, not just the outermost
+one: subqueries, CTE bodies, joined subqueries and each branch of a
+`UNION`, `INTERSECT` or `EXCEPT`. A name that refers to a CTE is not a table,
+so `FROM "c"` is left alone (the filter lives inside the CTE body instead).
+
+```go
+posts := gosbee.NewTable("posts")
+sub := gosbee.NewSelect(posts).Select(posts.Col("user_id"))
+q := gosbee.NewSelect(users).
+    Where(&nodes.InNode{Expr: users.Col("id"), Vals: []nodes.Node{sub.Core}}).
+    Use(sd)
+// SELECT * FROM "users" WHERE "users"."id" IN
+//   (SELECT "posts"."user_id" FROM "posts" WHERE "posts"."deleted_at" IS NULL)
+//   AND "users"."deleted_at" IS NULL
+```
+
+#### Raw SQL is refused by default
+
+The plugin cannot see inside a raw SQL fragment (`SqlLiteral`, `StringJoin`),
+so it cannot tell whether the fragment reads a table it should be filtering.
+Rather than guess, it returns an error wrapping `plugins.ErrUnpoliceable`. If
+you know your raw fragments are safe, opt in:
+
+```go
+sd = softdelete.New(softdelete.WithAllowRawSQL())
+```
+
+#### Upgrading
+
+Earlier versions only filtered the outermost SELECT and let raw SQL through.
+After upgrading:
+
+- Subqueries, CTE bodies and set-operation branches now gain the
+  `IS NULL` condition, so the generated SQL changes.
+- Queries containing raw SQL now fail with `plugins.ErrUnpoliceable`. Either
+  replace the raw fragment with AST nodes or add `WithAllowRawSQL()`.
+
 ### OPA (Open Policy Agent)
 
 The `opa` plugin injects access-control conditions based on policies evaluated
