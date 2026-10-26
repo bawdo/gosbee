@@ -82,9 +82,10 @@ func (s Scope) withCTEs(names []string) Scope {
 // withQualifiers returns a copy of s with the table names and aliases that
 // core's FROM and JOINs introduce added to Qualifiers, shadowing any outer
 // entry of the same name. A derived-table alias or a CTE reference is not a
-// table, so it removes any outer entry it shadows instead. s.CTENames must
-// already include core's own CTEs. The memo is shared with s.
-func (s Scope) withQualifiers(core *nodes.SelectCore) Scope {
+// table: with shadow set it removes any outer entry of the same name,
+// otherwise it is ignored. s.CTENames must already include core's own CTEs.
+// The memo is shared with s.
+func (s Scope) withQualifiers(core *nodes.SelectCore, shadow bool) Scope {
 	refs := CollectTables(core)
 	if len(refs) == 0 {
 		return s
@@ -107,7 +108,9 @@ func (s Scope) withQualifiers(core *nodes.SelectCore) Scope {
 			continue
 		}
 		if table == "" || s.CTENames[table] {
-			delete(out.Qualifiers, name)
+			if shadow {
+				delete(out.Qualifiers, name)
+			}
 			continue
 		}
 		out.Qualifiers[name] = table
@@ -273,14 +276,23 @@ func (r *rewriter) assignment(a *nodes.AssignmentNode) *nodes.AssignmentNode {
 	return a
 }
 
-func (r *rewriter) join(j *nodes.JoinNode) *nodes.JoinNode {
+// coreJoin rewrites a join of a SelectCore, walking its right side with
+// rightScope and its ON condition with onScope, copying it when either
+// changed. r.scope is left as onScope.
+func (r *rewriter) coreJoin(j *nodes.JoinNode, rightScope, onScope Scope) *nodes.JoinNode {
 	if j == nil {
 		return nil
 	}
-	if out, ok := r.node(j).(*nodes.JoinNode); ok {
-		return out
+	r.scope = rightScope
+	right := r.node(j.Right)
+	r.scope = onScope
+	on := r.node(j.On)
+	if right == j.Right && on == j.On {
+		return j
 	}
-	return j
+	c := *j
+	c.Right, c.On = right, on
+	return &c
 }
 
 func (r *rewriter) cte(c *nodes.CTENode) *nodes.CTENode {
@@ -394,13 +406,27 @@ func (r *rewriter) VisitSelectCore(n *nodes.SelectCore) string {
 		c.CTEs[i] = r.cte(cte)
 	}
 
-	r.scope = outer.withCTEs(names).withQualifiers(n)
+	// A derived table body (non-LATERAL) sees only the enclosing scope, not
+	// this core's FROM entries or its own alias. A LATERAL body also sees
+	// this core's real tables. Every other clause sees the full own scope,
+	// where derived-table aliases shadow outer qualifiers.
+	base := outer.withCTEs(names)
+	own := base.withQualifiers(n, true)
+	lateral := base.withQualifiers(n, false)
+
+	r.scope = base
 	c.From = r.node(n.From)
+	r.scope = own
 	c.Projections = r.listCopy(n.Projections)
 	c.Joins = slices.Clone(n.Joins)
 	for i, j := range n.Joins {
-		c.Joins[i] = r.join(j)
+		right := base
+		if j != nil && j.Lateral {
+			right = lateral
+		}
+		c.Joins[i] = r.coreJoin(j, right, own)
 	}
+	r.scope = own
 	c.Wheres = r.listCopy(n.Wheres)
 	c.Groups = r.listCopy(n.Groups)
 	c.Havings = r.listCopy(n.Havings)

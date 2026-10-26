@@ -120,10 +120,12 @@ func New(opts ...Option) *SoftDelete {
 }
 
 // TransformSelect appends "column IS NULL" to the WHERE clause for each
-// matching table referenced in the query (FROM and JOINs). It has no CTE
-// scope; managers use TransformSelectScoped via the plugin walker.
+// matching table referenced in the query (FROM and JOINs), and in every query
+// nested in it, via plugins.ApplySelect. A direct call outside a manager gets
+// the same scope and raw SQL refusal as the plugin walker. The input is not
+// modified.
 func (sd *SoftDelete) TransformSelect(core *nodes.SelectCore) (*nodes.SelectCore, error) {
-	return sd.TransformSelectScoped(core, plugins.Scope{})
+	return plugins.ApplySelect(sd, core)
 }
 
 // TransformSelectScoped is TransformSelect aware of the walker's scope: names

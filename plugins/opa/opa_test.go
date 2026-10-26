@@ -897,3 +897,108 @@ func TestMaskRefusesCorrelatedAliasQualifiedUse(t *testing.T) {
 		t.Fatalf("expected ErrMaskedColumnUse, got %v (sql %q)", err, got)
 	}
 }
+
+func TestMaskReplacesInDerivedBodyNamedLikeOuterAlias(t *testing.T) {
+	t.Parallel()
+	u := nodes.NewTable("users").Alias("u")
+	posts := nodes.NewTable("posts")
+	body := managers.NewSelectManager(posts).Select(aliasQualifiedSSN())
+	derived := body.As("u")
+	inner := managers.NewSelectManager(derived).Select(derived.Col("ssn"))
+	q := managers.NewSelectManager(u).
+		Select(u.Col("id")).
+		Where(nodes.Exists(inner)).
+		Use(maskedSSN())
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := `(SELECT 'XXX' AS "ssn" FROM "posts") AS "u"`; !strings.Contains(got, want) {
+		t.Errorf("expected %s in:\n  %s", want, got)
+	}
+}
+
+func TestMaskRefusesUseInDerivedBodyNamedLikeOuterAlias(t *testing.T) {
+	t.Parallel()
+	u := nodes.NewTable("users").Alias("u")
+	posts := nodes.NewTable("posts")
+	body := managers.NewSelectManager(posts).
+		Select(posts.Col("id")).
+		Where(aliasQualifiedSSN().Eq("123"))
+	derived := body.As("u")
+	inner := managers.NewSelectManager(derived).Select(derived.Col("id"))
+	q := managers.NewSelectManager(u).
+		Select(u.Col("id")).
+		Where(nodes.Exists(inner)).
+		Use(maskedSSN())
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if !errors.Is(err, ErrMaskedColumnUse) {
+		t.Fatalf("expected ErrMaskedColumnUse, got %v (sql %q)", err, got)
+	}
+}
+
+func TestMaskPolicesLateralBodyReferencingSiblingAlias(t *testing.T) {
+	t.Parallel()
+	u := nodes.NewTable("users").Alias("u")
+	posts := nodes.NewTable("posts")
+
+	l := managers.NewSelectManager(posts).Select(aliasQualifiedSSN()).As("l")
+	m := managers.NewSelectManager(u).Select(u.Col("id"), l.Col("ssn"))
+	m.LateralJoin(l).On(u.Col("id").Eq(l.Col("ssn")))
+	got, _, err := m.Use(maskedSSN()).ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := `LATERAL (SELECT 'XXX' AS "ssn" FROM "posts") AS "l"`; !strings.Contains(got, want) {
+		t.Errorf("expected %s in:\n  %s", want, got)
+	}
+
+	w := managers.NewSelectManager(posts).Select(posts.Col("id")).Where(aliasQualifiedSSN().Eq("123")).As("w")
+	m2 := managers.NewSelectManager(u).Select(u.Col("id"))
+	m2.LateralJoin(w).On(u.Col("id").Eq(w.Col("id")))
+	got, _, err = m2.Use(maskedSSN()).ToSQL(pgVisitor())
+	if !errors.Is(err, ErrMaskedColumnUse) {
+		t.Fatalf("expected ErrMaskedColumnUse, got %v (sql %q)", err, got)
+	}
+}
+
+func TestMaskAllowsPolicyFilterInScalarSubqueryProjection(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	o := maskedSSN()
+	o.evalPolicy = func(name string) ([]nodes.Node, error) {
+		if name == "users" {
+			return []nodes.Node{nodes.NewTable(name).Col("ssn").NotEq("")}, nil
+		}
+		return nil, nil
+	}
+	sub := managers.NewSelectManager(users).Select(users.Col("id"))
+	q := managers.NewSelectManager(posts).Select(posts.Col("id"), sub.Core).Use(o)
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The policy condition is kept on the nested core. (A bare core as a
+	// projection renders without parentheses; that is the visitor's concern.)
+	if want := `SELECT "users"."id" FROM "users" WHERE "users"."ssn" != ''`; !strings.Contains(got, want) {
+		t.Errorf("expected %s in:\n  %s", want, got)
+	}
+}
+
+func TestDirectTransformSelectMasksAliasQualifiedProjection(t *testing.T) {
+	t.Parallel()
+	u := nodes.NewTable("users").Alias("u")
+	core := &nodes.SelectCore{From: u, Projections: []nodes.Node{aliasQualifiedSSN()}}
+
+	result, err := maskedSSN().TransformSelect(core)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := `SELECT 'XXX' AS "ssn" FROM "users" AS "u"`; toSQL(t, result) != want {
+		t.Errorf("expected:\n  %s\ngot:\n  %s", want, toSQL(t, result))
+	}
+}
