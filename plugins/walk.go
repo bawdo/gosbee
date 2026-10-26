@@ -20,10 +20,17 @@ type Scope struct {
 }
 
 // Tables returns the table relations referenced by core, as CollectTables
-// does, minus any that name a CTE in scope.
+// does, minus any that name a CTE in scope and minus derived tables (an alias
+// over a subquery). A derived table is policed by walking into it, so its
+// alias must not be mistaken for a table name.
 func (s Scope) Tables(core *nodes.SelectCore) []TableRef {
 	var refs []TableRef
 	for _, ref := range CollectTables(core) {
+		if alias, ok := ref.Relation.(*nodes.TableAlias); ok {
+			if _, isTable := alias.Relation.(*nodes.Table); !isTable {
+				continue
+			}
+		}
 		if !s.CTENames[ref.Name] {
 			refs = append(refs, ref)
 		}

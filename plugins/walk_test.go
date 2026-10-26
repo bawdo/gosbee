@@ -124,8 +124,10 @@ func TestApplySelectTransformsExistsJoinedSubqueryAndCTE(t *testing.T) {
 		p := newSub().As("p")
 		m := managers.NewSelectManager(users).Join(p).On(users.Col("id").Eq(p.Col("user_id")))
 		got := applySelect(t, &recordingTransformer{}, m)
-		assertContains(t, got, `INNER JOIN (SELECT "posts"."user_id" FROM "posts" WHERE "posts"."seen" IS NULL) AS "p"`)
-		assertContains(t, got, `"users"."seen" IS NULL`)
+		want := `SELECT * FROM "users" INNER JOIN (SELECT "posts"."user_id" FROM "posts" WHERE "posts"."seen" IS NULL) AS "p" ON "users"."id" = "p"."user_id" WHERE "users"."seen" IS NULL`
+		if got != want {
+			t.Errorf("\nwant: %s\n got: %s", want, got)
+		}
 	})
 
 	t.Run("cte body", func(t *testing.T) {
@@ -135,6 +137,29 @@ func TestApplySelectTransformsExistsJoinedSubqueryAndCTE(t *testing.T) {
 		assertContains(t, got, `WITH "c" AS (SELECT "posts"."user_id" FROM "posts" WHERE "posts"."seen" IS NULL)`)
 		assertContains(t, got, `"users"."seen" IS NULL`)
 	})
+}
+
+func TestScopeTablesSkipsDerivedTableAlias(t *testing.T) {
+	t.Parallel()
+	accounts := nodes.NewTable("accounts")
+	posts := nodes.NewTable("posts")
+	// The derived table is aliased like a policed table; it must not be
+	// reported as that table, since it is policed by walking into it.
+	derived := managers.NewSelectManager(posts).Select(posts.Col("user_id")).As("users")
+	m := managers.NewSelectManager(managers.NewSelectManager(posts).As("d")).
+		Join(accounts).On(accounts.Col("id").Eq(nodes.NewTable("d").Col("id"))).
+		Join(derived).On(accounts.Col("id").Eq(derived.Col("user_id")))
+
+	tr := &recordingTransformer{}
+	got := applySelect(t, tr, m)
+
+	outerCall := tr.calls[len(tr.calls)-1]
+	if !slices.Equal(outerCall.tables, []string{"accounts"}) {
+		t.Errorf("outer scope.Tables: want [accounts], got %v", outerCall.tables)
+	}
+	if strings.Contains(got, `"users"."seen"`) || strings.Contains(got, `"d"."seen"`) {
+		t.Errorf("derived table alias was filtered as a table: %s", got)
+	}
 }
 
 func TestApplyNodeTransformsSetOperationBranches(t *testing.T) {
