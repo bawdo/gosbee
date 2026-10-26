@@ -119,40 +119,44 @@ func (s *Session) ensureTable(name string) *nodes.Table {
 	return t
 }
 
-// generateSQLWith produces the SQL string for the current query using v as the visitor.
-func (s *Session) generateSQLWith(v nodes.Visitor) (string, error) {
-	var sql string
-	var err error
-
+// buildSQL renders the current statement with v and returns the SQL and any
+// bind parameters. It is the single render path for sql, exec and
+// GenerateSQL, so the session's plugins police every query it renders,
+// including CTE bodies and set-operation branches.
+func (s *Session) buildSQL(v nodes.Visitor) (string, []any, error) {
 	switch s.mode {
 	case modeInsert:
 		if s.insertQuery == nil {
-			return "", errors.New("no INSERT query defined")
+			return "", nil, errors.New("no INSERT query defined")
 		}
-		sql, _, err = s.insertQuery.ToSQL(v)
+		return s.insertQuery.ToSQL(v)
 	case modeUpdate:
 		if s.updateQuery == nil {
-			return "", errors.New("no UPDATE query defined")
+			return "", nil, errors.New("no UPDATE query defined")
 		}
-		sql, _, err = s.updateQuery.ToSQL(v)
+		return s.updateQuery.ToSQL(v)
 	case modeDelete:
 		if s.deleteQuery == nil {
-			return "", errors.New("no DELETE query defined")
+			return "", nil, errors.New("no DELETE query defined")
 		}
-		sql, _, err = s.deleteQuery.ToSQL(v)
+		return s.deleteQuery.ToSQL(v)
 	default:
 		if s.query == nil {
-			return "", errNoQuery
+			return "", nil, errNoQuery
 		}
-		sql, _, err = s.query.ToSQL(v)
+		s.attachCTEs()
+		defer s.cleanupCTEs()
+		if op := s.buildSetOperationChain(); op != nil {
+			return op.ToSQL(v)
+		}
+		return s.query.ToSQL(v)
 	}
-
-	return sql, err
 }
 
 // GenerateSQL produces the SQL string for the current query.
 func (s *Session) GenerateSQL() (string, error) {
-	return s.generateSQLWith(s.visitor)
+	sql, _, err := s.buildSQL(s.visitor)
+	return sql, err
 }
 
 // Execute parses and runs a single REPL command.
@@ -730,40 +734,24 @@ func (s *Session) cmdCrossJoin(args string) error {
 // CTEs, set operations, and parameterised output. Output is formatted
 // using FormattingVisitor for human-readable multi-line SQL.
 func (s *Session) cmdSQL() error {
-	fv := visitors.NewFormattingVisitor(s.visitor)
-
-	// DML modes use the formatting visitor for SQL generation.
-	if s.mode != modeSelect {
-		sql, err := s.generateSQLWith(fv)
-		if err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintf(s.out, "%s;\n", indentSQL(sql))
-		return nil
+	sql, params, err := s.buildSQL(visitors.NewFormattingVisitor(s.visitor))
+	if err != nil {
+		return err
 	}
-
-	if s.query == nil {
-		return errNoQuery
+	_, _ = fmt.Fprintf(s.out, "%s;\n", indentSQL(sql))
+	if s.parameterize && len(params) > 0 {
+		_, _ = fmt.Fprintf(s.out, "  Params: %v\n", params)
 	}
-
-	s.attachCTEs()
-	defer s.cleanupCTEs()
-
-	if finalNode := s.buildSetOperationChain(); finalNode != nil {
-		s.printSQLNode(finalNode, fv)
-		return nil
-	}
-
-	return s.printSQLQuery(fv)
+	return nil
 }
 
 // attachCTEs attaches pushed CTE entries to the current query's core.
 func (s *Session) attachCTEs() {
 	for _, cte := range s.ctes {
 		if cte.recursive {
-			s.query.WithRecursive(cte.name, cte.query.Core)
+			s.query.WithRecursive(cte.name, cte.query)
 		} else {
-			s.query.With(cte.name, cte.query.Core)
+			s.query.With(cte.name, cte.query)
 		}
 	}
 }
@@ -778,8 +766,9 @@ func (s *Session) cleanupCTEs() {
 // LIMIT, OFFSET, and ORDER BY on the last query's core are lifted to the
 // outermost SetOperationNode so they apply to the combined result, not just
 // the last subquery. A shallow copy of the last core is used to avoid
-// mutating the session state.
-func (s *Session) buildSetOperationChain() nodes.Node {
+// mutating the session state. The session's plugins are applied to the
+// returned manager so they police every branch.
+func (s *Session) buildSetOperationChain() *managers.SetOperationManager {
 	if len(s.setOps) == 0 {
 		return nil
 	}
@@ -817,52 +806,15 @@ func (s *Session) buildSetOperationChain() nodes.Node {
 	outer.Offset = outerOffset
 	outer.Orders = outerOrders
 
-	return finalNode
+	m := managers.NewSetOperationManager(outer)
+	s.plugins.applyTo(func(t plugins.Transformer) { m.Use(t) })
+	return m
 }
 
 // indentSQL adds a two-space prefix to every line of sql so the output is
 // consistently indented regardless of how many newlines the SQL contains.
 func indentSQL(sql string) string {
 	return "  " + strings.ReplaceAll(sql, "\n", "\n  ")
-}
-
-// printSQLNode renders a node to SQL using v and prints it, including params if enabled.
-func (s *Session) printSQLNode(n nodes.Node, v nodes.Visitor) {
-	if p, ok := v.(nodes.Parameterizer); ok && s.parameterize {
-		p.Reset()
-		sql := n.Accept(v)
-		_, _ = fmt.Fprintf(s.out, "%s;\n", indentSQL(sql))
-		params := p.Params()
-		if len(params) > 0 {
-			_, _ = fmt.Fprintf(s.out, "  Params: %v\n", params)
-		}
-		return
-	}
-	sql := n.Accept(v)
-	_, _ = fmt.Fprintf(s.out, "%s;\n", indentSQL(sql))
-}
-
-// printSQLQuery generates SQL from the current query using v and prints it with params.
-func (s *Session) printSQLQuery(v nodes.Visitor) error {
-	if p, ok := v.(nodes.Parameterizer); ok && s.parameterize {
-		p.Reset()
-		sql, err := s.generateSQLWith(v)
-		if err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintf(s.out, "%s;\n", indentSQL(sql))
-		params := p.Params()
-		if len(params) > 0 {
-			_, _ = fmt.Fprintf(s.out, "  Params: %v\n", params)
-		}
-		return nil
-	}
-	sql, err := s.generateSQLWith(v)
-	if err != nil {
-		return err
-	}
-	_, _ = fmt.Fprintf(s.out, "%s;\n", indentSQL(sql))
-	return nil
 }
 
 func (s *Session) cmdEngine(args string) error {
@@ -1054,45 +1006,7 @@ func (s *Session) cmdExec() error {
 		_, _ = fmt.Fprintf(s.out, "  Warning: connected to %s but engine is set to %s\n", s.conn.engine, s.engine)
 	}
 
-	pv := s.makeParamVisitor()
-	var sqlStr string
-	var params []any
-	var err error
-
-	switch s.mode {
-	case modeInsert:
-		if s.insertQuery == nil {
-			return errors.New("no INSERT query defined")
-		}
-		sqlStr, params, err = s.insertQuery.ToSQL(pv)
-	case modeUpdate:
-		if s.updateQuery == nil {
-			return errors.New("no UPDATE query defined")
-		}
-		sqlStr, params, err = s.updateQuery.ToSQL(pv)
-	case modeDelete:
-		if s.deleteQuery == nil {
-			return errors.New("no DELETE query defined")
-		}
-		sqlStr, params, err = s.deleteQuery.ToSQL(pv)
-	default:
-		if s.query == nil {
-			return errNoQuery
-		}
-		s.attachCTEs()
-		defer s.cleanupCTEs()
-		if finalNode := s.buildSetOperationChain(); finalNode != nil {
-			if p, ok := pv.(nodes.Parameterizer); ok {
-				p.Reset()
-			}
-			sqlStr = finalNode.Accept(pv)
-			if p, ok := pv.(nodes.Parameterizer); ok {
-				params = p.Params()
-			}
-		} else {
-			sqlStr, params, err = s.query.ToSQL(pv)
-		}
-	}
+	sqlStr, params, err := s.buildSQL(s.makeParamVisitor())
 	if err != nil {
 		return err
 	}
