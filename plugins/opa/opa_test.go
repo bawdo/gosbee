@@ -818,3 +818,82 @@ func TestOPANestedPolicyDenialFailsQuery(t *testing.T) {
 		t.Errorf("expected no SQL on denial, got %q", got)
 	}
 }
+
+func TestMaskAllowsPolicyFilterOnMaskedColumnInNestedQuery(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	o := maskedSSN()
+	o.evalPolicy = func(name string) ([]nodes.Node, error) {
+		if name == "users" {
+			return []nodes.Node{nodes.NewTable(name).Col("ssn").NotEq("")}, nil
+		}
+		return nil, nil
+	}
+	sub := managers.NewSelectManager(users).Select(users.Col("id"))
+	q := managers.NewSelectManager(posts).
+		Select(posts.Col("id")).
+		Where(posts.Col("author_id").In(sub.Core)).
+		Use(o)
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `SELECT "posts"."id" FROM "posts" WHERE "posts"."author_id" IN (SELECT "users"."id" FROM "users" WHERE "users"."ssn" != '')`
+	if got != want {
+		t.Errorf("expected:\n  %s\ngot:\n  %s", want, got)
+	}
+}
+
+// aliasQualifiedSSN is the masked column qualified by name with the alias u,
+// as a caller would write it without holding the TableAlias node.
+func aliasQualifiedSSN() *nodes.Attribute {
+	return nodes.NewTable("u").Col("ssn")
+}
+
+func TestMaskReplacesAliasQualifiedProjection(t *testing.T) {
+	t.Parallel()
+	u := nodes.NewTable("users").Alias("u")
+	q := managers.NewSelectManager(u).Select(aliasQualifiedSSN()).Use(maskedSSN())
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `SELECT 'XXX' AS "ssn" FROM`) || strings.Contains(got, `"u"."ssn"`) {
+		t.Errorf("expected the alias-qualified column to be masked, got:\n  %s", got)
+	}
+}
+
+func TestMaskRefusesAliasQualifiedUseInWhere(t *testing.T) {
+	t.Parallel()
+	u := nodes.NewTable("users").Alias("u")
+	q := managers.NewSelectManager(u).
+		Select(u.Col("id")).
+		Where(aliasQualifiedSSN().Eq("123")).
+		Use(maskedSSN())
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if !errors.Is(err, ErrMaskedColumnUse) {
+		t.Fatalf("expected ErrMaskedColumnUse, got %v (sql %q)", err, got)
+	}
+}
+
+func TestMaskRefusesCorrelatedAliasQualifiedUse(t *testing.T) {
+	t.Parallel()
+	u := nodes.NewTable("users").Alias("u")
+	posts := nodes.NewTable("posts")
+	inner := managers.NewSelectManager(posts).
+		Select(posts.Col("id")).
+		Where(posts.Col("author_ssn").Eq(aliasQualifiedSSN()))
+	q := managers.NewSelectManager(u).
+		Select(u.Col("id")).
+		Where(nodes.Exists(inner)).
+		Use(maskedSSN())
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if !errors.Is(err, ErrMaskedColumnUse) {
+		t.Fatalf("expected ErrMaskedColumnUse, got %v (sql %q)", err, got)
+	}
+}

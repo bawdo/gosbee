@@ -2,6 +2,7 @@ package plugins_test
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -15,8 +16,9 @@ import (
 
 // recordedCall captures what the walker showed the transformer for one core.
 type recordedCall struct {
-	tables   []string
-	cteNames []string
+	tables     []string
+	cteNames   []string
+	qualifiers map[string]string
 }
 
 // recordingTransformer appends "<table>"."seen" IS NULL for every table in
@@ -29,7 +31,7 @@ type recordingTransformer struct {
 }
 
 func (r *recordingTransformer) TransformSelectScoped(core *nodes.SelectCore, scope plugins.Scope) (*nodes.SelectCore, error) {
-	call := recordedCall{}
+	call := recordedCall{qualifiers: maps.Clone(scope.Qualifiers)}
 	for name := range scope.CTENames {
 		call.cteNames = append(call.cteNames, name)
 	}
@@ -550,5 +552,128 @@ func TestApplyNodeReachesSubqueriesInEveryContainer(t *testing.T) {
 				t.Errorf("input changed\nbefore: %s\n after: %s", before, after)
 			}
 		})
+	}
+}
+
+func TestScopeQualifiersOwnCore(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	u := users.Alias("u")
+	derived := managers.NewSelectManager(nodes.NewTable("orders")).As("d")
+	c := nodes.NewTable("c")
+	m := managers.NewSelectManager(u).
+		With("c", managers.NewSelectManager(nodes.NewTable("tags")))
+	m.Join(posts).On(u.Col("id").Eq(posts.Col("user_id")))
+	m.Join(derived).On(u.Col("id").Eq(derived.Col("user_id")))
+	m.Join(c).On(u.Col("id").Eq(c.Col("user_id")))
+
+	tr := &recordingTransformer{}
+	applySelect(t, tr, m)
+
+	outer := tr.calls[len(tr.calls)-1]
+	want := map[string]string{"u": "users", "posts": "posts"}
+	if !maps.Equal(outer.qualifiers, want) {
+		t.Errorf("expected qualifiers %v, got %v", want, outer.qualifiers)
+	}
+}
+
+func TestScopeQualifiersIncludeEnclosingCore(t *testing.T) {
+	t.Parallel()
+	u := nodes.NewTable("users").Alias("u")
+	posts := nodes.NewTable("posts")
+	inner := managers.NewSelectManager(posts).Where(posts.Col("user_id").Eq(u.Col("id")))
+	m := managers.NewSelectManager(u).Where(nodes.Exists(inner))
+
+	tr := &recordingTransformer{}
+	applySelect(t, tr, m)
+
+	if len(tr.calls) != 2 {
+		t.Fatalf("expected 2 transformer calls, got %d", len(tr.calls))
+	}
+	if want := map[string]string{"u": "users", "posts": "posts"}; !maps.Equal(tr.calls[0].qualifiers, want) {
+		t.Errorf("expected inner qualifiers %v, got %v", want, tr.calls[0].qualifiers)
+	}
+	if want := map[string]string{"u": "users"}; !maps.Equal(tr.calls[1].qualifiers, want) {
+		t.Errorf("expected outer qualifiers %v, got %v", want, tr.calls[1].qualifiers)
+	}
+}
+
+func TestScopeQualifiersInnerNamesShadowOuter(t *testing.T) {
+	t.Parallel()
+	x := nodes.NewTable("users").Alias("x")
+	d := nodes.NewTable("accounts").Alias("d")
+	innerX := nodes.NewTable("posts").Alias("x")
+	derived := managers.NewSelectManager(nodes.NewTable("orders")).As("d")
+	inner := managers.NewSelectManager(innerX)
+	inner.Join(derived).On(innerX.Col("id").Eq(derived.Col("post_id")))
+	m := managers.NewSelectManager(x).Where(nodes.Exists(inner))
+	m.Join(d).On(x.Col("id").Eq(d.Col("user_id")))
+
+	tr := &recordingTransformer{}
+	applySelect(t, tr, m)
+
+	// Post-order: the derived table body, the EXISTS core, then the outer core.
+	if len(tr.calls) != 3 {
+		t.Fatalf("expected 3 transformer calls, got %d", len(tr.calls))
+	}
+	want := map[string]string{"x": "posts"}
+	if got := tr.calls[1].qualifiers; !maps.Equal(got, want) {
+		t.Errorf("expected inner qualifiers %v, got %v", want, got)
+	}
+	if want := map[string]string{"x": "users", "d": "accounts"}; !maps.Equal(tr.calls[2].qualifiers, want) {
+		t.Errorf("expected outer qualifiers %v, got %v", want, tr.calls[2].qualifiers)
+	}
+}
+
+func TestShallowAttributesSkipsNestedQueries(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	where := users.Col("active")
+	lowered := users.Col("email")
+	nested := posts.Col("user_id")
+	branch := posts.Col("author_id")
+	union := managers.NewSelectManager(posts).Select(nested).
+		Union(managers.NewSelectManager(posts).Select(branch))
+	m := managers.NewSelectManager(users).
+		Where(where.Eq(true)).
+		Where(nodes.Lower(lowered).Eq("x")).
+		Where(nodes.Exists(managers.NewSelectManager(posts).Where(nested.IsNotNull()))).
+		Where(users.Col("id").In(union))
+
+	got := plugins.ShallowAttributes(m.Core)
+	for _, want := range []*nodes.Attribute{where, lowered} {
+		if !slices.Contains(got, want) {
+			t.Errorf("expected %s.%s in result", nodes.RelationName(want.Relation), want.Name)
+		}
+	}
+	for _, unwanted := range []*nodes.Attribute{nested, branch} {
+		if slices.Contains(got, unwanted) {
+			t.Errorf("did not expect nested %s.%s in result", nodes.RelationName(unwanted.Relation), unwanted.Name)
+		}
+	}
+	if len(got) != 3 {
+		t.Errorf("expected 3 attributes (active, email, id), got %d", len(got))
+	}
+}
+
+func TestScopeQualifiersSurviveInnerCTEs(t *testing.T) {
+	t.Parallel()
+	u := nodes.NewTable("users").Alias("u")
+	posts := nodes.NewTable("posts")
+	inner := managers.NewSelectManager(posts).
+		With("c", managers.NewSelectManager(nodes.NewTable("tags")))
+	m := managers.NewSelectManager(u).Where(nodes.Exists(inner))
+
+	tr := &recordingTransformer{}
+	applySelect(t, tr, m)
+
+	// Post-order: the CTE body, the EXISTS core, then the outer core.
+	if len(tr.calls) != 3 {
+		t.Fatalf("expected 3 transformer calls, got %d", len(tr.calls))
+	}
+	if want := map[string]string{"u": "users", "posts": "posts"}; !maps.Equal(tr.calls[1].qualifiers, want) {
+		t.Errorf("expected inner qualifiers %v, got %v", want, tr.calls[1].qualifiers)
 	}
 }
