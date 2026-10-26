@@ -21,6 +21,7 @@ more expressive and powerful.
 - [Testing](#testing)
 - [Documentation](#documentation)
 - [Pull Request Process](#pull-request-process)
+- [Releasing](#releasing)
 
 ## Code of Conduct
 
@@ -393,6 +394,54 @@ If your change breaks backwards compatibility:
 1. Mark it clearly in the PR description
 2. Explain why it's necessary
 3. Provide migration guidance if possible
+
+### Branch Rules
+
+`main` only changes through pull requests. Direct pushes, force pushes and
+deleting `main` are all blocked. A pull request can merge (squash or rebase)
+once these checks pass:
+
+- `Test (1.26.x, ubuntu-latest)` and `Test (1.26.x, macos-latest)`
+- `Lint`
+- `Changelog`
+- `Analyze (go)` (CodeQL)
+
+Every commit must be signed (GPG, SSH or S/MIME) and every conversation on
+the pull request resolved. No approving review is required. Pull requests from
+forks need a maintainer to approve their CI run before it starts.
+
+## Releasing
+
+Releases are built from [CHANGELOG.md](CHANGELOG.md), so the changelog is the
+only place release notes are written.
+
+1. In a pull request, add a section for the new version at the top of
+   `CHANGELOG.md`, following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
+   ```markdown
+   ## [v0.3.0] - 2026-11-15
+   ...
+   [v0.3.0]: https://github.com/bawdo/gosbee/compare/v0.2.0...v0.3.0
+   ```
+   The `Changelog` check (`scripts/changelog.sh check`) fails the pull request
+   if a heading is malformed, a version is missing its date or link reference,
+   or an existing tag has no section.
+2. Merge it, then tag the merged commit on `main` and push the tag:
+   ```bash
+   git pull
+   git tag -s v0.3.0 -m v0.3.0
+   git push origin v0.3.0
+   ```
+3. The `Release` workflow checks that the tag is on `main` and has a changelog
+   section, builds the REPL binaries for Linux and macOS with a `SHA256SUMS`
+   file and build provenance attestations, then publishes the GitHub release
+   using that section as its notes. A tag with a suffix (`v0.3.0-rc.1`) is
+   published as a pre-release.
+
+Editing `CHANGELOG.md` on `main` later rewrites the notes of every existing
+release to match, and running the `Release` workflow by hand on `main` does
+the same. Release tags (`v*`) cannot be moved or deleted once pushed.
+
+Preview a release's notes locally with `scripts/changelog.sh notes v0.3.0`.
 
 ## Questions?
 

@@ -56,3 +56,18 @@ Check Results:
 CI Success Probability: 100% 🎉
 ✓ All checks passed! CI should succeed.
 ```
+
+## changelog.sh
+
+**Purpose**: Reads `CHANGELOG.md` so GitHub releases are built from it. Used by
+the `Changelog` CI check and the `Release` workflow.
+
+**Usage**:
+```bash
+./scripts/changelog.sh check                 # validate headings, dates, links and tag coverage
+./scripts/changelog.sh versions              # list released versions, newest first
+./scripts/changelog.sh notes v0.2.0          # print the release notes for a version
+./scripts/changelog.sh notes v0.2.0 bawdo/gosbee   # same, with relative links made absolute
+```
+
+See [Releasing](../CONTRIBUTING.md#releasing) for the full release process.
