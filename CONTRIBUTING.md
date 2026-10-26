@@ -398,8 +398,10 @@ If your change breaks backwards compatibility:
 ### Branch Rules
 
 `main` only changes through pull requests. Direct pushes, force pushes and
-deleting `main` are all blocked. A pull request can merge (squash or rebase)
-once these checks pass:
+deleting `main` are all blocked. Pull requests are squash merged, so GitHub
+signs the resulting commit (a rebase merge cannot be signed). The pull request
+title becomes the commit subject, so write it in the past tense. A pull
+request can merge once these checks pass:
 
 - `CI OK`, which passes only when every job in the CI workflow passed:
   - `Lint and audit`: golangci-lint, `go mod tidy -diff`, the changelog check,
