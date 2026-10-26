@@ -71,7 +71,7 @@ lint: ## Run golangci-lint with the CI timeout
 
 .PHONY: vuln
 vuln: ## Scan dependencies for known vulnerabilities
-	govulncheck ./...
+	$(GO) -C tools tool govulncheck -C .. ./...
 
 .PHONY: build
 build: ## Build the REPL binary into bin/

@@ -21,7 +21,7 @@ concurrency:
 jobs:
   lint:
     name: Lint and audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
 
     steps:
@@ -36,8 +36,11 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
-          # golangci-lint-action caches the Go build itself; two caches clash.
-          cache: false
+          # golangci-lint-action (v5+) leaves the Go build cache to setup-go,
+          # so keep it on. Key on the tools module too, for govulncheck.
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
@@ -49,13 +52,16 @@ jobs:
           args: --timeout=5m
 
       - name: Check go.mod and go.sum are tidy
-        run: go mod tidy -diff
+        run: |
+          go mod tidy -diff
+          go -C tools mod tidy -diff
 
       - name: Check CHANGELOG.md
         run: scripts/changelog.sh check
 
       - name: Scan for known vulnerabilities
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+        # Pinned in tools/go.mod, so Dependabot keeps it current.
+        run: go -C tools tool govulncheck -C .. ./...
 
       - name: Audit workflows with zizmor
         uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
@@ -68,13 +74,16 @@ jobs:
     name: Test (${{ matrix.go }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # Codecov upload via OIDC, no token secret
     strategy:
       fail-fast: false
       matrix:
         # oldstable is the floor go.mod declares; stable is the current release.
         include:
-          - { os: ubuntu-latest, go: oldstable, race: true }
-          - { os: ubuntu-latest, go: stable, race: true, coverage: true }
+          - { os: ubuntu-26.04, go: oldstable, race: true }
+          - { os: ubuntu-26.04, go: stable, race: true, coverage: true }
           - { os: macos-latest, go: stable }
 
     steps:
@@ -93,12 +102,14 @@ jobs:
         run: go mod download
 
       # -count=1 stops the restored build cache from replaying earlier results.
+      # -shuffle=on randomises test order to expose order-dependent tests; a
+      # failing run prints its seed, rerun with -shuffle=<seed> to reproduce.
       - name: Run tests
         env:
           RACE: ${{ matrix.race && 'true' || 'false' }}
           COVERAGE: ${{ matrix.coverage && 'true' || 'false' }}
         run: |
-          args=(-count=1 -v)
+          args=(-count=1 -shuffle=on)
           if [ "$RACE" = true ]; then
             args+=(-race)
           fi
@@ -113,7 +124,7 @@ jobs:
         if: matrix.coverage
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           files: ./coverage.txt
           fail_ci_if_error: false
           verbose: true
@@ -124,7 +135,7 @@ jobs:
     name: CI OK
     if: always()
     needs: [ lint, test ]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
 
     steps:

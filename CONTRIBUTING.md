@@ -148,12 +148,12 @@ Code contributions might include:
 
    **Dependencies**
 
-   The following tools must be installed for all checks to run:
+   The following tools must be installed for all checks to run. `govulncheck`
+   needs no install: it is pinned in `tools/go.mod` and run with `go tool`.
 
    | Tool | Install |
    |------|---------|
    | `golangci-lint` | `brew install golangci-lint` |
-   | `govulncheck` | `go install golang.org/x/vuln/cmd/govulncheck@latest` |
    | `bc` | Pre-installed on macOS and Linux |
 
 5. **Run linters:**
