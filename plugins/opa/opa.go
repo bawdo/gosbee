@@ -118,11 +118,12 @@ func NewFromServer(url, policyPath string, input map[string]any, opts ...Option)
 	return o
 }
 
-// TransformSelect is TransformSelectScoped with no CTE scope and no memo, so
-// every table is compiled afresh. Managers use TransformSelectScoped via the
-// plugin walker.
+// TransformSelect applies the transformer to core and every query nested in
+// it via plugins.ApplySelect, so a direct call outside a manager gets the
+// same scope (qualifiers, CTE names, raw SQL refusal) as the plugin walker.
+// The input is not modified.
 func (o *OPA) TransformSelect(core *nodes.SelectCore) (*nodes.SelectCore, error) {
-	return o.TransformSelectScoped(core, plugins.Scope{})
+	return plugins.ApplySelect(o, core)
 }
 
 // TransformSelectScoped evaluates the policy for each table referenced in the
@@ -313,6 +314,12 @@ func refuseMaskedUse(core *nodes.SelectCore, scope plugins.Scope, masks map[stri
 	}
 
 	for _, expr := range exprs {
+		switch expr.(type) {
+		case *nodes.SelectCore, *nodes.SetOperationNode:
+			// A nested query used directly as an expression was policed
+			// at its own visit.
+			continue
+		}
 		for _, attr := range plugins.ShallowAttributes(expr) {
 			if _, masked := maskFor(scope, masks, attr); masked {
 				return fmt.Errorf("%w: %s.%s", ErrMaskedColumnUse, maskedTableName(scope, attr), attr.Name)

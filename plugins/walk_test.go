@@ -677,3 +677,49 @@ func TestScopeQualifiersSurviveInnerCTEs(t *testing.T) {
 		t.Errorf("expected inner qualifiers %v, got %v", want, tr.calls[1].qualifiers)
 	}
 }
+
+func TestScopeQualifiersDerivedBodySeesEnclosingScopeOnly(t *testing.T) {
+	t.Parallel()
+	u := nodes.NewTable("users").Alias("u")
+	derived := managers.NewSelectManager(nodes.NewTable("posts")).As("u")
+	inner := managers.NewSelectManager(derived)
+	m := managers.NewSelectManager(u).Where(nodes.Exists(inner))
+
+	tr := &recordingTransformer{}
+	applySelect(t, tr, m)
+
+	// Post-order: the derived body, the EXISTS core, then the outer core.
+	if len(tr.calls) != 3 {
+		t.Fatalf("expected 3 transformer calls, got %d", len(tr.calls))
+	}
+	if want := map[string]string{"u": "users", "posts": "posts"}; !maps.Equal(tr.calls[0].qualifiers, want) {
+		t.Errorf("expected derived body qualifiers %v, got %v", want, tr.calls[0].qualifiers)
+	}
+	if want := map[string]string{}; !maps.Equal(tr.calls[1].qualifiers, want) {
+		t.Errorf("expected EXISTS core qualifiers %v, got %v", want, tr.calls[1].qualifiers)
+	}
+}
+
+func TestScopeQualifiersLateralBodySeesSiblingTables(t *testing.T) {
+	t.Parallel()
+	u := nodes.NewTable("users").Alias("u")
+	d := managers.NewSelectManager(nodes.NewTable("orders")).As("d")
+	l := managers.NewSelectManager(nodes.NewTable("posts")).As("l")
+	m := managers.NewSelectManager(u)
+	m.Join(d).On(u.Col("id").Eq(d.Col("user_id")))
+	m.LateralJoin(l).On(u.Col("id").Eq(l.Col("user_id")))
+
+	tr := &recordingTransformer{}
+	applySelect(t, tr, m)
+
+	// Post-order: the derived body d, the lateral body l, then the outer core.
+	if len(tr.calls) != 3 {
+		t.Fatalf("expected 3 transformer calls, got %d", len(tr.calls))
+	}
+	if want := map[string]string{"orders": "orders"}; !maps.Equal(tr.calls[0].qualifiers, want) {
+		t.Errorf("expected derived body qualifiers %v, got %v", want, tr.calls[0].qualifiers)
+	}
+	if want := map[string]string{"u": "users", "posts": "posts"}; !maps.Equal(tr.calls[1].qualifiers, want) {
+		t.Errorf("expected lateral body qualifiers %v, got %v", want, tr.calls[1].qualifiers)
+	}
+}
