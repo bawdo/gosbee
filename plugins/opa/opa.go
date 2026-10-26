@@ -50,12 +50,16 @@
 package opa
 
 import (
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/bawdo/gosbee/nodes"
 	"github.com/bawdo/gosbee/plugins"
 )
+
+// ErrMaskedColumnUse is returned when a masked column is used anywhere other
+// than as a bare projection, where it cannot be replaced by its mask.
+var ErrMaskedColumnUse = errors.New("opa: masked column used outside a plain projection")
 
 // PolicyFunc evaluates a policy for the given table name and returns
 // conditions to inject into the query's WHERE clause. Returning a non-nil
@@ -65,7 +69,7 @@ type PolicyFunc func(tableName string) ([]nodes.Node, error)
 // ColumnResolver returns the column names for a given table. It is required
 // when masks are returned by the OPA server and the query uses star projections,
 // because the star must be expanded into explicit column references to allow
-// individual columns to be replaced with masked literals.
+// individual columns to be replaced with their mask values.
 type ColumnResolver func(tableName string) ([]string, error)
 
 // Option configures an OPA transformer.
@@ -89,6 +93,10 @@ type OPA struct {
 	evalPolicy     PolicyFunc
 	client         *Client
 	columnResolver ColumnResolver
+
+	// masks overrides the masks fetched from the server. It is set only by
+	// tests, so masking can be exercised without an OPA server.
+	masks map[string]map[string]MaskAction
 }
 
 // New creates an OPA transformer with the given policy function.
@@ -129,10 +137,10 @@ func (o *OPA) TransformSelect(core *nodes.SelectCore) (*nodes.SelectCore, error)
 // projections. In PolicyFunc mode the user-supplied function is called
 // directly (no masking support).
 func (o *OPA) TransformSelectScoped(core *nodes.SelectCore, scope plugins.Scope) (*nodes.SelectCore, error) {
-	var allMasks map[string]map[string]MaskAction
+	allMasks := o.masks
 
 	// Fetch masks once per walk (server mode only).
-	if o.client != nil {
+	if allMasks == nil && o.client != nil {
 		v, err := scope.Memo("opa:masks", func() (any, error) {
 			return o.client.FetchMasks()
 		})
@@ -141,6 +149,10 @@ func (o *OPA) TransformSelectScoped(core *nodes.SelectCore, scope plugins.Scope)
 		}
 		allMasks = v.(map[string]map[string]MaskAction)
 	}
+
+	// Conditions the policy injects may use masked columns; only the
+	// query's own conditions are checked for masked column use.
+	queryWheres := len(core.Wheres)
 
 	for _, ref := range scope.Tables(core) {
 		name := ref.Name
@@ -158,7 +170,7 @@ func (o *OPA) TransformSelectScoped(core *nodes.SelectCore, scope plugins.Scope)
 
 	if len(allMasks) > 0 {
 		var err error
-		core, err = o.applyMasks(core, allMasks)
+		core, err = o.applyMasks(core, allMasks, queryWheres)
 		if err != nil {
 			return nil, err
 		}
@@ -172,9 +184,15 @@ func (o *OPA) TransformSelectScoped(core *nodes.SelectCore, scope plugins.Scope)
 // the walker refuses it with an error wrapping plugins.ErrUnpoliceable.
 func (o *OPA) RefusesRawSQL() bool { return true }
 
-// applyMasks rewrites the projections of a SelectCore to replace masked
-// columns with SqlLiteral nodes containing the replacement value.
-func (o *OPA) applyMasks(core *nodes.SelectCore, masks map[string]map[string]MaskAction) (*nodes.SelectCore, error) {
+// applyMasks replaces each masked column projected bare (directly, not
+// inside an alias or expression) with its mask value as a bind parameter
+// aliased to the column name. A star projection is first expanded through the
+// column resolver. Any other use of a masked column in the core (in an
+// expression, WHERE, HAVING, GROUP BY, ORDER BY, DISTINCT ON, a join
+// condition or a window definition) cannot be masked and is refused with
+// ErrMaskedColumnUse. Conditions injected by the policy, which follow the
+// first queryWheres conditions, are trusted and not checked.
+func (o *OPA) applyMasks(core *nodes.SelectCore, masks map[string]map[string]MaskAction, queryWheres int) (*nodes.SelectCore, error) {
 	refs := plugins.CollectTables(core)
 
 	// Determine if this is a star projection (empty projections or contains StarNode).
@@ -205,7 +223,7 @@ func (o *OPA) applyMasks(core *nodes.SelectCore, masks map[string]map[string]Mas
 
 			for _, colName := range cols {
 				if action, masked := tableMasks[colName]; masked && action.Replace != nil {
-					expanded = append(expanded, maskLiteral(action.Replace.Value, colName))
+					expanded = append(expanded, maskedProjection(action.Replace.Value, colName))
 				} else {
 					expanded = append(expanded, nodes.NewAttribute(ref.Relation, colName))
 				}
@@ -213,37 +231,83 @@ func (o *OPA) applyMasks(core *nodes.SelectCore, masks map[string]map[string]Mas
 		}
 		core.Projections = expanded
 	} else {
-		// Explicit projections: replace matching Attribute nodes.
+		// Explicit projections: replace bare masked Attribute nodes.
 		for i, proj := range core.Projections {
 			attr, ok := proj.(*nodes.Attribute)
 			if !ok {
 				continue
 			}
-			tableName := tableNameFromRelation(attr.Relation)
-			if tableName == "" {
-				continue
+			if action, masked := maskFor(masks, attr); masked {
+				core.Projections[i] = maskedProjection(action.Replace.Value, attr.Name)
 			}
-			tableMasks, hasMasks := masks[tableName]
-			if !hasMasks {
-				continue
-			}
-			action, masked := tableMasks[attr.Name]
-			if !masked || action.Replace == nil {
-				continue
-			}
-			core.Projections[i] = maskLiteral(action.Replace.Value, attr.Name)
 		}
 	}
 
+	if err := refuseMaskedUse(core, masks, queryWheres); err != nil {
+		return nil, err
+	}
 	return core, nil
 }
 
-// maskLiteral creates a SqlLiteral that renders as '<value>' AS "colName".
-// The value is escaped against SQL injection by doubling single quotes.
-func maskLiteral(value, colName string) *nodes.SqlLiteral {
-	escaped := strings.ReplaceAll(value, "'", "''")
-	raw := fmt.Sprintf("'%s' AS \"%s\"", escaped, strings.ReplaceAll(colName, "\"", "\"\""))
-	return nodes.NewSqlLiteral(nodes.RawSQL(raw))
+// maskedProjection renders as <value> AS <colName>, with the value as a bind
+// parameter so each dialect quotes or parameterises it safely.
+func maskedProjection(value, colName string) *nodes.AliasNode {
+	return nodes.NewAliasNode(nodes.NewBindParam(value), colName)
+}
+
+// maskFor returns the replace mask for attr, if its table has one.
+func maskFor(masks map[string]map[string]MaskAction, attr *nodes.Attribute) (MaskAction, bool) {
+	tableName := tableNameFromRelation(attr.Relation)
+	if tableName == "" {
+		return MaskAction{}, false
+	}
+	action, masked := masks[tableName][attr.Name]
+	if !masked || action.Replace == nil {
+		return MaskAction{}, false
+	}
+	return action, true
+}
+
+// refuseMaskedUse returns ErrMaskedColumnUse if a masked column appears
+// anywhere in core once bare projections have been replaced. Nested queries
+// have already been masked by the walker, so any masked column still found
+// inside them is an outer reference used in an expression. Only the first
+// queryWheres conditions are checked: the rest were injected by the policy.
+func refuseMaskedUse(core *nodes.SelectCore, masks map[string]map[string]MaskAction, queryWheres int) error {
+	var exprs []nodes.Node
+	exprs = append(exprs, core.Projections...)
+	exprs = append(exprs, core.Wheres[:queryWheres]...)
+	exprs = append(exprs, core.Havings...)
+	exprs = append(exprs, core.Groups...)
+	exprs = append(exprs, core.Orders...)
+	exprs = append(exprs, core.DistinctOn...)
+	for _, j := range core.Joins {
+		if j != nil {
+			exprs = append(exprs, j.On)
+		}
+	}
+	for _, w := range core.Windows {
+		if w == nil {
+			continue
+		}
+		exprs = append(exprs, w.PartitionBy...)
+		exprs = append(exprs, w.OrderBy...)
+		if w.Frame != nil {
+			exprs = append(exprs, w.Frame.Start.Offset)
+			if w.Frame.End != nil {
+				exprs = append(exprs, w.Frame.End.Offset)
+			}
+		}
+	}
+
+	for _, expr := range exprs {
+		for _, attr := range plugins.Attributes(expr) {
+			if _, masked := maskFor(masks, attr); masked {
+				return fmt.Errorf("%w: %s.%s", ErrMaskedColumnUse, tableNameFromRelation(attr.Relation), attr.Name)
+			}
+		}
+	}
+	return nil
 }
 
 // tableNameFromRelation extracts the underlying table name from a relation node.

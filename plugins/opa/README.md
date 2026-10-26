@@ -25,10 +25,14 @@ generation. It does two things:
 
 2. **Column masking** — Calls the OPA [Data API](https://www.openpolicyagent.org/docs/latest/rest-api/#data-api)
    (`POST /v1/data/<package>/masks`) to evaluate mask rules. Columns marked for
-   masking have their projections replaced with literal values (e.g.
-   `'<MASKED>' AS "billed_total"`). When the query uses `SELECT *`, the star is
+   masking have their projections replaced with the mask value as a bind
+   parameter (e.g. `$1 AS "billed_total"`, or `'<MASKED>' AS "billed_total"`
+   without parameters). When the query uses `SELECT *`, the star is
    expanded into explicit column references using a `ColumnResolver` so that
-   individual columns can be masked.
+   individual columns can be masked. A masked column used anywhere else (under
+   an alias, inside a function, or in WHERE, GROUP BY, ORDER BY and so on)
+   cannot be masked, so the query is refused with `opa.ErrMaskedColumnUse`.
+   Masks apply inside subqueries, CTE bodies and set-operation branches too.
 
 The plugin currently only supports SELECT queries. UPDATE, INSERT, and DELETE
 are left untouched.
@@ -175,8 +179,8 @@ gosbee> opa
 [Config]   user.role: sales
   OPA enabled — policy: data.policies.filtering.ecommerce.orders.include
 gosbee> run
-  SELECT "orders"."merchant_name", '<MASKED>' AS "total_amount", "orders"."customer_state" FROM "orders" WHERE "orders"."merchant_name" = $1 AND "orders"."customer_state" = $2 LIMIT $3;
-  Params: [Koala Commerce Pty Ltd NSW 10]
+  SELECT "orders"."merchant_name", $1 AS "total_amount", "orders"."customer_state" FROM "orders" WHERE "orders"."merchant_name" = $2 AND "orders"."customer_state" = $3 LIMIT $4;
+  Params: [<MASKED> Koala Commerce Pty Ltd NSW 10]
 +------------------------+--------------+----------------+
 | merchant_name          | total_amount | customer_state |
 +------------------------+--------------+----------------+

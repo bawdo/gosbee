@@ -12,6 +12,7 @@ import (
 	"github.com/bawdo/gosbee/managers"
 	"github.com/bawdo/gosbee/nodes"
 	"github.com/bawdo/gosbee/plugins"
+	"github.com/bawdo/gosbee/plugins/softdelete"
 	"github.com/bawdo/gosbee/visitors"
 )
 
@@ -457,7 +458,7 @@ func TestPolicyFuncModeNoMasks(t *testing.T) {
 	}
 }
 
-func TestMaskedValuesNotParameterized(t *testing.T) {
+func TestMaskedValuesParameterized(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -487,16 +488,15 @@ func TestMaskedValuesNotParameterized(t *testing.T) {
 	sql := result.Accept(v)
 	params := v.Params()
 
-	// The masked value '<MASKED>' should appear as a literal in SQL, not as $1.
-	if !strings.Contains(sql, "'<MASKED>'") {
-		t.Errorf("expected literal '<MASKED>' in SQL, got: %s", sql)
+	// The masked value is a bind parameter, projected before the WHERE clause.
+	if !strings.Contains(sql, `$1 AS "billed_total"`) {
+		t.Errorf("expected $1 AS \"billed_total\" in SQL, got: %s", sql)
 	}
-	// Only the condition value 'acme' should be parameterized.
-	if len(params) != 1 {
-		t.Fatalf("expected 1 param (acme), got %d: %v", len(params), params)
+	if len(params) != 2 {
+		t.Fatalf("expected 2 params (<MASKED>, acme), got %d: %v", len(params), params)
 	}
-	if params[0] != "acme" {
-		t.Errorf("expected param[0]='acme', got %v", params[0])
+	if params[0] != "<MASKED>" || params[1] != "acme" {
+		t.Errorf("expected params [<MASKED> acme], got %v", params)
 	}
 }
 
@@ -659,5 +659,162 @@ func TestOPACompilesEachTableOncePerWalk(t *testing.T) {
 	}
 	if len(calls) != 2 {
 		t.Errorf("expected 2 policy calls after a second ToSQL, got %d: %v", len(calls), calls)
+	}
+}
+
+// --- Masks policed across the tree ---
+
+// allowAll is a PolicyFunc that adds no conditions to any table.
+func allowAll(string) ([]nodes.Node, error) { return nil, nil }
+
+// maskedSSN returns an OPA transformer that masks users.ssn with "XXX",
+// injected through the test-only masks override so no server is needed.
+func maskedSSN() *OPA {
+	o := New(allowAll)
+	o.masks = map[string]map[string]MaskAction{
+		"users": {"ssn": {Replace: &ReplaceAction{Value: "XXX"}}},
+	}
+	return o
+}
+
+func TestMaskReplacesBareProjectionWithAlias(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	q := managers.NewSelectManager(users).Select(users.Col("ssn")).Use(maskedSSN())
+
+	got, params, err := q.ToSQL(visitors.NewPostgresVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := `SELECT $1 AS "ssn" FROM "users"`; got != want {
+		t.Errorf("expected:\n  %s\ngot:\n  %s", want, got)
+	}
+	if len(params) != 1 || params[0] != "XXX" {
+		t.Errorf("expected params [XXX], got %v", params)
+	}
+
+	got, _, err = q.ToSQL(visitors.NewMySQLVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := "SELECT ? AS `ssn` FROM `users`"; got != want {
+		t.Errorf("expected:\n  %s\ngot:\n  %s", want, got)
+	}
+}
+
+func TestMaskReplacesBareProjectionInSubquery(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	sub := managers.NewSelectManager(users).Select(users.Col("ssn"))
+	q := managers.NewSelectManager(posts).
+		Select(posts.Col("id")).
+		Where(posts.Col("author_ssn").In(sub.Core)).
+		Use(maskedSSN())
+
+	got, params, err := q.ToSQL(visitors.NewPostgresVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `SELECT "posts"."id" FROM "posts" WHERE "posts"."author_ssn" IN (SELECT $1 AS "ssn" FROM "users")`
+	if got != want {
+		t.Errorf("expected:\n  %s\ngot:\n  %s", want, got)
+	}
+	if len(params) != 1 || params[0] != "XXX" {
+		t.Errorf("expected params [XXX], got %v", params)
+	}
+}
+
+func TestMaskRefusesUseOutsideProjection(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	cases := map[string]func() *managers.SelectManager{
+		"alias": func() *managers.SelectManager {
+			return managers.NewSelectManager(users).Select(users.Col("ssn").As("x"))
+		},
+		"function": func() *managers.SelectManager {
+			return managers.NewSelectManager(users).Select(nodes.Lower(users.Col("ssn")))
+		},
+		"where": func() *managers.SelectManager {
+			return managers.NewSelectManager(users).Select(users.Col("id")).Where(users.Col("ssn").Eq(1))
+		},
+		"order by": func() *managers.SelectManager {
+			return managers.NewSelectManager(users).Select(users.Col("id")).Order(users.Col("ssn").Asc())
+		},
+		"group by": func() *managers.SelectManager {
+			return managers.NewSelectManager(users).Select(users.Col("id")).Group(users.Col("ssn"))
+		},
+	}
+	for name, build := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, _, err := build().Use(maskedSSN()).ToSQL(pgVisitor())
+			if !errors.Is(err, ErrMaskedColumnUse) {
+				t.Fatalf("expected ErrMaskedColumnUse, got %v (sql %q)", err, got)
+			}
+			if got != "" {
+				t.Errorf("expected no SQL on refusal, got %q", got)
+			}
+		})
+	}
+}
+
+func TestMaskAllowsPolicyFilterOnMaskedColumn(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	o := maskedSSN()
+	o.evalPolicy = func(name string) ([]nodes.Node, error) {
+		return []nodes.Node{nodes.NewTable(name).Col("ssn").NotEq("")}, nil
+	}
+	q := managers.NewSelectManager(users).Select(users.Col("id")).Use(o)
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := `SELECT "users"."id" FROM "users" WHERE "users"."ssn" != ''`; got != want {
+		t.Errorf("expected:\n  %s\ngot:\n  %s", want, got)
+	}
+}
+
+func TestMaskOutputPassesStrictTransformer(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	q := managers.NewSelectManager(users).
+		Select(users.Col("id"), users.Col("ssn")).
+		Use(maskedSSN()).
+		Use(softdelete.New())
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `'XXX' AS "ssn"`) {
+		t.Errorf("expected masked projection in:\n  %s", got)
+	}
+}
+
+func TestOPANestedPolicyDenialFailsQuery(t *testing.T) {
+	t.Parallel()
+	errDenied := errors.New("access denied to posts")
+	policy := func(name string) ([]nodes.Node, error) {
+		if name == "posts" {
+			return nil, errDenied
+		}
+		return nil, nil
+	}
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	sub := managers.NewSelectManager(posts).Select(posts.Col("user_id"))
+	q := managers.NewSelectManager(users).
+		Where(users.Col("id").In(sub.Core)).
+		Use(New(policy))
+
+	got, _, err := q.ToSQL(pgVisitor())
+	if !errors.Is(err, errDenied) {
+		t.Fatalf("expected the policy error, got %v", err)
+	}
+	if got != "" {
+		t.Errorf("expected no SQL on denial, got %q", got)
 	}
 }
