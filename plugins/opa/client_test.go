@@ -2429,3 +2429,118 @@ func TestDiscoverTablesServerError(t *testing.T) {
 		t.Fatal("expected error for server error")
 	}
 }
+
+func TestTranslateOrderingSwappedOperands(t *testing.T) {
+	// OPA may put the value first: lt(5, data.docs[$0].level) means 5 < level,
+	// so the operator must be mirrored when the column moves to the left.
+	tests := []struct {
+		op   string
+		want string
+	}{
+		{"lt", `"docs"."level" > 5`},
+		{"lte", `"docs"."level" >= 5`},
+		{"gt", `"docs"."level" < 5`},
+		{"gte", `"docs"."level" <= 5`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.op, func(t *testing.T) {
+			expr := compileExpression{
+				Terms: []compileTerm{
+					{Type: "ref", Value: []compileTerm{{Type: "var", Value: tt.op}}},
+					{Type: "number", Value: 5},
+					{Type: "ref", Value: []compileTerm{
+						{Type: "var", Value: "data"},
+						{Type: "string", Value: "docs"},
+						{Type: "var", Value: "$0"},
+						{Type: "string", Value: "level"},
+					}},
+				},
+			}
+			node, err := translateExpression(expr, nodes.NewTable("docs"))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := toClientSQL(t, node); got != tt.want {
+				t.Errorf("expected %s, got %s", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestTranslateStringOpsSwappedOperandsError(t *testing.T) {
+	// startswith("abc", data.docs[$0].name) asks whether "abc" starts with the
+	// column value, which a LIKE on the column cannot express.
+	for _, op := range []string{"startswith", "endswith", "contains"} {
+		t.Run(op, func(t *testing.T) {
+			expr := compileExpression{
+				Terms: []compileTerm{
+					{Type: "ref", Value: []compileTerm{{Type: "var", Value: op}}},
+					{Type: "string", Value: "abc"},
+					{Type: "ref", Value: []compileTerm{
+						{Type: "var", Value: "data"},
+						{Type: "string", Value: "docs"},
+						{Type: "var", Value: "$0"},
+						{Type: "string", Value: "name"},
+					}},
+				},
+			}
+			if _, err := translateExpression(expr, nodes.NewTable("docs")); err == nil {
+				t.Errorf("expected error for %s with value as first operand", op)
+			}
+		})
+	}
+}
+
+func TestTranslateQueriesNegatedExpression(t *testing.T) {
+	jsonBody := `{"result":{"queries":[[{"index":0,"negated":true,"terms":[
+		{"type":"ref","value":[{"type":"var","value":"eq"}]},
+		{"type":"ref","value":[{"type":"var","value":"data"},{"type":"string","value":"docs"},{"type":"var","value":"$0"},{"type":"string","value":"secret"}]},
+		{"type":"boolean","value":true}
+	]}]]}}`
+	resp, err := parseCompileResponse([]byte(jsonBody))
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	conds, err := translateQueries(resp.Result.Queries, nodes.NewTable("docs"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(conds) != 1 {
+		t.Fatalf("expected 1 condition, got %d", len(conds))
+	}
+	want := `NOT ("docs"."secret" = TRUE)`
+	if got := toClientSQL(t, conds[0]); got != want {
+		t.Errorf("expected %s, got %s", want, got)
+	}
+}
+
+func TestTranslateQueriesNegatedInMultiQueryGroup(t *testing.T) {
+	jsonBody := `{"result":{"queries":[
+		[{"index":0,"negated":true,"terms":[
+			{"type":"ref","value":[{"type":"var","value":"eq"}]},
+			{"type":"ref","value":[{"type":"var","value":"data"},{"type":"string","value":"docs"},{"type":"var","value":"$0"},{"type":"string","value":"secret"}]},
+			{"type":"boolean","value":true}
+		]},{"index":1,"terms":[
+			{"type":"ref","value":[{"type":"var","value":"eq"}]},
+			{"type":"ref","value":[{"type":"var","value":"data"},{"type":"string","value":"docs"},{"type":"var","value":"$0"},{"type":"string","value":"owner"}]},
+			{"type":"string","value":"bob"}
+		]}],
+		[{"index":0,"terms":[
+			{"type":"ref","value":[{"type":"var","value":"eq"}]},
+			{"type":"ref","value":[{"type":"var","value":"data"},{"type":"string","value":"docs"},{"type":"var","value":"$0"},{"type":"string","value":"public"}]},
+			{"type":"boolean","value":true}
+		]}]
+	]}}`
+	resp, err := parseCompileResponse([]byte(jsonBody))
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	conds, err := translateQueries(resp.Result.Queries, nodes.NewTable("docs"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `(NOT ("docs"."secret" = TRUE) AND "docs"."owner" = 'bob' OR "docs"."public" = TRUE)`
+	if got := toClientSQL(t, conds[0]); got != want {
+		t.Errorf("expected %s, got %s", want, got)
+	}
+}
