@@ -2024,3 +2024,80 @@ func TestSetOpTypeString(t *testing.T) {
 		}
 	}
 }
+
+// --- Constructors for Combinable nodes ---
+
+// assertCombinableSelf checks that fluent calls on n reference n itself, so a
+// constructed node never chains from a stale or nil self.
+func assertCombinableSelf(t *testing.T, n interface {
+	Node
+	And(Node) *AndNode
+	Or(Node) *GroupingNode
+	Not() *NotNode
+}) {
+	t.Helper()
+	other := NewTable("t").Col("x")
+	if got := n.And(other).Left; got != n {
+		t.Errorf("And: expected Left to be the constructed node, got %#v", got)
+	}
+	if got := n.Or(other).Expr.(*OrNode).Left; got != n {
+		t.Errorf("Or: expected Left to be the constructed node, got %#v", got)
+	}
+	if got := n.Not().Expr; got != n {
+		t.Errorf("Not: expected Expr to be the constructed node, got %#v", got)
+	}
+}
+
+func TestNewCombinableNodeConstructors(t *testing.T) {
+	t.Parallel()
+	users := NewTable("users")
+	a, b, c := users.Col("a"), users.Col("b"), users.Col("c")
+
+	and := NewAndNode(a, b)
+	if and.Left != a || and.Right != b {
+		t.Error("NewAndNode: fields not set")
+	}
+	assertCombinableSelf(t, and)
+
+	or := NewOrNode(a, b)
+	if or.Left != a || or.Right != b {
+		t.Error("NewOrNode: fields not set")
+	}
+	assertCombinableSelf(t, or)
+
+	not := NewNotNode(a)
+	if not.Expr != a {
+		t.Error("NewNotNode: fields not set")
+	}
+	assertCombinableSelf(t, not)
+
+	grouping := NewGroupingNode(a)
+	if grouping.Expr != a {
+		t.Error("NewGroupingNode: fields not set")
+	}
+	assertCombinableSelf(t, grouping)
+
+	unary := NewUnaryNode(a, OpIsNotNull)
+	if unary.Expr != a || unary.Op != OpIsNotNull {
+		t.Error("NewUnaryNode: fields not set")
+	}
+	assertCombinableSelf(t, unary)
+
+	in := NewInNode(a, []Node{b, c}, true)
+	if in.Expr != a || len(in.Vals) != 2 || in.Vals[0] != b || in.Vals[1] != c || !in.Negate {
+		t.Error("NewInNode: fields not set")
+	}
+	assertCombinableSelf(t, in)
+
+	between := NewBetweenNode(a, b, c, true)
+	if between.Expr != a || between.Low != b || between.High != c || !between.Negate {
+		t.Error("NewBetweenNode: fields not set")
+	}
+	assertCombinableSelf(t, between)
+
+	ordering := NewOrderingNode(a, Desc, NullsLast)
+	if ordering.Expr != a || ordering.Direction != Desc || ordering.Nulls != NullsLast {
+		t.Error("NewOrderingNode: fields not set")
+	}
+	assertCombinableSelf(t, ordering)
+}
