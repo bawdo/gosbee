@@ -251,14 +251,8 @@ check_vulnerability_scan() {
     print_header "Check 8: Vulnerability Scan (govulncheck)"
     print_step "Running govulncheck..."
 
-    if ! command -v govulncheck &> /dev/null; then
-        record_result "Vulnerability Scan" "FAIL" "govulncheck not installed"
-        echo -e "${RED}✗ govulncheck is not installed${NC}"
-        echo -e "${YELLOW}Install: go install golang.org/x/vuln/cmd/govulncheck@latest${NC}"
-        return 1
-    fi
-
-    if govulncheck ./... 2>&1 | tee coverage/pre-ci-vuln.txt; then
+    # govulncheck is pinned in tools/go.mod, the same version CI runs
+    if go -C tools tool govulncheck -C .. ./... 2>&1 | tee coverage/pre-ci-vuln.txt; then
         record_result "Vulnerability Scan" "PASS" ""
         echo -e "${GREEN}✓ No vulnerabilities found${NC}"
     else

@@ -1,8 +1,11 @@
 version: 2
 updates:
-  # Go module dependencies (root go.mod)
+  # Go module dependencies
   - package-ecosystem: "gomod"
-    directory: "/"
+    # /tools holds CI tooling (govulncheck), kept out of the library's go.mod
+    directories:
+      - "/"
+      - "/tools"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
