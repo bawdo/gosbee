@@ -3,6 +3,7 @@ package plugins
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/bawdo/gosbee/nodes"
@@ -16,7 +17,13 @@ var ErrUnpoliceable = errors.New("plugins: query contains SQL the transformer ca
 // Scope describes what is visible to the SelectCore being transformed.
 type Scope struct {
 	CTENames map[string]bool // CTEs declared on this core or any enclosing core
-	memo     map[string]any  // shared by every core in one walk
+
+	// Qualifiers maps each name a column may be qualified with (a table name
+	// or a table alias) to the underlying table name, for this core and every
+	// enclosing core. Inner names shadow outer ones. Derived-table aliases and
+	// CTE names are not tables, so they are absent.
+	Qualifiers map[string]string
+	memo       map[string]any // shared by every core in one walk
 }
 
 // Tables returns the table relations referenced by core, as CollectTables
@@ -56,18 +63,54 @@ func (s Scope) Memo(key string, fn func() (any, error)) (any, error) {
 	return v, nil
 }
 
-// withCTEs returns a copy of s with names added to CTENames. The memo is
-// shared with s.
+// withCTEs returns a copy of s with names added to CTENames. Qualifiers and
+// the memo are shared with s.
 func (s Scope) withCTEs(names []string) Scope {
 	if len(names) == 0 {
 		return s
 	}
-	out := Scope{CTENames: make(map[string]bool, len(s.CTENames)+len(names)), memo: s.memo}
+	out := Scope{CTENames: make(map[string]bool, len(s.CTENames)+len(names)), Qualifiers: s.Qualifiers, memo: s.memo}
 	for name := range s.CTENames {
 		out.CTENames[name] = true
 	}
 	for _, name := range names {
 		out.CTENames[name] = true
+	}
+	return out
+}
+
+// withQualifiers returns a copy of s with the table names and aliases that
+// core's FROM and JOINs introduce added to Qualifiers, shadowing any outer
+// entry of the same name. A derived-table alias or a CTE reference is not a
+// table, so it removes any outer entry it shadows instead. s.CTENames must
+// already include core's own CTEs. The memo is shared with s.
+func (s Scope) withQualifiers(core *nodes.SelectCore) Scope {
+	refs := CollectTables(core)
+	if len(refs) == 0 {
+		return s
+	}
+	out := s
+	out.Qualifiers = make(map[string]string, len(s.Qualifiers)+len(refs))
+	maps.Copy(out.Qualifiers, s.Qualifiers)
+	for _, ref := range refs {
+		name := nodes.RelationName(ref.Relation)
+		var table string
+		switch rel := ref.Relation.(type) {
+		case *nodes.Table:
+			table = rel.Name
+		case *nodes.TableAlias:
+			if tbl, ok := rel.Relation.(*nodes.Table); ok {
+				table = tbl.Name
+			}
+		}
+		if name == "" {
+			continue
+		}
+		if table == "" || s.CTENames[table] {
+			delete(out.Qualifiers, name)
+			continue
+		}
+		out.Qualifiers[name] = table
 	}
 	return out
 }
@@ -128,6 +171,18 @@ func Attributes(n nodes.Node) []*nodes.Attribute {
 	return r.attrs
 }
 
+// ShallowAttributes is Attributes without descending into nested queries:
+// a SelectCore or SetOperationNode below n is skipped. When n is itself a
+// SelectCore its own clauses are still collected.
+func ShallowAttributes(n nodes.Node) []*nodes.Attribute {
+	if n == nil {
+		return nil
+	}
+	r := &rewriter{collect: true, shallow: true, root: n}
+	r.node(n)
+	return r.attrs
+}
+
 // rewriter is a copy-on-write nodes.Visitor. Each Visit method stores its
 // result in out and the first error in err, and returns "". A nil t walks
 // the tree without transforming anything (used by Attributes).
@@ -142,6 +197,8 @@ type rewriter struct {
 	err     error
 	collect bool
 	attrs   []*nodes.Attribute
+	shallow bool // collect only: skip nested queries below root
+	root    nodes.Node
 }
 
 var _ nodes.Visitor = (*rewriter)(nil)
@@ -311,6 +368,9 @@ func (r *rewriter) VisitSqlLiteral(n *nodes.SqlLiteral) string {
 // --- SELECT ---
 
 func (r *rewriter) VisitSelectCore(n *nodes.SelectCore) string {
+	if r.shallow && nodes.Node(n) != r.root {
+		return r.set(n)
+	}
 	c := *n
 	outer := r.scope
 
@@ -334,7 +394,7 @@ func (r *rewriter) VisitSelectCore(n *nodes.SelectCore) string {
 		c.CTEs[i] = r.cte(cte)
 	}
 
-	r.scope = outer.withCTEs(names)
+	r.scope = outer.withCTEs(names).withQualifiers(n)
 	c.From = r.node(n.From)
 	c.Projections = r.listCopy(n.Projections)
 	c.Joins = slices.Clone(n.Joins)
@@ -403,6 +463,9 @@ func (r *rewriter) VisitJoin(n *nodes.JoinNode) string {
 }
 
 func (r *rewriter) VisitSetOperation(n *nodes.SetOperationNode) string {
+	if r.shallow && nodes.Node(n) != r.root {
+		return r.set(n)
+	}
 	left, right := r.node(n.Left), r.node(n.Right)
 	orders, oc := r.list(n.Orders)
 	limit, offset := r.node(n.Limit), r.node(n.Offset)

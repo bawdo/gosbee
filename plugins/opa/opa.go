@@ -170,7 +170,7 @@ func (o *OPA) TransformSelectScoped(core *nodes.SelectCore, scope plugins.Scope)
 
 	if len(allMasks) > 0 {
 		var err error
-		core, err = o.applyMasks(core, allMasks, queryWheres)
+		core, err = o.applyMasks(core, scope, allMasks, queryWheres)
 		if err != nil {
 			return nil, err
 		}
@@ -192,7 +192,7 @@ func (o *OPA) RefusesRawSQL() bool { return true }
 // condition or a window definition) cannot be masked and is refused with
 // ErrMaskedColumnUse. Conditions injected by the policy, which follow the
 // first queryWheres conditions, are trusted and not checked.
-func (o *OPA) applyMasks(core *nodes.SelectCore, masks map[string]map[string]MaskAction, queryWheres int) (*nodes.SelectCore, error) {
+func (o *OPA) applyMasks(core *nodes.SelectCore, scope plugins.Scope, masks map[string]map[string]MaskAction, queryWheres int) (*nodes.SelectCore, error) {
 	refs := plugins.CollectTables(core)
 
 	// Determine if this is a star projection (empty projections or contains StarNode).
@@ -237,13 +237,13 @@ func (o *OPA) applyMasks(core *nodes.SelectCore, masks map[string]map[string]Mas
 			if !ok {
 				continue
 			}
-			if action, masked := maskFor(masks, attr); masked {
+			if action, masked := maskFor(scope, masks, attr); masked {
 				core.Projections[i] = maskedProjection(action.Replace.Value, attr.Name)
 			}
 		}
 	}
 
-	if err := refuseMaskedUse(core, masks, queryWheres); err != nil {
+	if err := refuseMaskedUse(core, scope, masks, queryWheres); err != nil {
 		return nil, err
 	}
 	return core, nil
@@ -256,8 +256,8 @@ func maskedProjection(value, colName string) *nodes.AliasNode {
 }
 
 // maskFor returns the replace mask for attr, if its table has one.
-func maskFor(masks map[string]map[string]MaskAction, attr *nodes.Attribute) (MaskAction, bool) {
-	tableName := tableNameFromRelation(attr.Relation)
+func maskFor(scope plugins.Scope, masks map[string]map[string]MaskAction, attr *nodes.Attribute) (MaskAction, bool) {
+	tableName := maskedTableName(scope, attr)
 	if tableName == "" {
 		return MaskAction{}, false
 	}
@@ -268,12 +268,24 @@ func maskFor(masks map[string]map[string]MaskAction, attr *nodes.Attribute) (Mas
 	return action, true
 }
 
+// maskedTableName resolves the table attr belongs to. A qualifier name in
+// scope (a table or an alias of one, in this core or an enclosing core)
+// resolves through scope.Qualifiers, so a column qualified by an alias name,
+// such as nodes.NewTable("u").Col("ssn") over FROM users AS u, is matched to
+// users. Anything else falls back to the relation node itself.
+func maskedTableName(scope plugins.Scope, attr *nodes.Attribute) string {
+	if table, ok := scope.Qualifiers[nodes.RelationName(attr.Relation)]; ok {
+		return table
+	}
+	return tableNameFromRelation(attr.Relation)
+}
+
 // refuseMaskedUse returns ErrMaskedColumnUse if a masked column appears
 // anywhere in core once bare projections have been replaced. Nested queries
-// have already been masked by the walker, so any masked column still found
-// inside them is an outer reference used in an expression. Only the first
+// are not scanned here: the walker visits each one as its own core, with its
+// own scope and its own policy conditions, before this one. Only the first
 // queryWheres conditions are checked: the rest were injected by the policy.
-func refuseMaskedUse(core *nodes.SelectCore, masks map[string]map[string]MaskAction, queryWheres int) error {
+func refuseMaskedUse(core *nodes.SelectCore, scope plugins.Scope, masks map[string]map[string]MaskAction, queryWheres int) error {
 	var exprs []nodes.Node
 	exprs = append(exprs, core.Projections...)
 	exprs = append(exprs, core.Wheres[:queryWheres]...)
@@ -301,9 +313,9 @@ func refuseMaskedUse(core *nodes.SelectCore, masks map[string]map[string]MaskAct
 	}
 
 	for _, expr := range exprs {
-		for _, attr := range plugins.Attributes(expr) {
-			if _, masked := maskFor(masks, attr); masked {
-				return fmt.Errorf("%w: %s.%s", ErrMaskedColumnUse, tableNameFromRelation(attr.Relation), attr.Name)
+		for _, attr := range plugins.ShallowAttributes(expr) {
+			if _, masked := maskFor(scope, masks, attr); masked {
+				return fmt.Errorf("%w: %s.%s", ErrMaskedColumnUse, maskedTableName(scope, attr), attr.Name)
 			}
 		}
 	}
