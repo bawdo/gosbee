@@ -1,0 +1,33 @@
+{
+  "workstream": "repo-quality",
+  "integrationBranch": "workstream/repo-quality",
+  "unitBranchPrefix": "unit",
+  "specDir": "docs/workstreams/repo-quality/specs",
+  "planDir": "docs/workstreams/repo-quality/plans",
+  "reviewLanes": ["security", "correctness", "brief"],
+  "verificationRecord": ".claude/wombat-verification",
+  "verification": "scripts/wombat-verify.sh",
+  "laneRules": [
+    { "lane": "security", "paths": [".github/**", "scripts/**", "**/*.go", "Makefile", "tools/**", "go.mod", "go.sum", "SECURITY.md"] },
+    { "lane": "correctness", "paths": [".github/**", "scripts/**", "**/*.go", "Makefile", "tools/**", ".codecov.yml", ".golangci.yml"] },
+    { "lane": "brief", "paths": ["**"] }
+  ],
+  "testPaths": ["**/*_test.go"],
+  "examplePattern": "^func (Test|Example|Fuzz|Benchmark)[A-Za-z0-9_]*\\(",
+  "exampleSamples": [
+    "func TestSimpleImportStyle(t *testing.T) {",
+    "func TestParameterisedQuery(t *testing.T) {",
+    "func TestAggregateFunctions(t *testing.T) {",
+    "func ExampleSelectManager_ToSQL() {",
+    "func FuzzQuoteIdentifier(f *testing.F) {"
+  ],
+  "exampleNegativeSamples": [
+    "func execSQL(t *testing.T, engine string, commands ...string) string {",
+    "// func TestDisabled(t *testing.T) {"
+  ],
+  "sourcePaths": ["**/*.go"],
+  "skills": {
+    "plan": "superpowers:writing-plans",
+    "testFirst": "superpowers:test-driven-development"
+  }
+}

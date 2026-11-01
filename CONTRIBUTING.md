@@ -22,11 +22,13 @@ more expressive and powerful.
 - [Documentation](#documentation)
 - [Pull Request Process](#pull-request-process)
 - [Releasing](#releasing)
+- [Badges](#badges)
 
 ## Code of Conduct
 
-Be respectful, constructive, and collaborative. We're all here to build
-something useful together.
+This project follows the [Contributor Covenant 2.1](CODE_OF_CONDUCT.md). By
+taking part you agree to uphold it. Report unacceptable behaviour privately, as
+it describes.
 
 ## Getting Started
 
@@ -36,10 +38,11 @@ something useful together.
    cd gosbee
    ```
 
-2. **Install dependencies:**
+2. **Download dependencies:**
    ```bash
-   go mod tidy
+   make deps        # go mod download
    ```
+   `make help` lists every target.
 
 3. **Run the test suite to verify everything works:**
    ```bash
@@ -57,20 +60,19 @@ something useful together.
 
 ### Reporting Bugs
 
-Found a bug? Open an issue with:
-- A clear, descriptive title
-- Steps to reproduce the problem
-- Expected vs. actual behaviour
-- Go version and operating system
-- Example code if possible
+Found a bug? Open an issue with the **Bug report** form, which asks for a
+minimal program or REPL session, the SQL generated and the SQL you expected,
+the dialect, any plugins, and your gosbee and Go versions.
+
+A security problem (SQL injection, or a way around the soft delete or OPA
+plugins) is never a public issue: report it privately through
+[SECURITY.md](SECURITY.md).
 
 ### Suggesting Features
 
-Have an idea for a new feature? Open an issue with:
-- A clear description of the feature
-- Why it would be useful
-- Example usage (code or pseudocode)
-- Any implementation ideas (optional)
+Have an idea for a new feature? Open an issue with the **Feature request**
+form: describe the problem you want solved, and if you can, the Go you would
+like to write or the SQL you want generated.
 
 ### Improving Documentation
 
@@ -96,37 +98,30 @@ Code contributions might include:
 
 1. **Create a branch** for your work:
    ```bash
-   git checkout -b feature/your-feature-name
+   git checkout -b your-change
    ```
 
-2. **Make your changes** following the [Coding Standards](#coding-standards)
+2. **Make your changes** following the [Coding Standards](#coding-standards).
 
-3. **Write or update tests** to cover your changes
+3. **Write or update tests** to cover your changes.
 
-4. **Run the test suite:**
+4. **Run the quick checks** while you work:
    ```bash
-   go test ./...
+   make test        # go test ./...
+   make check       # gofmt -s check, go vet, golangci-lint, race tests
+   make fmt         # rewrite formatting with gofmt -s
    ```
 
 5. **Check test coverage** (optional):
    ```bash
-   # Generate coverage report in the coverage/ directory
-   go test -coverprofile=coverage/coverage.out ./...
-
-   # View coverage in terminal
-   go tool cover -func=coverage/coverage.out
-
-   # Or open an HTML coverage report in your browser
-   go tool cover -html=coverage/coverage.out
+   make coverage       # writes coverage/coverage.out and prints the summary
+   make coverage-html  # opens the HTML report in a browser
    ```
 
-6. **Pre-CI validation** (recommended before pushing):
+6. **Run the pre-CI validation** before pushing:
    ```bash
-   # Run all CI checks locally and get a success probability report
-   ./scripts/pre-ci-check.sh
-
-   # Auto-fix gofmt formatting issues, then re-run all checks
-   ./scripts/pre-ci-check.sh --fix gofmt
+   make pre-ci         # ./scripts/pre-ci-check.sh
+   make pre-ci-fix     # auto-fix gofmt formatting first, then run every check
    ```
 
    This script mimics the GitHub Actions workflow and runs 8 checks:
@@ -138,13 +133,16 @@ Code contributions might include:
    | 3 | Code formatting | `gofmt -s` (auto-fixable via `--fix gofmt`) |
    | 4 | Tests with race detector | `go test -race` |
    | 5 | Linting | `golangci-lint` |
-   | 6 | Test coverage (target: 80%) | `go test -coverprofile` |
+   | 6 | Test coverage (local guide: 80% raw; Codecov gates on `.codecov.yml`) | `go test -coverprofile` |
    | 7 | Build | `go build` |
    | 8 | Vulnerability scan | `govulncheck` |
 
-   It generates a CI readiness report showing which checks passed/failed, the
-   overall success probability, and coverage trend (delta from the previous run).
-   Detailed logs are saved to `coverage/pre-ci-*.txt`.
+   It generates a CI readiness report showing which checks passed or failed,
+   the overall success probability, and coverage trend (delta from the
+   previous run). Detailed logs are saved to `coverage/pre-ci-*.txt`. CI runs
+   more than this, including `go mod tidy -diff`, shellcheck, the script
+   tests, the changelog check, zizmor and tests on macOS and the oldest
+   supported Go: see [Branch Rules](#branch-rules) for the full list.
 
    **Dependencies**
 
@@ -156,13 +154,9 @@ Code contributions might include:
    | `golangci-lint` | `brew install golangci-lint` |
    | `bc` | Pre-installed on macOS and Linux |
 
-5. **Run linters:**
-   ```bash
-   go vet ./...
-   go fmt ./...
-   ```
+7. **Update `CHANGELOG.md`** under `[Unreleased]` for any user-visible change.
 
-6. **Commit your changes** with clear commit messages in past tense:
+8. **Commit your changes**, signed, with clear commit messages in past tense:
    ```
    Added support for LATERAL JOIN in PostgreSQL visitor
 
@@ -171,7 +165,7 @@ Code contributions might include:
    - Updated PostgreSQL tests to cover LATERAL JOIN syntax
    ```
 
-7. **Push to your fork** and open a pull request
+9. **Push to your fork** and open a pull request.
 
 ## Project Structure
 
@@ -185,12 +179,13 @@ gosbee/
 │   └── opa/            # OPA policy integration (proof of concept)
 ├── cmd/
 │   └── repl/           # Interactive REPL
+├── internal/           # Private helpers (quoting, sqllex, testutil)
 ├── docs/
 │   ├── guide/          # User-facing documentation
 │   ├── development/    # Contributor documentation
-│   ├── design/         # Design decisions and architecture
-│   └── plans/          # Implementation plans and specs
-└── internal/           # Private helpers (not exported)
+│   └── workstreams/    # Multi-unit work records, with their specs and plans
+├── scripts/            # CI, release and pre-CI scripts, with their tests
+└── tools/              # Pinned Go tools (govulncheck, cyclonedx-gomod)
 ```
 
 ### Key Architecture Documents
@@ -273,14 +268,21 @@ For a complete guide, see:
 
 ### Visitor Pattern
 
-- The `Visitor` interface lives in `nodes/` to avoid circular dependencies
+- The `Visitor` interface lives in `nodes/node.go` to avoid circular
+  dependencies
 - Use the **outer-dispatch pattern**: `baseVisitor.outer` enables virtual method
   resolution for dialect-specific overrides
 - When adding a new node type, update:
-  - `Visitor` interface in `nodes/visitor.go`
-  - `baseVisitor` with a default implementation
-  - `DotVisitor` for AST visualisation
-  - All `stubVisitor` implementations in test files
+  - the `Visitor` interface in `nodes/node.go`
+  - `baseVisitor` in `visitors/visitor.go`, with a default implementation
+  - `DotVisitor` in `visitors/dot_visitor.go`, for AST visualisation
+  - `FormattingVisitor` in `visitors/formatting.go`
+  - the plugin AST `rewriter` in `plugins/walk.go`
+  - `StubVisitor` and `StubParamVisitor` in `internal/testutil/stub_visitor.go`
+  - the `stubVisitor` in `nodes/nodes_test.go`
+
+  `go build ./... && go vet ./...` names any implementation still missing the
+  new method.
 
 ## Testing
 
@@ -322,7 +324,51 @@ go test -cover ./...
 go test -run TestSelectManager_Where ./managers
 ```
 
-Current test count: **~1096 tests** across the entire codebase.
+### Examples
+
+Testable examples (`func ExampleXxx()` with an `// Output:` block) live in
+external test packages beside the code: `managers`, `visitors`,
+`plugins/softdelete` and `plugins/opa`. `go test` checks their output and
+pkg.go.dev shows them, so a new public pattern earns one.
+
+### Fuzzing
+
+Native Go fuzz targets (`func FuzzXxx(f *testing.F)`) cover identifier quoting
+and string escaping for each dialect (`internal/quoting`, `visitors`), the OPA
+plugin's column mask path (`plugins/opa`), and the REPL's input parsing
+(`cmd/repl`). Each one checks a property, not only that nothing panics. The
+quoting, visitor and OPA targets read the rendered SQL back with
+`internal/sqllex` under the dialect's own quoting rules: an identifier or value
+must come back as one token, never closing its quotes early, and must decode to
+what went in (except a backslash in a PostgreSQL or SQLite literal, below). The
+REPL targets check that tokenising keeps every byte and that a quoted value
+parses back to itself.
+
+`internal/sqllex` reads bytes, so these properties hold for single-byte and
+UTF-8 connections only. A MySQL connection with a multibyte client charset such
+as GBK or SJIS is outside them, which is one more reason to keep the default
+parameterised mode.
+
+```bash
+make fuzz                  # every target in turn, 10s each
+make fuzz FUZZTIME=1m      # longer; FUZZTIME also takes an iteration count, 500x
+./scripts/fuzz.sh --list   # list the targets
+```
+
+The seeds added with `f.Add` run as ordinary tests in every `go test` run.
+When fuzzing finds a failing input, `go test` writes it to
+`<package>/testdata/fuzz/<Target>/`. Commit that file alongside the fix, so it
+stays as a regression seed. CI fuzzes every target weekly (5m each) and on a
+manual run of the CI workflow (15s each), never on a pull request, and keeps
+any failing inputs for 14 days as the `fuzz-failures` artifact. The CI logs and
+artifacts are public, so a finding there is disclosed the moment the run
+fails: fix one that could be a security issue straight away, and report it
+through [SECURITY.md](SECURITY.md). A security finding from a local run is
+reported privately through SECURITY.md, not in a public issue.
+
+`TestEscapeStringANSIRoundTripBackslash` is skipped on purpose: it records a
+known defect, where string escaping doubles a backslash for PostgreSQL and
+SQLite, for which a backslash is an ordinary character.
 
 ## Documentation
 
@@ -356,9 +402,10 @@ Each plugin has its own README with:
 
 - **[REPL README](cmd/repl/README.md)** — interactive shell usage and commands
 
-### Design Documents (`docs/design/`)
+### Workstreams (`docs/workstreams/`)
 
-Architecture decisions, feature specifications, and design rationale.
+The records of larger work cut into several units, each with its briefs and,
+where a unit earned them, its specs and plans.
 
 ### When to Update Documentation
 
@@ -366,20 +413,25 @@ Architecture decisions, feature specifications, and design rationale.
 - **Plugin READMEs:** When adding plugin options or changing behaviour
 - **Architecture docs:** When making significant structural changes
 - **Code comments:** When the code isn't self-evident
-- **Examples:** When demonstrating a new pattern or feature
+- **Examples:** When demonstrating a new pattern or feature (see
+  [Examples](#examples))
 
 ## Pull Request Process
 
 1. **Ensure all tests pass** and linters are happy
 2. **Update documentation** if you've changed behaviour or added features
-3. **Write a clear PR description** that explains:
+3. **Fill in the pull request template**, and write a clear description
+   that explains:
    - What problem you're solving
    - How you've solved it
    - Any breaking changes (if applicable)
    - Links to related issues
 4. **Keep PRs focused:** one feature or fix per PR when possible
 5. **Respond to feedback** — reviews are collaborative, not adversarial
-6. **Be patient** — maintainers may take time to review
+6. **Be patient**: maintainers may take time to review
+
+`.github/CODEOWNERS` requests a review from the maintainer on every pull
+request opened by someone else.
 
 ### PR Title Format
 
@@ -400,16 +452,35 @@ If your change breaks backwards compatibility:
 `main` only changes through pull requests. Direct pushes, force pushes and
 deleting `main` are all blocked. Pull requests are squash merged, so GitHub
 signs the resulting commit (a rebase merge cannot be signed). The pull request
-title becomes the commit subject, so write it in the past tense. A pull
-request can merge once these checks pass:
+title becomes the commit subject, so write it in the past tense. Auto-merge is
+allowed, and the branch is deleted once merged. A pull request must be up to
+date with `main` before it merges (use **Update branch**), and can merge once
+these checks pass:
 
-- `CI OK`, which passes only when every job in the CI workflow passed:
-  - `Lint and audit`: golangci-lint, `go mod tidy -diff`, the changelog check,
-    govulncheck and a zizmor audit of the workflows
+- `CI OK`, which passes only when every job in the CI workflow passed.
+  `scripts/ci-result.sh` decides this from each job's result: a failed,
+  cancelled or missing job fails it, and so does a skipped job unless the
+  script's per-event table permits that skip (only `Fuzz`, which runs on the
+  weekly schedule and a manual dispatch alone). The jobs:
+  - `Lint and audit`: golangci-lint, shellcheck over `scripts/*.sh` (a pinned
+    release, checked by sha256), the `ci-result.sh`, `fuzz.sh` and
+    `repo-settings.sh` tests, `go mod tidy -diff`, the changelog check, the
+    release script tests
+    (`scripts/release-scripts_test.sh`, which cover the build with its SBOMs,
+    publishing and the module proxy check), govulncheck and a zizmor audit of
+    the workflows
   - `Test`: Linux on the oldest supported Go (`oldstable`) and the current one
-    (`stable`), both with the race detector, plus macOS on `stable`. Coverage
-    is uploaded from the Linux `stable` run.
-- `Analyze (go)` (CodeQL)
+    (`stable`), both with the race detector, plus macOS on `stable`.
+  - `Fuzz`: every fuzz target in turn (see [Fuzzing](#fuzzing)). Skipped on
+    pull requests, pushes and release runs.
+- `Analyze (go)` (CodeQL), and CodeQL must report no alert at `error` severity
+  and no security alert at `high` or above.
+
+Coverage is measured and uploaded to Codecov by the separate `Coverage`
+workflow (`coverage.yml`), which is not a required check. It lives outside CI
+because the `Release` workflow calls CI, and keeping the Codecov OIDC token out
+of CI means no job in a release except publish holds `id-token`. Codecov's
+project and patch statuses gate on the coverage targets in `.codecov.yml`.
 
 CI also runs on every push to `main` and weekly, so a newly published
 vulnerability fails the build without waiting for a pull request.
@@ -417,6 +488,42 @@ vulnerability fails the build without waiting for a pull request.
 Every commit must be signed (GPG, SSH or S/MIME) and every conversation on
 the pull request resolved. No approving review is required. Pull requests from
 forks need a maintainer to approve their CI run before it starts.
+
+### Repository Settings
+
+These rules, and the rest of the repository's GitHub settings, are kept in
+`scripts/repo-settings.sh` rather than set by hand, so they can be read,
+reviewed and re-applied. It runs one phase at a time, as a repository admin
+with `gh` logged in:
+
+```bash
+DRY_RUN=1 scripts/repo-settings.sh rulesets   # print each write and its body; send nothing
+scripts/repo-settings.sh rulesets             # apply
+scripts/repo-settings.sh show                 # print the current settings
+```
+
+- `metadata`: description, homepage, topics, squash merge only, auto-merge,
+  **Update branch**, and deleting the branch on merge.
+- `rulesets`: `Protect main` (the branch rules above, with no bypass),
+  `Protect release tags` (a `v*` tag can never be moved or deleted) and
+  `Protect release tag creation` (only an admin can create a `v*` tag). It
+  refuses to run until a successful CI run on `main` has a `CI OK` job.
+- `harden`: Actions limited to GitHub's own and the third-party actions the
+  workflows use (it prints the list, read from their `uses:` lines, and
+  refuses an action not pinned to a commit SHA), SHA pinning required, a
+  read-only default token, fork approval for all external contributors,
+  CodeQL default setup with the `extended` suite, private vulnerability
+  reporting, immutable releases, and the `release` environment that the
+  publish job runs in, deployable only from `v*` tags and `main`.
+
+Every write sends the whole desired state (rulesets and environment policies
+are found by name and replaced in place), so any phase can be re-run, and
+each prints its method and path before it is sent. `REPO` names another
+repository (default `bawdo/gosbee`). The `harden` allowlist is computed from
+the workflows as they are checked out, so run it from an up to date `main`,
+and run it again after a pull request adds a third-party action, or that
+action is refused. `scripts/repo-settings_test.sh` checks every phase against
+a fake `gh`; CI runs it.
 
 ## Releasing
 
@@ -439,17 +546,106 @@ only place release notes are written.
    git tag -s v0.3.0 -m v0.3.0
    git push origin v0.3.0
    ```
-3. The `Release` workflow checks that the tag is on `main` and has a changelog
-   section, builds the REPL binaries for Linux and macOS with a `SHA256SUMS`
-   file and build provenance attestations, then publishes the GitHub release
-   using that section as its notes. A tag with a suffix (`v0.3.0-rc.1`) is
-   published as a pre-release.
+3. The `Release` workflow runs in four stages:
+   - **CI** runs first, on the tag itself (the whole CI workflow, called with
+     `refs/tags/<tag>`).
+   - **Build**, with a read-only token, refuses a tag name that is not
+     `vX.Y.Z` or `vX.Y.Z-suffix` before checking anything out. It then checks
+     the tag is annotated and its signature verified by GitHub
+     (`scripts/verify-tag.sh`), is on `main` and has a changelog section. It
+     builds the REPL binaries for Linux and macOS on amd64 and arm64
+     (`scripts/build-release.sh`), smoke tests the Linux amd64 one and writes
+     a CycloneDX SBOM for the module (`gosbee-repl_<tag>_module.cdx.json`) and
+     one per binary (`gosbee-repl_<tag>_<os>_<arch>.cdx.json`), with
+     `cyclonedx-gomod` pinned in `tools/go.mod`. `SHA256SUMS` lists every
+     binary and SBOM, so the provenance attestation covers the SBOMs too. A
+     failed SBOM fails the build.
+   - **Publish**, the only job that can write, checks out
+     `scripts/publish-release.sh` from the commit the build job built, never
+     the tag by name. Before its first write (the attestation, which also
+     makes a public transparency log entry) it checks, read only, that the
+     release is not already published and that the tag on GitHub still
+     points at the tag object the build verified
+     (`scripts/publish-release.sh --check`). A tag moved during the build is
+     refused there, naming both tag objects. It then checks the binaries
+     against `SHA256SUMS`, attests their build provenance and publishes
+     through a draft (`scripts/publish-release.sh`, which reads the tag once
+     more just before it creates the release): the draft is created with
+     every asset attached, then published. Any `gh` failure but "release not
+     found" stops it rather than being read as no release. The
+     attestation's Sigstore bundle is attached as
+     `gosbee-repl_<tag>_provenance.intoto.jsonl`, so
+     `gh attestation verify --bundle` can check a binary without the
+     attestation API.
+   - **Proxy**, after publish and with no checkout, checks that
+     proxy.golang.org serves the version at the tagged commit and that
+     sum.golang.org records it (`scripts/check-module-proxy.sh`, retrying for
+     about a minute while the proxy fetches a new version). It runs after
+     publish, so it reports a problem rather than stopping the release. A
+     commit mismatch means the tag moved after the proxy first fetched it,
+     which nothing undoes: add a `retract` for the version to `go.mod` and
+     release a new tag.
 
-Editing `CHANGELOG.md` on `main` later rewrites the notes of every existing
-release to match, and running the `Release` workflow by hand on `main` does
-the same. Release tags (`v*`) cannot be moved or deleted once pushed.
+   The release notes are that version's changelog section. A tag with a
+   suffix (`v0.3.0-rc.1`) is published as a pre-release and is never marked
+   latest, and gets the same SBOMs and proxy check as any other.
+
+A published release is never changed, its notes included, so a changelog fix
+made after release lives in `CHANGELOG.md` only. Release tags (`v*`) must never
+be moved or deleted once pushed, and the `Protect release tags` ruleset
+refuses both (see [Repository Settings](#repository-settings)). Publish's
+checks also refuse a tag moved during a run.
+
+If a release run fails before the release is published, fix the cause and
+recover it from the Actions tab by running the `Release` workflow from `main`
+with the existing tag: a leftover draft is replaced and the release published.
+That does not help once the release is published: publish's check refuses it
+("already published") before anything is written, and the proxy job, which
+needs publish to succeed, is skipped. To repeat a failed proxy check:
+
+- use "Re-run failed jobs" on the original run. When publish succeeded, that
+  re-runs the proxy job alone, but only while the run's `proxy-check` artifact
+  lasts (1 day);
+- otherwise run the check by hand, from a checkout of the tag:
+  ```bash
+  scripts/check-module-proxy.sh github.com/bawdo/gosbee v0.3.0 "$(git rev-parse 'v0.3.0^{commit}')"
+  ```
+
+Tags made before this pipeline existed (`v0.2.1` and earlier) cannot be re-run
+by hand, because they do not carry `scripts/verify-tag.sh`, so the build job
+fails.
+
+A run started by hand (`workflow_dispatch`) uses `release.yml`, and the
+`ci.yml` it calls, as they are on the branch the dispatcher picks, not as on
+`main`. The tag name, signed tag and on-`main` checks therefore bind only when
+the run is dispatched from `main`: a branch carrying an edited `release.yml`
+can drop them, and anyone who can push a branch can dispatch from it. Dispatch
+only from `main`. A dispatched run's provenance attestation also records the
+dispatched ref and that branch's commit as its source, not the tag, so
+`gh attestation verify --source-ref refs/tags/<tag>` fails for its assets,
+while `--signer-workflow bawdo/gosbee/.github/workflows/release.yml` still
+holds. The publish job names the `release` environment. Once
+`scripts/repo-settings.sh harden` is applied (after the current workstream
+merges to `main`), that environment deploys only from `v*` tags and `main`, so
+`release.yml` as `main` has it, dispatched from any other branch, cannot
+publish; `main` is admitted so the recovery run above still works. Until then
+GitHub creates the environment on first use with no deployment rule. Neither
+binds a branch that edits `release.yml` itself, which can drop the
+`environment:` line, so who has write access remains the boundary. With
+`Protect release tag creation`, only an admin can push the tag that starts a
+release.
 
 Preview a release's notes locally with `scripts/changelog.sh notes v0.3.0`.
+
+## Badges
+
+The README carries CI, Codecov, Go reference, OpenSSF Scorecard and licence
+badges. The OpenSSF Best Practices badge is not there yet: it needs a project
+id, which exists only once the survey at
+<https://www.bestpractices.dev/en/projects/new> is started. When it is, add the
+badge to the README after the Scorecard badge, in the form
+`[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/<id>/badge)](https://www.bestpractices.dev/projects/<id>)`,
+and remove this paragraph.
 
 ## Questions?
 

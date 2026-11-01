@@ -61,3 +61,7 @@ go.work.sum
 
 # Build output
 bin/
+
+# wombat-workstream verification record (written by scripts/wombat-verify.sh)
+.claude/wombat-verification
+/HANDOFF.md

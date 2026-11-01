@@ -1230,7 +1230,7 @@ func TestVisitInsertOnConflictDoUpdate(t *testing.T) {
 		},
 	}
 	testutil.AssertSQL(t, NewPostgresVisitor(WithoutParams()), stmt,
-		`INSERT INTO "users" ("email", "name") VALUES ('a@b.com', 'Alice') ON CONFLICT ("email") DO UPDATE SET "users"."name" = 'Alice'`)
+		`INSERT INTO "users" ("email", "name") VALUES ('a@b.com', 'Alice') ON CONFLICT ("email") DO UPDATE SET "name" = 'Alice'`)
 }
 
 func TestVisitInsertOnConflictDoUpdateWithWhere(t *testing.T) {
@@ -1250,7 +1250,7 @@ func TestVisitInsertOnConflictDoUpdateWithWhere(t *testing.T) {
 		},
 	}
 	testutil.AssertSQL(t, NewPostgresVisitor(WithoutParams()), stmt,
-		`INSERT INTO "users" ("email", "name") VALUES ('a@b.com', 'Alice') ON CONFLICT ("email") DO UPDATE SET "users"."name" = 'Alice' WHERE "users"."locked" = FALSE`)
+		`INSERT INTO "users" ("email", "name") VALUES ('a@b.com', 'Alice') ON CONFLICT ("email") DO UPDATE SET "name" = 'Alice' WHERE "users"."locked" = FALSE`)
 }
 
 // --- UPDATE ---
@@ -1265,9 +1265,27 @@ func TestVisitUpdateSimple(t *testing.T) {
 		},
 	}
 	testutil.AssertSQL(t, NewPostgresVisitor(WithoutParams()), stmt,
-		`UPDATE "users" SET "users"."name" = 'Bob'`)
+		`UPDATE "users" SET "name" = 'Bob'`)
 	testutil.AssertSQL(t, NewMySQLVisitor(WithoutParams()), stmt,
-		"UPDATE `users` SET `users`.`name` = 'Bob'")
+		"UPDATE `users` SET `name` = 'Bob'")
+	testutil.AssertSQL(t, NewSQLiteVisitor(WithoutParams()), stmt,
+		`UPDATE "users" SET "name" = 'Bob'`)
+}
+
+// A SET target names a column of the table being updated, so it is rendered
+// bare: PostgreSQL and SQLite reject a table-qualified target. The value side
+// is an ordinary expression and keeps its qualifier.
+func TestVisitUpdateSetTargetUnqualifiedValueQualified(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	stmt := &nodes.UpdateStatement{
+		Table: users,
+		Assignments: []*nodes.AssignmentNode{
+			{Left: users.Col("login_count"), Right: users.Col("login_count").Plus(nodes.Literal(1))},
+		},
+	}
+	testutil.AssertSQL(t, NewPostgresVisitor(WithoutParams()), stmt,
+		`UPDATE "users" SET "login_count" = "users"."login_count" + 1`)
 }
 
 func TestVisitUpdateMultipleColumns(t *testing.T) {
@@ -1281,7 +1299,7 @@ func TestVisitUpdateMultipleColumns(t *testing.T) {
 		},
 	}
 	testutil.AssertSQL(t, NewPostgresVisitor(WithoutParams()), stmt,
-		`UPDATE "users" SET "users"."name" = 'Bob', "users"."age" = 30`)
+		`UPDATE "users" SET "name" = 'Bob', "age" = 30`)
 }
 
 func TestVisitUpdateWithWhere(t *testing.T) {
@@ -1295,7 +1313,7 @@ func TestVisitUpdateWithWhere(t *testing.T) {
 		Wheres: []nodes.Node{users.Col("id").Eq(1)},
 	}
 	testutil.AssertSQL(t, NewPostgresVisitor(WithoutParams()), stmt,
-		`UPDATE "users" SET "users"."active" = FALSE WHERE "users"."id" = 1`)
+		`UPDATE "users" SET "active" = FALSE WHERE "users"."id" = 1`)
 }
 
 func TestVisitUpdateWithMultipleWheres(t *testing.T) {
@@ -1309,7 +1327,7 @@ func TestVisitUpdateWithMultipleWheres(t *testing.T) {
 		Wheres: []nodes.Node{users.Col("role").Eq("guest"), users.Col("last_login").Lt("2025-01-01")},
 	}
 	testutil.AssertSQL(t, NewPostgresVisitor(WithoutParams()), stmt,
-		`UPDATE "users" SET "users"."active" = FALSE WHERE "users"."role" = 'guest' AND "users"."last_login" < '2025-01-01'`)
+		`UPDATE "users" SET "active" = FALSE WHERE "users"."role" = 'guest' AND "users"."last_login" < '2025-01-01'`)
 }
 
 func TestVisitUpdateReturning(t *testing.T) {
@@ -1324,7 +1342,7 @@ func TestVisitUpdateReturning(t *testing.T) {
 		Returning: []nodes.Node{users.Col("id"), users.Col("name")},
 	}
 	testutil.AssertSQL(t, NewPostgresVisitor(WithoutParams()), stmt,
-		`UPDATE "users" SET "users"."name" = 'Bob' WHERE "users"."id" = 1 RETURNING "users"."id", "users"."name"`)
+		`UPDATE "users" SET "name" = 'Bob' WHERE "users"."id" = 1 RETURNING "users"."id", "users"."name"`)
 }
 
 // --- DELETE ---
@@ -1381,8 +1399,8 @@ func TestVisitAssignment(t *testing.T) {
 	t.Parallel()
 	users := nodes.NewTable("users")
 	a := &nodes.AssignmentNode{Left: users.Col("name"), Right: nodes.Literal("Alice")}
-	testutil.AssertSQL(t, NewPostgresVisitor(WithoutParams()), a, `"users"."name" = 'Alice'`)
-	testutil.AssertSQL(t, NewMySQLVisitor(WithoutParams()), a, "`users`.`name` = 'Alice'")
+	testutil.AssertSQL(t, NewPostgresVisitor(WithoutParams()), a, `"name" = 'Alice'`)
+	testutil.AssertSQL(t, NewMySQLVisitor(WithoutParams()), a, "`name` = 'Alice'")
 }
 
 // --- Parameterized DML ---
@@ -1453,7 +1471,7 @@ func TestParamUpdateWithWhere(t *testing.T) {
 		Wheres: []nodes.Node{users.Col("id").Eq(1)},
 	}
 	assertParams(t, NewPostgresVisitor(WithParams()), stmt,
-		`UPDATE "users" SET "users"."name" = $1 WHERE "users"."id" = $2`,
+		`UPDATE "users" SET "name" = $1 WHERE "users"."id" = $2`,
 		[]any{"Bob", 1})
 }
 
@@ -1469,7 +1487,7 @@ func TestParamUpdateMySQL(t *testing.T) {
 		Wheres: []nodes.Node{users.Col("id").Eq(1)},
 	}
 	assertParams(t, NewMySQLVisitor(WithParams()), stmt,
-		"UPDATE `users` SET `users`.`name` = ?, `users`.`age` = ? WHERE `users`.`id` = ?",
+		"UPDATE `users` SET `name` = ?, `age` = ? WHERE `users`.`id` = ?",
 		[]any{"Bob", 30, 1})
 }
 
@@ -1513,7 +1531,7 @@ func TestParamInsertOnConflictDoUpdate(t *testing.T) {
 		},
 	}
 	assertParams(t, NewPostgresVisitor(WithParams()), stmt,
-		`INSERT INTO "users" ("email", "name") VALUES ($1, $2) ON CONFLICT ("email") DO UPDATE SET "users"."name" = $3`,
+		`INSERT INTO "users" ("email", "name") VALUES ($1, $2) ON CONFLICT ("email") DO UPDATE SET "name" = $3`,
 		[]any{"a@b.com", "Alice", "Alice"})
 }
 
@@ -1543,7 +1561,7 @@ func TestParamUpdateReturning(t *testing.T) {
 		Returning: []nodes.Node{users.Col("id")},
 	}
 	assertParams(t, NewPostgresVisitor(WithParams()), stmt,
-		`UPDATE "users" SET "users"."active" = $1 WHERE "users"."id" = $2 RETURNING "users"."id"`,
+		`UPDATE "users" SET "active" = $1 WHERE "users"."id" = $2 RETURNING "users"."id"`,
 		[]any{false, 1})
 }
 

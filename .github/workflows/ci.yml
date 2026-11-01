@@ -8,14 +8,34 @@ on:
     branches: [ main ]
   pull_request:
   workflow_dispatch:
+  # release.yml calls this workflow to test the tag before building it.
+  # The input is the bare tag name, already checked against vX.Y.Z[-suffix]
+  # by release.yml's tag job, and every checkout qualifies it as
+  # refs/tags/<tag>, so a branch of the same name is never tested.
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to test, e.g. v1.2.3; empty tests the event's ref
+        type: string
+        required: false
+        default: ''
   # Weekly run so newly published vulnerabilities and toolchain changes
   # surface without waiting for a pull request.
   schedule:
     - cron: '17 3 * * 1'
 
 # Cancel superseded runs on a pull request, never on main.
+#
+# The "ci-" prefix is literal because in a called workflow the workflow name
+# names the caller, so caller and callee would share one group and deadlock.
+# inputs.tag comes first because on a dispatch re-run of a release github.ref
+# is the dispatching branch, so the release's CI would share
+# ci-refs/heads/main with ordinary pushes, and GitHub keeps only one pending
+# run per group. The weekly schedule gets a group of its own for the same
+# reason: its fuzz job runs for up to an hour, and in ci-refs/heads/main it
+# would hold every push to main pending for that long.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ inputs.tag || github.event.pull_request.number || (github.event_name == 'schedule' && 'schedule') || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -28,6 +48,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
           # Full history and tags, so the changelog check can see every tag.
           fetch-depth: 0
           persist-credentials: false
@@ -51,6 +72,33 @@ jobs:
           version: v2.15.0
           args: --timeout=5m
 
+      - name: Lint shell scripts
+        env:
+          # The runner image ships an older shellcheck that can disagree with
+          # current releases, so install this one and check its digest before
+          # extracting. Dependabot does not track it: bump both together.
+          SHELLCHECK_VERSION: v0.11.0
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+        run: |
+          set -euo pipefail
+          archive="shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/${archive}"
+          echo "${SHELLCHECK_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/shellcheck-${SHELLCHECK_VERSION}/shellcheck" --version
+          "$RUNNER_TEMP/shellcheck-${SHELLCHECK_VERSION}/shellcheck" scripts/*.sh
+
+      - name: Test the CI OK gate script
+        run: scripts/ci-result_test.sh
+
+      - name: Test the fuzz runner script
+        run: bash scripts/fuzz_test.sh
+
+      # Fake gh, so no network or token.
+      - name: Test the repository settings script
+        run: bash scripts/repo-settings_test.sh
+
       - name: Check go.mod and go.sum are tidy
         run: |
           go mod tidy -diff
@@ -58,6 +106,11 @@ jobs:
 
       - name: Check CHANGELOG.md
         run: scripts/changelog.sh check
+
+      # Fake gh, so no network or token; the build cases cross-compile the
+      # four release binaries and smoke test the linux/amd64 one.
+      - name: Test the release scripts
+        run: bash scripts/release-scripts_test.sh
 
       - name: Scan for known vulnerabilities
         # Pinned in tools/go.mod, so Dependabot keeps it current.
@@ -74,22 +127,20 @@ jobs:
     name: Test (${{ matrix.go }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    permissions:
-      contents: read
-      id-token: write # Codecov upload via OIDC, no token secret
     strategy:
       fail-fast: false
       matrix:
         # oldstable is the floor go.mod declares; stable is the current release.
         include:
           - { os: ubuntu-latest, go: oldstable, race: true }
-          - { os: ubuntu-latest, go: stable, race: true, coverage: true }
+          - { os: ubuntu-latest, go: stable, race: true }
           - { os: macos-latest, go: stable }
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
           persist-credentials: false
 
       - name: Set up Go
@@ -107,39 +158,80 @@ jobs:
       - name: Run tests
         env:
           RACE: ${{ matrix.race && 'true' || 'false' }}
-          COVERAGE: ${{ matrix.coverage && 'true' || 'false' }}
         run: |
           args=(-count=1 -shuffle=on)
           if [ "$RACE" = true ]; then
             args+=(-race)
           fi
-          if [ "$COVERAGE" = true ]; then
-            COVERPKG=$(go list ./... | grep -v testutil | tr '\n' ',' | sed 's/,$//')
-            args+=(-coverprofile=coverage.txt -covermode=atomic -coverpkg="$COVERPKG")
-          fi
           go test "${args[@]}" ./...
         shell: bash
 
-      - name: Upload coverage to Codecov
-        if: matrix.coverage
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          use_oidc: true
-          files: ./coverage.txt
-          fail_ci_if_error: false
-          verbose: true
+  # Fuzzes every target in turn (scripts/fuzz.sh): 5m each on the weekly
+  # schedule, 15s each on a manual dispatch. Never on a pull request or push,
+  # and never when release.yml calls this workflow (inputs.tag is set), so a
+  # new finding cannot hold up a release. The CI OK gate permits the skip on
+  # exactly those. 9 targets x 5m, plus building: scripts/ci-result_test.sh
+  # fails if a target is added without raising timeout-minutes.
+  fuzz:
+    name: Fuzz
+    if: ${{ !inputs.tag && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
 
-  # The single required check: passes only when every job above passed, so
-  # the ruleset never has to track matrix job names.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Fuzz every target
+        env:
+          FUZZTIME: ${{ github.event_name == 'schedule' && '5m' || '15s' }}
+        run: scripts/fuzz.sh
+
+      # go test writes each failing input under <package>/testdata/fuzz/.
+      # Commit one with its fix as a regression seed. A job that hits its
+      # timeout is cancelled rather than failed, so upload then too.
+      - name: Upload failing inputs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-failures
+          path: '**/testdata/fuzz/**'
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # The single required check, so the main ruleset never has to track job or
+  # matrix names. Every job in needs must pass except those the event skips on
+  # purpose, which scripts/ci-result.sh decides (only fuzz, outside schedule
+  # and a direct dispatch). A failed, cancelled, missing or wrongly skipped
+  # job fails the gate. EVENT and NEEDS go in through env, never into the
+  # script, and scripts/ci-result_test.sh checks this job's needs against the
+  # script's job list. EVENT reads workflow_call when release.yml calls this
+  # workflow, since a called workflow inherits the caller's event name.
   ci-ok:
     name: CI OK
     if: always()
-    needs: [ lint, test ]
+    needs: [ lint, test, fuzz ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
-      - name: Check all jobs passed
-        uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          jobs: ${{ toJSON(needs) }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
+          persist-credentials: false
+
+      - name: Fail unless every expected job passed
+        env:
+          EVENT: ${{ inputs.tag && 'workflow_call' || github.event_name }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: scripts/ci-result.sh

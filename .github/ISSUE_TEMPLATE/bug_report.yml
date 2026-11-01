@@ -1,0 +1,74 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a security problem, such as SQL injection or a way around the
+        soft delete or OPA plugins? Do not open an issue: report it privately
+        through [SECURITY.md](https://github.com/bawdo/gosbee/security/policy).
+        Do not paste credentials, connection strings or private data.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: A minimal Go program or REPL session that shows the problem.
+      render: go
+    validations:
+      required: true
+  - type: textarea
+    id: sql
+    attributes:
+      label: Generated SQL, and the SQL you expected
+      render: sql
+  - type: dropdown
+    id: dialect
+    attributes:
+      label: Dialect
+      multiple: true
+      options:
+        - PostgreSQL
+        - MySQL
+        - SQLite
+        - Not dialect specific
+    validations:
+      required: true
+  - type: dropdown
+    id: plugins
+    attributes:
+      label: Plugins in use
+      multiple: true
+      options:
+        - None
+        - softdelete
+        - opa
+        - My own plugin
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: gosbee version or commit
+      placeholder: v0.2.1
+    validations:
+      required: true
+  - type: input
+    id: go
+    attributes:
+      label: Output of go version
+      placeholder: go version go1.27.3 linux/amd64
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Error output, logs, or anything that seems relevant.

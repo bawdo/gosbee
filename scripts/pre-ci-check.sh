@@ -113,7 +113,7 @@ check_formatting() {
         if [ -n "$FIXED" ]; then
             gofmt -s -w .
             echo -e "${YELLOW}⚠ Fixed formatting in:${NC}"
-            echo "$FIXED" | sed 's/^/  /'
+            echo "  ${FIXED//$'\n'/$'\n'  }"
         fi
     fi
 
@@ -129,7 +129,7 @@ check_formatting() {
         FORMAT_FAILED=true
         record_result "Code Formatting" "FAIL" "Files need formatting"
         echo -e "${RED}✗ The following files need formatting:${NC}"
-        echo "$UNFORMATTED" | sed 's/^/  /'
+        echo "  ${UNFORMATTED//$'\n'/$'\n'  }"
         return 1
     fi
 }
@@ -216,7 +216,8 @@ check_coverage() {
         echo -e "${GREEN}✓ Coverage report generated${NC}"
         echo -e "  Total coverage: ${BLUE}${COVERAGE}%${NC}"
 
-        # Check against target (80% from .codecov.yml)
+        # A local guide on the raw total, which includes cmd/repl. Codecov's
+        # gated figure applies the .codecov.yml ignore list, so it differs.
         if (( $(echo "$COVERAGE >= 80" | bc -l) )); then
             echo -e "  ${GREEN}✓ Meets coverage target (80%)${NC}"
         else
@@ -299,10 +300,10 @@ generate_report() {
     SUCCESS_RATE=$(echo "scale=0; ($PASSED_CHECKS * 100) / $TOTAL_CHECKS" | bc)
 
     echo ""
-    if [ $SUCCESS_RATE -eq 100 ]; then
+    if [ "$SUCCESS_RATE" -eq 100 ]; then
         echo -e "CI Success Probability: ${GREEN}${SUCCESS_RATE}%${NC} 🎉"
         echo -e "${GREEN}✓ All checks passed! CI should succeed.${NC}"
-    elif [ $SUCCESS_RATE -ge 80 ]; then
+    elif [ "$SUCCESS_RATE" -ge 80 ]; then
         echo -e "CI Success Probability: ${YELLOW}${SUCCESS_RATE}%${NC} ⚠"
         echo -e "${YELLOW}⚠ Some checks failed. CI may succeed but could have issues.${NC}"
     else
@@ -380,4 +381,4 @@ main() {
 }
 
 # Run main function
-main
+main "$@"
