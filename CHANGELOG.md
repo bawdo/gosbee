@@ -7,6 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0] - 2026-11-01
+
+### Added
+
+- An OpenSSF Scorecard workflow checks the repository's supply chain hygiene
+  weekly and on every push to `main`, publishing the result to scorecard.dev
+  and the Security tab. The README carries the Scorecard badge.
+
+- CI lints every script under `scripts/` with a pinned, checksum verified
+  shellcheck release.
+
+- Each release attaches the Sigstore bundle of its build provenance
+  attestation as `gosbee-repl_<tag>_provenance.intoto.jsonl`, so
+  `gh attestation verify --bundle` can check a binary without the attestation
+  API.
+
+- Each release attaches CycloneDX SBOMs, one for the module and one for each
+  REPL binary, listed in `SHA256SUMS` and so covered by the build provenance
+  attestation.
+
+- The release workflow checks that proxy.golang.org serves the tagged commit
+  and that sum.golang.org records the version.
+
+- Native Go fuzz targets cover identifier quoting and string escaping for
+  PostgreSQL, MySQL and SQLite, the OPA plugin's column masks and the REPL's
+  input parsing, each checking a property such as a quoted value never closing
+  its quotes early.
+  `make fuzz` runs them all, and CI fuzzes every target weekly and on a manual
+  run, keeping failing inputs as an artifact for 14 days.
+
+- Testable examples, checked by `go test` and shown on pkg.go.dev, for the
+  core builder (select, join, where, insert, update and delete), each dialect
+  visitor (PostgreSQL, MySQL and SQLite) and each plugin (soft delete and
+  OPA, including column masking of a `SELECT *`).
+
+- SECURITY.md explains how to verify a release: the signed tag on `main`,
+  `gh attestation verify` for a binary or SBOM (also offline with the attached
+  bundle), the checksums, the SBOMs, and the Go module through
+  sum.golang.org. It also says what a first-time verifier will see: gpg's
+  trust warning on a keyring that has not certified the release key, and
+  `gh attestation verify` printing nothing on success outside a terminal, so
+  its exit status is the result.
+
+- A code of conduct (Contributor Covenant 2.1), issue forms for bug reports
+  and feature requests, a pull request template and a CODEOWNERS file. Blank
+  issues are turned off, and security reports are pointed at private
+  reporting.
+
+- `scripts/repo-settings.sh` keeps the repository's GitHub settings in the
+  tree, in phases (`metadata`, `rulesets`, `harden`, `show`) that each send
+  their whole desired state and can be dry-run with `DRY_RUN=1`. Pull
+  requests to `main` must now be up to date and pass CodeQL with no blocking
+  alert, and only an admin can create a `v*` tag. The release workflow's
+  publish job names a `release` environment, which `harden` limits to `v*`
+  tags and `main`. SECURITY.md covers `gh release verify` for
+  releases published once immutable releases are on.
+
+### Changed
+
+- The `CI OK` check is decided by an in-repo script, `scripts/ci-result.sh`,
+  in place of the third-party `re-actors/alls-green` action. It fails on any
+  failed, cancelled, missing or unexpected job, and on a skipped job unless
+  that event is permitted to skip it.
+- Codecov's project and patch coverage statuses now fail a pull request that
+  drops below their targets, instead of being informational.
+- REPL release binaries are built without the symbol table and DWARF debug
+  data, which makes them about a third smaller.
+- Releases check the tag name first, with no token scope and no checkout, so
+  a by-hand run naming any other tag stops before its code runs. They then
+  run the whole CI workflow on the tag, then build with a read-only token,
+  then publish from a job that is the only one able to write.
+  The build checks the tag is signed and verified by GitHub and smoke tests a
+  binary. Publishing goes through a draft, so a release never exists without
+  its assets, and a run that fails before publishing is recovered by running
+  `Release` again with the tag. A pre-release tag is never marked latest.
+- Release notes are no longer rewritten after publication: a published
+  release is never changed.
+- Coverage is uploaded to Codecov by a separate `Coverage` workflow instead of
+  the CI test job.
+
+### Fixed
+
+- `scripts/pre-ci-check.sh --fix gofmt` (and `make pre-ci-fix`) now applies
+  the fix. The option was parsed but never reached the script's main
+  function, so it was silently ignored.
+- `UPDATE ... SET` and `ON CONFLICT ... DO UPDATE SET` write each target
+  column bare (`SET "name" = $1`). They wrote it table-qualified
+  (`SET "users"."name" = $1`), which PostgreSQL and SQLite reject. The value
+  side of an assignment is unchanged. Because the target is now bare, `ToSQL`
+  refuses a target column of another table with `managers.ErrSetTargetTable`
+  rather than letting it resolve to a column of the table being written.
+
 ## [v0.3.0-rc.1] - 2026-11-01
 
 ### Added
@@ -168,6 +260,7 @@ First tagged release.
 - Plugin system with soft delete and OPA (row filters and column masks).
 - Interactive REPL for building and running queries against live databases.
 
+[v0.3.0]: https://github.com/bawdo/gosbee/compare/v0.2.1...v0.3.0
 [v0.3.0-rc.1]: https://github.com/bawdo/gosbee/compare/v0.2.1...v0.3.0-rc.1
 [v0.2.1]: https://github.com/bawdo/gosbee/compare/v0.2.0...v0.2.1
 [v0.2.0]: https://github.com/bawdo/gosbee/compare/v0.1.0...v0.2.0
