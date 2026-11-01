@@ -3,6 +3,7 @@
 [![CI](https://github.com/bawdo/gosbee/workflows/CI/badge.svg)](https://github.com/bawdo/gosbee/actions)
 [![codecov](https://codecov.io/gh/bawdo/gosbee/graph/badge.svg?token=5QEEOYCISD)](https://codecov.io/gh/bawdo/gosbee)
 [![GoDoc](https://pkg.go.dev/badge/github.com/bawdo/gosbee.svg)](https://pkg.go.dev/github.com/bawdo/gosbee)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bawdo/gosbee/badge)](https://scorecard.dev/viewer/?uri=github.com/bawdo/gosbee)
 
 ![gosbee with plugins](gosbee_with_plugins.png)
 
