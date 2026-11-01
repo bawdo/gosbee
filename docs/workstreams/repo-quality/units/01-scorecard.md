@@ -61,4 +61,67 @@ Review lanes: security, correctness, brief
 
 ## Outcome
 
+Close mode as run: auto. Questions that fired before step 4: the R&D tracking question
+(answered "tracked"), commit permission (granted for this unit) and the R&D opening
+statement (committed as drafted). None came from a merge or review gate.
+
+Landed:
+
+- `.github/workflows/scorecard.yml`, byte identical to bawdo/caddy_shack's.
+  `diff ../caddy_shack/.github/workflows/scorecard.yml .github/workflows/scorecard.yml`
+  printed nothing. It triggers on `push` to `main`, a weekly cron (`30 1 * * 1`) and
+  `branch_protection_rule`. Top level `permissions: read-all`; job `analysis` alone gets
+  `security-events: write` and `id-token: write`; `timeout-minutes: 10`; checkout uses
+  `persist-credentials: false`; scorecard-action v2.5.0 runs with `results_format: sarif`
+  and `publish_results: true`; the SARIF is uploaded as an artifact (`retention-days: 5`)
+  and to code scanning via codeql-action/upload-sarif v4.39.1. Every `uses:` is pinned to
+  a full SHA with a version comment.
+- README.md Scorecard badge, after the GoDoc badge.
+- CHANGELOG.md `[Unreleased]` `### Added` entry. `scripts/changelog.sh check` printed
+  `CHANGELOG.md is consistent (3 versions)`.
+
+Verification (step 1). The first run, inside the agent sandbox, failed vet, lint, tidy,
+vuln and test, all on sandbox denials: the Go build cache under `~/Library/Caches`,
+`httptest` port binding and `vuln.go.dev`. It was re-run outside the sandbox, with a
+wrapper on PATH, kept outside the repository, that runs `uvx zizmor@1.31.1` (CI's pinned
+version), so the zizmor gate ran instead of skipping. The record:
+
+```
+$ cat .claude/wombat-verification
+wombat-verification 1
+tree	clean
+fmt	fbeea0c33502c595b1fdad755c9ab8ba823f3892	pass	0	-
+vet	fbeea0c33502c595b1fdad755c9ab8ba823f3892	pass	0	-
+lint	fbeea0c33502c595b1fdad755c9ab8ba823f3892	pass	1	-
+tidy	fbeea0c33502c595b1fdad755c9ab8ba823f3892	pass	0	-
+changelog	fbeea0c33502c595b1fdad755c9ab8ba823f3892	pass	0	-
+vuln	fbeea0c33502c595b1fdad755c9ab8ba823f3892	pass	2	-
+zizmor	fbeea0c33502c595b1fdad755c9ab8ba823f3892	pass	5	-
+shellcheck	fbeea0c33502c595b1fdad755c9ab8ba823f3892	pass	0	-
+test	fbeea0c33502c595b1fdad755c9ab8ba823f3892	pass	2	-
+```
+
+Every gate ran; none was skipped. actionlint (not a project gate) was also clean on the
+new file.
+
+Review lanes selected (`select-gates.sh .`): security, correctness, brief. All three
+configured lanes ran; none was skipped.
+
+Scan: `scan-secrets.sh .` printed `scan clean: 10 files`.
+
+Sweep: `sweep-docs.sh . --base workstream/repo-quality` (no `--claim`, since this unit
+made no documented sentence untrue) printed two candidates, `CHANGELOG.md touched` and
+`README.md touched`. Both are this unit's own intended edits, so both were dismissed with
+no further change. A `git grep -ni scorecard -- '*.md'` across the rest of the docs found
+only the index and briefs 07 and 09, and both briefs assume what this unit shipped. No
+document was rewritten or deleted, and no later brief got a correction.
+
+Known limit: the score only appears once this workflow runs on `main`, which happens
+when the integration branch merges. Until then the README badge will not resolve to a
+score. Unit 09 records the first published result.
+
+Next unit inherits: nothing new to build on. Unit 08 (repo-settings) needs to know that
+Scorecard's `Branch-Protection` check reads branch protection, and this workflow re-runs
+on `branch_protection_rule` events.
+
 ## Not done, and why
