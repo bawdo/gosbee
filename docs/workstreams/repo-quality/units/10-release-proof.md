@@ -73,4 +73,18 @@ Review lanes: security, correctness, brief
 
 ## Outcome
 
+- CodeQL alert #5 fix, `3fbca7e`: tests written first and seen to fail (`FAIL ci_yml_gate_shape:
+  EVENT not passed through env`; `FAIL release_yml_tag_job_shape: no tag job in release.yml`).
+  Mutations through `record-mutation.sh`, ledger outside the repository, all three KILLED:
+  - `ci.yml` lint checkout back on `ref: ${{ inputs.ref }}`: first failing line
+    `FAIL ci_yml_called_with_tag: ci.yml still reads inputs.ref`.
+  - `release.yml` `ci` job `needs: tag` to `needs: []`: first failing line
+    `FAIL release_yml_ci_needs_tag: ci does not need the tag job`.
+  - `release.yml` tag regex with its `^` anchor dropped: first failing line
+    `FAIL release_yml_tag_check_stops (x-v1.2.3): expected exit 1`.
+- Verification at `3fbca7e`, `WOMBAT_BASE_REF=workstream/repo-quality scripts/wombat-verify.sh`, run
+  outside the sandbox (the go build cache is not writable in it): tree clean, all 13 gates pass.
+  actionlint clean; zizmor 1.31.1 `--offline` "No findings" (1 ignored, 3 suppressed).
+- Not yet proved: that CodeQL clears alert #5. Only CodeQL on #28 can say.
+
 ## Not done, and why
