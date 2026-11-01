@@ -138,7 +138,7 @@ Code contributions might include:
    | 3 | Code formatting | `gofmt -s` (auto-fixable via `--fix gofmt`) |
    | 4 | Tests with race detector | `go test -race` |
    | 5 | Linting | `golangci-lint` |
-   | 6 | Test coverage (target: 80%) | `go test -coverprofile` |
+   | 6 | Test coverage (local guide: 80% raw; Codecov gates on `.codecov.yml`) | `go test -coverprofile` |
    | 7 | Build | `go build` |
    | 8 | Vulnerability scan | `govulncheck` |
 

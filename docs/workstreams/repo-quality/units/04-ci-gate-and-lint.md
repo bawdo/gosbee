@@ -91,11 +91,62 @@ Review lanes: security, correctness, brief
   byte against the sed form under bash 3.2.57 and 5.3.20 (including an empty line). No
   `disable` directives were needed in `pre-ci-check.sh`. The two in `ci-result_test.sh` (SC2016)
   carry a reason.
+- Codecov project target 93%: the measured 93.9% with `.codecov.yml`'s ignore list applied (the
+  figure the project status judges), rounded down. Not the raw 83.1%, which counts `cmd/repl`.
+  Risk named: Codecov scores Go by line, the measurement is by statement, so the first upload may
+  differ slightly; 0.9 points of rounding plus the kept 0.5% threshold are the headroom. Measured
+  outside the sandbox by the operator, because the tests bind local ports.
+- Codecov patch target 80% (was 70%, informational). Justification: a patch's percentage moves in
+  large steps (one uncovered line in five is 80%), so holding a patch at the 93% project figure
+  would fail most small changes on granularity rather than on testing; the project status is what
+  stops the total drifting, and 80% still requires most new lines to be tested. Threshold 0.5%
+  kept for both.
+- `pre-ci-check.sh`'s "80% from .codecov.yml" comment and CONTRIBUTING's "target: 80%" became
+  false, so both now say 80% is a local guide on the raw total. The check's behaviour is
+  unchanged.
+- `.codecov.yml` checked with Codecov's validator (`curl --data-binary @.codecov.yml
+  https://codecov.io/validate`): `Valid!`.
 - `scripts/README.md` gained `--fix gofmt` usage and a `ci-result.sh` section, since both are
   documentation this unit invalidated or created.
 
 ## Plan
 
 ## Outcome
+
+### Coverage measurement (run by the operator, outside the sandbox)
+
+```
+$ COVERPKG=$(go list ./... | grep -v testutil | tr '\n' ',' | sed 's/,$//')
+$ go test -count=1 -coverprofile=coverage.txt -covermode=atomic -coverpkg=$COVERPKG ./...
+go test exit: 0
+$ go tool cover -func coverage.txt | tail -1   (raw)
+total:  (statements)  83.1%
+$ go tool cover -func coverage-ignored.txt | tail -1   (.codecov.yml ignores applied:
+  cmd/repl, internal/testutil, _test.go, testdata, .pb.go lines removed from the profile)
+total:  (statements)  93.9%
+```
+
+Project target: 93%.
+
+### zizmor (run by the operator)
+
+`zizmor 1.31.1 --offline .github/workflows`: `No findings to report. Good job! (3 suppressed)`,
+exit 0. All three workflows audited.
+
+### Mutation ledger (ci-result.sh)
+
+Each run through `record-mutation.sh . --patch <p> --fail-pattern '^FAIL ' --ledger <scratchpad>/mut/ledger.txt -- scripts/ci-result_test.sh`
+against commit `cb3bb0a`. 8 blocks in the ledger, 8 `verdict  KILLED`, measured with `grep -c`.
+
+| Mutation | First failing line | Verdict |
+|---|---|---|
+| success scored bad | `FAIL all_success_passes_pull_request: expected exit 0` | KILLED |
+| failure scored ok | `FAIL one_failure_fails: expected exit 1` | KILLED |
+| cancelled scored ok | `FAIL cancelled_job_fails: expected exit 1` | KILLED |
+| permitted skip ignored (`elif false`) | `FAIL permitted_skip_passes: expected exit 0` | KILLED |
+| any skip ok (table ignored) | `FAIL permitted_skip_is_per_event: expected exit 1` | KILLED |
+| push arm permits `lint` | `FAIL unpermitted_skip_fails_push: expected exit 1` | KILLED |
+| missing job defaults to success | `FAIL missing_job_fails: expected exit 1` | KILLED |
+| extra job scored by its own result | `FAIL extra_job_fails: expected exit 1` | KILLED |
 
 ## Not done, and why

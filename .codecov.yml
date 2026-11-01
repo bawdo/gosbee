@@ -4,18 +4,25 @@ coverage:
   range: "70...100"
 
   status:
+    # Gating. The project target is measured, not chosen: total statement
+    # coverage with the ignore list below applied was 93.9% on 2026-11-01
+    # (unit 04 of the repo-quality workstream), rounded down. Raise it as
+    # coverage rises; never lower it to pass a pull request.
     project:
+      default:
+        target: 93%
+        threshold: 0.5%
+        informational: false
+        if_ci_failed: error
+
+    # New and changed lines must be 80% covered. Lower than the project
+    # target because a small patch moves in large steps (one uncovered line
+    # in five is 80%), and the project status already stops the total drifting.
+    patch:
       default:
         target: 80%
         threshold: 0.5%
-        informational: true
-        if_ci_failed: error
-
-    patch:
-      default:
-        target: 70%
-        threshold: 0.5%
-        informational: true
+        informational: false
         if_ci_failed: error
 
 comment:

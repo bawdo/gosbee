@@ -216,7 +216,8 @@ check_coverage() {
         echo -e "${GREEN}✓ Coverage report generated${NC}"
         echo -e "  Total coverage: ${BLUE}${COVERAGE}%${NC}"
 
-        # Check against target (80% from .codecov.yml)
+        # A local guide on the raw total, which includes cmd/repl. Codecov's
+        # gated figure applies the .codecov.yml ignore list, so it differs.
         if (( $(echo "$COVERAGE >= 80" | bc -l) )); then
             echo -e "  ${GREEN}✓ Meets coverage target (80%)${NC}"
         else
