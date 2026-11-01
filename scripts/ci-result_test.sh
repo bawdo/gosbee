@@ -38,6 +38,11 @@ needs() {
 
 JOBS=(lint test fuzz)
 
+# Every checkout in ci.yml takes this ref: the tag release.yml called with,
+# fully qualified, or empty for the event's own ref.
+# shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
+CHECKOUT_REF="          ref: \${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}"
+
 # all_success [JOB=RESULT...]: every expected job as success, with overrides.
 # An override naming a job outside JOBS is added as an extra job.
 all_success() {
@@ -223,7 +228,7 @@ gate=$(gate_block)
 grep -qxF '    name: CI OK' <<<"$gate" || fail $t "gate is not named CI OK"
 grep -qxF '    if: always()' <<<"$gate" || fail $t "gate does not run if: always()"
 # shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
-grep -qxF "          EVENT: \${{ inputs.ref && 'workflow_call' || github.event_name }}" <<<"$gate" || fail $t "EVENT not passed through env"
+grep -qxF "          EVENT: \${{ inputs.tag && 'workflow_call' || github.event_name }}" <<<"$gate" || fail $t "EVENT not passed through env"
 # shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
 grep -qxF '          NEEDS: ${{ toJSON(needs) }}' <<<"$gate" || fail $t "NEEDS not passed through env"
 grep -qxF '        run: scripts/ci-result.sh' <<<"$gate" || fail $t "gate does not run scripts/ci-result.sh"
@@ -242,10 +247,10 @@ CODE=0
 job=$(job_block fuzz)
 [ -n "$job" ] || fail $t "no fuzz job in ci.yml"
 # shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
-grep -qxF "    if: \${{ !inputs.ref && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}" <<<"$job" \
+grep -qxF "    if: \${{ !inputs.tag && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}" <<<"$job" \
     || fail $t "fuzz job if: is not schedule or direct dispatch only"
 # shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
-grep -qxF '          ref: ${{ inputs.ref }}' <<<"$job" || fail $t "checkout does not take inputs.ref"
+grep -qxF "$CHECKOUT_REF" <<<"$job" || fail $t "checkout does not take the called tag"
 grep -qxF '          persist-credentials: false' <<<"$job" || fail $t "checkout persists credentials"
 grep -qxF '          retention-days: 14' <<<"$job" || fail $t "failures not kept 14 days"
 grep -qxF "          path: '**/testdata/fuzz/**'" <<<"$job" || fail $t "artifact path is not testdata/fuzz"
@@ -279,8 +284,25 @@ echo "ok $t"
 t=ci_yml_schedule_own_concurrency_group
 CODE=0
 # shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
-grep -qxF "  group: ci-\${{ inputs.ref || github.event.pull_request.number || (github.event_name == 'schedule' && 'schedule') || github.ref }}" "$WORKFLOW" \
+grep -qxF "  group: ci-\${{ inputs.tag || github.event.pull_request.number || (github.event_name == 'schedule' && 'schedule') || github.ref }}" "$WORKFLOW" \
     || fail $t "schedule does not have its own concurrency group"
+echo "ok $t"
+
+# release.yml calls ci.yml with a bare tag name, which release.yml's tag job
+# has already checked, and ci.yml qualifies it. No ref input remains: CodeQL
+# reads a checkout of an input named ref as a pull request head (alert #5).
+t=ci_yml_called_with_tag
+CODE=0
+call=$(awk '/^  workflow_call:/ { f = 1; print; next } f && /^  [^ ]/ { exit } f' "$WORKFLOW")
+[ -n "$call" ] || fail $t "no workflow_call trigger in ci.yml"
+grep -qxF '      tag:' <<<"$call" || fail $t "workflow_call has no tag input"
+! grep -qxF '      ref:' <<<"$call" || fail $t "workflow_call still has a ref input"
+! grep -n 'inputs\.ref' "$WORKFLOW" || fail $t "ci.yml still reads inputs.ref"
+checkouts=$(grep -c 'uses: actions/checkout@' "$WORKFLOW")
+refs=$(grep -cxF "$CHECKOUT_REF" "$WORKFLOW")
+[ "$checkouts" -gt 0 ] || fail $t "no checkouts in ci.yml"
+[ "$refs" = "$checkouts" ] || fail $t "$refs of $checkouts checkouts take the called tag"
+! grep -E '^ +ref:' "$WORKFLOW" | grep -vxF "$CHECKOUT_REF" || fail $t "a checkout takes another ref"
 echo "ok $t"
 
 t=no_alls_green

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0-rc.1] - 2026-11-01
+
 ### Added
 
 - An OpenSSF Scorecard workflow checks the repository's supply chain hygiene
@@ -56,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requests to `main` must now be up to date and pass CodeQL with no blocking
   alert, and only an admin can create a `v*` tag. The release workflow's
   publish job names a `release` environment, which `harden` limits to `v*`
-  tags and `main` once applied. SECURITY.md covers `gh release verify` for
+  tags and `main`. SECURITY.md covers `gh release verify` for
   releases published once immutable releases are on.
 
 ### Changed
@@ -69,8 +71,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drops below their targets, instead of being informational.
 - REPL release binaries are built without the symbol table and DWARF debug
   data, which makes them about a third smaller.
-- Releases run the whole CI workflow on the tag first, then build with a
-  read-only token, then publish from a job that is the only one able to write.
+- Releases check the tag name first, with no token scope and no checkout, so
+  a by-hand run naming any other tag stops before its code runs. They then
+  run the whole CI workflow on the tag, then build with a read-only token,
+  then publish from a job that is the only one able to write.
   The build checks the tag is signed and verified by GitHub and smoke tests a
   binary. Publishing goes through a draft, so a release never exists without
   its assets, and a run that fails before publishing is recovered by running
@@ -164,6 +168,7 @@ First tagged release.
 - Plugin system with soft delete and OPA (row filters and column masks).
 - Interactive REPL for building and running queries against live databases.
 
+[v0.3.0-rc.1]: https://github.com/bawdo/gosbee/compare/v0.2.1...v0.3.0-rc.1
 [v0.2.1]: https://github.com/bawdo/gosbee/compare/v0.2.0...v0.2.1
 [v0.2.0]: https://github.com/bawdo/gosbee/compare/v0.1.0...v0.2.0
 [v0.1.0]: https://github.com/bawdo/gosbee/releases/tag/v0.1.0

@@ -546,13 +546,14 @@ only place release notes are written.
    git tag -s v0.3.0 -m v0.3.0
    git push origin v0.3.0
    ```
-3. The `Release` workflow runs in four stages:
-   - **CI** runs first, on the tag itself (the whole CI workflow, called with
-     `refs/tags/<tag>`).
-   - **Build**, with a read-only token, refuses a tag name that is not
-     `vX.Y.Z` or `vX.Y.Z-suffix` before checking anything out. It then checks
-     the tag is annotated and its signature verified by GitHub
-     (`scripts/verify-tag.sh`), is on `main` and has a changelog section. It
+3. The `Release` workflow runs in five stages:
+   - **Tag**, with no token scope and no checkout, refuses a tag name that is
+     not `vX.Y.Z` or `vX.Y.Z-suffix`, so no other tag's code is ever run.
+   - **CI** then runs on the tag itself (the whole CI workflow, called with
+     the tag name, which it checks out as `refs/tags/<tag>`).
+   - **Build**, with a read-only token, checks the tag is annotated and its
+     signature verified by GitHub (`scripts/verify-tag.sh`), is on `main` and
+     has a changelog section. It
      builds the REPL binaries for Linux and macOS on amd64 and arm64
      (`scripts/build-release.sh`), smoke tests the Linux amd64 one and writes
      a CycloneDX SBOM for the module (`gosbee-repl_<tag>_module.cdx.json`) and
@@ -624,12 +625,10 @@ only from `main`. A dispatched run's provenance attestation also records the
 dispatched ref and that branch's commit as its source, not the tag, so
 `gh attestation verify --source-ref refs/tags/<tag>` fails for its assets,
 while `--signer-workflow bawdo/gosbee/.github/workflows/release.yml` still
-holds. The publish job names the `release` environment. Once
-`scripts/repo-settings.sh harden` is applied (after the current workstream
-merges to `main`), that environment deploys only from `v*` tags and `main`, so
+holds. The publish job names the `release` environment, which
+`scripts/repo-settings.sh harden` limits to `v*` tags and `main`, so
 `release.yml` as `main` has it, dispatched from any other branch, cannot
-publish; `main` is admitted so the recovery run above still works. Until then
-GitHub creates the environment on first use with no deployment rule. Neither
+publish; `main` is admitted so the recovery run above still works. Neither
 binds a branch that edits `release.yml` itself, which can drop the
 `environment:` line, so who has write access remains the boundary. With
 `Protect release tag creation`, only an admin can push the tag that starts a

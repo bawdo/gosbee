@@ -65,7 +65,10 @@ by Keith Bawden's key with primary fingerprint
 `661B 030E 1C0F F788 151B  9525 E8C1 84EB 4B8F 82D1`, through the signing
 subkey `9954 8FCC B94B E845 41E5  73AA 4823 4C2C 292E EE78`. A good result
 from `git verify-tag` is a good signature naming that subkey. Treat a
-signature from any other key as a failure. A new release key will be named
+signature from any other key as a failure. On a keyring that has not
+certified the key, gpg adds "WARNING: This key is not certified with a trusted
+signature!". That is expected: the fingerprint check here is the trust
+decision, not gpg's web of trust. A new release key will be named
 here, in this file on `main`, before any release is signed with it. The key
 and this fingerprint both come from GitHub, so for more assurance compare the
 fingerprint with one you got another way, such as a keyserver or an earlier
@@ -85,6 +88,10 @@ gh attestation verify gosbee-repl_v<version>_<os>_<arch> --repo bawdo/gosbee \
   --source-digest <commit sha> \
   --deny-self-hosted-runners
 ```
+
+`gh attestation verify` prints its summary only to a terminal. In a script or
+a pipe it prints nothing when the check passes, so read its exit status: 0 is
+a pass, and anything else is a failure, with the reason on stderr.
 
 The same command checks an SBOM: name the `.cdx.json` file instead of the
 binary. To verify without querying GitHub's attestation API, download the
@@ -123,12 +130,12 @@ Either way, check that each file you downloaded is reported `OK` by name.
 
 ### The release itself
 
-Once immutable releases are on for this repository (they are switched on by
-`scripts/repo-settings.sh harden`, after the current release pipeline reaches
-`main`), a published release cannot have its tag moved or its assets added,
-replaced or deleted, and GitHub attests the release when it is published.
-Releases published before that carry no release attestation, so this check
-does not apply to them. For a later release:
+Immutable releases are on for this repository (switched on by
+`scripts/repo-settings.sh harden` on 2026-11-01), so a published release
+cannot have its tag moved or its assets added, replaced or deleted, and GitHub
+attests the release when it is published. Releases published before that
+(v0.2.1 and earlier) carry no release attestation, so this check does not
+apply to them. For a later release:
 
 ```bash
 gh release verify v<version> --repo bawdo/gosbee
@@ -158,9 +165,9 @@ dispatched from, and that branch's commit, as its source, not the tag. Both
 `--source-ref` and `--source-digest` fail for its assets. `--signer-workflow`
 still passes, but it matches `release.yml` as it stands on any branch, so on
 its own it does not bind the source at all. A failure there is a reason to ask
-in an issue, not to drop the flags. Once `scripts/repo-settings.sh harden` is
-applied, the publish job's `release` environment deploys only from a `v*` tag
-or from `main`, so `release.yml` as `main` has it cannot publish from a run
+in an issue, not to drop the flags. The publish job's `release` environment
+deploys only from a `v*` tag or from `main` (`scripts/repo-settings.sh
+harden`), so `release.yml` as `main` has it cannot publish from a run
 dispatched from another branch. A branch that edits the workflow can drop the
 environment, so this narrows mistakes rather than binding someone with write
 access; the tag check above is what binds.
