@@ -86,4 +86,128 @@ session inline, task by task.
 
 ## Outcome
 
+Close mode as run: auto. Questions that fired, each with its cause and the operator's answer
+(asked at open, before the plan):
+
+- Release call (ci.yml called by release.yml inherits `workflow_dispatch`): "Skip it in calls".
+- Backslash escaping property for PostgreSQL and SQLite: "Safety + record defect".
+- Commit grant: "Yes, for this unit".
+
+### What landed
+
+- `internal/sqllex`: a read-back lexer (ANSI, MySQL) the properties are checked against.
+- Fuzz targets, every one asserting a property (table in the plan), with seeds through `f.Add`
+  only, so no `testdata/fuzz/` files are committed:
+  `FuzzDoubleQuote`, `FuzzBacktick`, `FuzzEscapeString`, `FuzzEscapeLikePattern`
+  (`internal/quoting`); `FuzzIdentifierQuoting`, `FuzzStringLiteral` (`visitors`, all three
+  dialects, with and without params); `FuzzMaskedProjection` (`plugins/opa`); `FuzzTokenize`,
+  `FuzzParseValue` (`cmd/repl`). `TestEscapeStringANSIRoundTripBackslash` skips with the defect.
+
+  ```
+  $ go test -list ^Fuzz ./... | grep -c ^Fuzz
+  9
+  ```
+- `scripts/fuzz.sh` (carries on past a failure, fatal on a listing failure or a malformed
+  FUZZTIME), `make fuzz FUZZTIME=...` (default 10s), `scripts/fuzz_test.sh` (fake go), run by the CI
+  lint job and as the `fuzz-script` verify gate.
+
+  ```
+  $ bash scripts/fuzz_test.sh | grep -c "^ok "
+  20
+  ```
+- ci.yml `fuzz` job: `if: !inputs.ref && (schedule || workflow_dispatch)`, FUZZTIME 5m on schedule
+  and 15s on dispatch, `timeout-minutes: 60`, `persist-credentials: false`, `ref: inputs.ref`,
+  SHA-pinned actions, `fuzz-failures` artifact of `**/testdata/fuzz/**` on failure with 14 day
+  retention. The gate needs `[ lint, test, fuzz ]`, and its EVENT is `workflow_call` when
+  `inputs.ref` is set. `ci-result.sh` lets `fuzz` be skipped on `pull_request`, `push` and
+  `workflow_call` only.
+
+  ```
+  $ scripts/ci-result_test.sh | grep -c "^ok "
+  33
+  $ git show workstream/repo-quality:scripts/ci-result_test.sh | grep -c 'echo "ok '
+  16
+  ```
+  (The second counts echo lines in the old script, several of which sit in loops, so it is not a
+  case count. The run count before this unit was not measured.)
+- CONTRIBUTING.md (Testing gets a Fuzzing subsection; Branch Rules lists the Fuzz job and its
+  skip), CHANGELOG.md `[Unreleased]` Added, scripts/README.md (a `fuzz.sh` section).
+- Each target was fuzzed locally for 15 to 30s, plus `make fuzz FUZZTIME=2s` over all of them:
+  no finding.
+
+### Mutation ledger
+
+Each run went through `record-mutation.sh . --patch <p> --fail-pattern <runner marker> --ledger
+<scratchpad>/mut/ledger.txt -- <command>`, with the patches and the ledger in the session
+scratchpad. Verdict lines, verbatim:
+
+```
+q-doublequote     FuzzDoubleQuote         first --- FAIL: FuzzDoubleQuote          KILLED
+q-escapestring    FuzzEscapeString        first --- FAIL: FuzzEscapeString         KILLED
+q-like            FuzzEscapeLikePattern   first --- FAIL: FuzzEscapeLikePattern    KILLED
+v-mysqlident      FuzzIdentifierQuoting   first --- FAIL: FuzzIdentifierQuoting    KILLED
+v-noescape        FuzzStringLiteral       first none                               SURVIVED
+v-noescape2       FuzzStringLiteral       first --- FAIL: FuzzStringLiteral        KILLED
+o-rawmask         FuzzMaskedProjection    first --- FAIL: FuzzMaskedProjection     KILLED
+r-tokjoin         FuzzTokenize            first --- FAIL: FuzzTokenize             KILLED
+r-tokjoin         FuzzParseValue          first none                               SURVIVED
+r-parseval        FuzzParseValue          first --- FAIL: FuzzParseValue           KILLED
+f-stopfirst       fuzz_test.sh            first FAIL continues_after_failure       KILLED
+f-listfail        fuzz_test.sh            first FAIL list_failure_fails            KILLED
+c-schedskip       ci-result_test.sh       first FAIL fuzz_skip_refused_schedule    KILLED
+c-nocall          ci-result_test.sh       first FAIL fuzz_skip_permitted_workflow_call KILLED
+c-ifpr            ci-result_test.sh       first FAIL ci_yml_fuzz_job_shape         KILLED
+c-timeout         ci-result_test.sh       first FAIL ci_yml_fuzz_timeout_sized     KILLED
+$ grep -c '^verdict' ledger.txt; grep -c '^verdict  KILLED' ledger.txt; grep -c '^verdict  SURVIVED' ledger.txt
+16
+14
+2
+```
+
+The two survivors: `v-noescape` removed the only use of `quoting` in visitor.go, so the mutant did
+not compile and no test ran. It was replaced by `v-noescape2` (`EscapeLikePattern` in place of
+`EscapeString`), which compiles and was killed. `r-tokjoin` against `FuzzParseValue` is a plan
+error: `parseValue` takes a token and never calls `tokenize`, so that target cannot see the
+mutation. `FuzzTokenize` kills it.
+
+### Verification (step 1)
+
+`WOMBAT_BASE_REF=workstream/repo-quality scripts/wombat-verify.sh`, run outside the sandbox (the Go
+build cache, httptest binds and vuln.go.dev are blocked inside it). The first run failed `lint`:
+`internal/sqllex/sqllex.go:57:3: QF1002: could use tagged switch on ch (staticcheck)`, which was
+fixed in 82cf556. The rerun at 82cf556 had tree `clean`, and every gate passed: fmt, vet, lint,
+tidy, changelog, release-scripts, vuln, zizmor, shellcheck, ci-result, fuzz-script, test. None was
+skipped. Lane selector: `security`, `correctness`, `brief`, with no `unmatched` and no `floor`.
+
+### Scan and sweep
+
+- `scan-secrets.sh .`: `scan clean: 14 files`.
+- `sweep-docs.sh . --base workstream/repo-quality --claim 'today it permits none'`, and again with
+  `--claim '(today, none)'`: the same 8 candidates each time, and no `claim` hit. That's because the
+  CONTRIBUTING and ci.yml sentences had already been rewritten in this diff. `CHANGELOG.md`,
+  `CONTRIBUTING.md` and `scripts/README.md` are `touched` (this unit's own edits). `README.md`,
+  `cmd/repl/README.md`, `plugins/README.md`, `plugins/opa/README.md` and
+  `plugins/softdelete/README.md` are `named-file` on the basename `README.md` alone, because
+  `scripts/README.md` changed. All five were read and dismissed: none mentions make targets, CI
+  jobs, scripts or fuzzing. No later unit's brief was corrected.
+
+### What the next units inherit
+
+- 08 (community-docs): fuzzing exists, is documented in CONTRIBUTING (Testing, Fuzzing), and
+  security findings route through SECURITY.md. That is worth naming for the Best Practices survey's
+  dynamic analysis criteria.
+- 09 (repo-settings): `Fuzz` is a job under `CI OK`, not a separate required check. The gate
+  reports `workflow_call` for release runs.
+- 10 (release-proof): the first remote run of the fuzz job, the `!inputs.ref` condition in a
+  scheduled run, and the gate's `workflow_call` EVENT in a release run are all unproven until then.
+
 ## Not done, and why
+
+- Known defect, not fixed here (operator ruling, as the brief requires): `quoting.EscapeString`
+  doubles `\` for PostgreSQL and SQLite in non-parameterised mode, so a literal backslash comes
+  back doubled. Failing input: `\` (`'\\'` reads back as `\\` under ANSI rules). It is not
+  injection: the literal never closes early under either lexer, which `FuzzEscapeString`,
+  `FuzzStringLiteral` and `FuzzMaskedProjection` assert. It is pinned by the skipped
+  `TestEscapeStringANSIRoundTripBackslash`. A fix wants a per-dialect escaper (in a separate
+  change), and once it lands the three targets' backslash exemption and the skip are removed.
+- No fuzz finding was produced in the local runs, so nothing is reported for a security advisory.
