@@ -128,30 +128,42 @@ cleanly), writes CycloneDX JSON 1.6 SBOMs and then `dist/SHA256SUMS` listing
 every binary and SBOM. The SBOMs come from `cyclonedx-gomod`, pinned in
 `tools/go.mod`: `dist/gosbee-repl_<tag>_module.cdx.json` for the module (its
 version, read from the tag at HEAD, must be `<tag>`) and
-`dist/gosbee-repl_<tag>_<os>_<arch>.cdx.json` for each binary. It refuses a
-malformed tag and an existing `dist/` before building anything, and a failed
-SBOM stops it before `SHA256SUMS` is written. It needs `jq`.
+`dist/gosbee-repl_<tag>_<os>_<arch>.cdx.json` for each binary. The SBOM tool
+is third-party code that runs after the binaries exist, so they are
+checksummed before it runs, and a binary changed after it fails the build,
+named. It refuses a malformed tag and an existing `dist/` before building
+anything, and a failed SBOM stops it before `SHA256SUMS` is written. It needs
+`jq`.
 
 **Tests**: `./scripts/release-scripts_test.sh`.
 
 ## publish-release.sh
 
-**Purpose**: Publishes the GitHub release for a tag. The `Release`
-workflow's publish job runs it, and it is the only script that writes to a
-release.
+**Purpose**: Publishes the GitHub release for a tag, or checks that it can be
+published. The `Release` workflow's publish job runs it, and it is the only
+script that writes to a release.
 
 **Usage**:
 ```bash
-GH_REPO=bawdo/gosbee ./scripts/publish-release.sh v0.3.0 notes.md bundle.json
+GH_REPO=bawdo/gosbee ./scripts/publish-release.sh --check v0.3.0 "$TAG_OBJECT"
+GH_REPO=bawdo/gosbee ./scripts/publish-release.sh v0.3.0 "$TAG_OBJECT" notes.md bundle.json
 ```
 
-Run it from a directory holding `dist/`. It attaches exactly the files
-`dist/SHA256SUMS` lists, `SHA256SUMS` itself and the provenance bundle
+`TAG_OBJECT` is the sha of the annotated tag object the build verified
+(`git rev-parse refs/tags/v0.3.0` in its checkout). Both forms refuse a
+release already published and a tag on GitHub that no longer points at
+`TAG_OBJECT`, naming both shas, so a tag moved since the build is never
+released. `--check` only reads: the publish job runs it before its first
+write, the attestation. Only `gh`'s own "release not found" counts as no
+release: any other `gh` failure stops it with `gh`'s message.
+
+Publishing runs from a directory holding `dist/`. It attaches exactly the
+files `dist/SHA256SUMS` lists, `SHA256SUMS` itself and the provenance bundle
 (compacted to `dist/gosbee-repl_<tag>_provenance.intoto.jsonl`), each once.
-Every input is checked before any `gh` call. A published release is refused
-before any write, and a leftover draft is replaced. The release is created as
-a draft with its assets, then published. A tag with a suffix is a pre-release
-and is never marked latest.
+Every input is checked before any `gh` call. A leftover draft is replaced,
+and the tag is read once more just before the release is created. The
+release is created as a draft with its assets, then published. A tag with a
+suffix is a pre-release and is never marked latest.
 
 **Tests**: `./scripts/release-scripts_test.sh`.
 
@@ -180,6 +192,15 @@ stdout. It needs `curl` and `jq`.
 ## release-scripts_test.sh
 
 **Purpose**: Tests `verify-tag.sh`, `publish-release.sh`,
-`check-module-proxy.sh` and `build-release.sh`. Every `gh` and `curl` call
-goes to a fake, so it needs no network or token. The build cases cross-compile the four binaries and write their
-SBOMs, so they run last. Run by CI and by `wombat-verify.sh`. It needs `jq` and Go.
+`check-module-proxy.sh` and `build-release.sh`.
+
+**Usage**:
+```bash
+./scripts/release-scripts_test.sh
+```
+
+Every `gh` and `curl` call goes to a fake, so it needs no network or token.
+The build cases cross-compile the four binaries and write their SBOMs, so they
+run last. It prints `ok <case>` per case and stops at the first failure, on a
+line starting `FAIL`. Run by CI and by `wombat-verify.sh`. It needs `jq` and
+Go.

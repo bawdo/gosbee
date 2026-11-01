@@ -13,10 +13,12 @@
 # on "exit", run with an empty HOME. CycloneDX JSON 1.6 SBOMs are then
 # written by cyclonedx-gomod from tools/go.mod: dist/gosbee-repl_<tag>_module
 # .cdx.json for the module (its version read from the tag at HEAD, which must
-# be <tag>) and dist/<binary>.cdx.json for each binary. SHA256SUMS lists every
-# binary and SBOM; it uses sha256sum, or shasum -a 256 where that is absent
-# (macOS). A malformed tag is refused before anything is built, and a failed
-# SBOM stops the build before SHA256SUMS is written. Needs jq.
+# be <tag>) and dist/<binary>.cdx.json for each binary. The SBOM tool is
+# third-party code, so the binaries are checksummed before it runs and the
+# build dies, naming the binary, if any has changed after. SHA256SUMS lists
+# every binary and SBOM; it uses sha256sum, or shasum -a 256 where that is
+# absent (macOS). A malformed tag is refused before anything is built, and a
+# failed SBOM stops the build before SHA256SUMS is written. Needs jq.
 
 set -euo pipefail
 
@@ -26,6 +28,16 @@ die() {
 }
 
 ROOT="$(pwd -P)"
+
+# checksum FILE...: sha256sum's output for each FILE, from sha256sum or, where
+# that is absent (macOS), shasum -a 256.
+checksum() {
+    if command -v sha256sum > /dev/null 2>&1; then
+        sha256sum "$@"
+    else
+        shasum -a 256 "$@"
+    fi
+}
 
 # sbom FILE GOOS GOARCH KIND ARGS...: runs cyclonedx-gomod KIND with ARGS
 # (flags, then the module or binary path), writing dist/FILE, and dies if it
@@ -88,11 +100,16 @@ if [ "$code" -ne 0 ] || ! grep -qF 'Engine: sqlite (from GOSBEE_ENGINE)' <<<"$ou
 fi
 echo "smoke tested $smoke"
 
+# The binaries' checksums, kept outside dist/, before the SBOM tool runs.
+sums="$(mktemp -d "${TMPDIR:-/tmp}/build-release.XXXXXX")"
+trap 'rm -rf "$sums"' EXIT
+(cd dist && checksum gosbee-repl_*) > "$sums/binaries"
+
 write_sboms "$tag"
 
-if command -v sha256sum > /dev/null 2>&1; then
-    (cd dist && sha256sum gosbee-repl_* > SHA256SUMS)
-else
-    (cd dist && shasum -a 256 gosbee-repl_* > SHA256SUMS)
-fi
+while read -r sum file; do
+    [ "$(cd dist && checksum "$file")" = "$sum  $file" ] || die "$file changed while the SBOMs were written"
+done < "$sums/binaries"
+
+(cd dist && checksum gosbee-repl_* > SHA256SUMS)
 echo "wrote dist/SHA256SUMS"
