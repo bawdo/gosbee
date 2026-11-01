@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# Tests for the scripts release.yml runs: verify-tag.sh, publish-release.sh
-# and build-release.sh. Every gh call goes to a fake gh put first on PATH,
-# which logs its arguments and answers from canned files, so nothing here
-# touches the network. Prints "ok <name>" per case and exits non-zero on the
+# Tests for the scripts release.yml runs: verify-tag.sh, publish-release.sh,
+# check-module-proxy.sh and build-release.sh. Every gh and curl call goes to
+# a fake put first on PATH, which logs its arguments and answers from canned
+# files (and sleep to one that returns at once), so nothing here touches the
+# network. Prints "ok <name>" per case and exits non-zero on the
 # first failure, with a line starting "FAIL". The build cases cross-compile
 # four binaries and write their SBOMs, so they run last and take a while.
 #
@@ -363,6 +364,225 @@ for log in "$ROOT"/publish_*/gh.log; do
     ! grep -E 'release upload|--clobber' "$log" || fail "$name" "$log uploads assets"
     ! grep '^release edit' "$log" | grep -v -- '--draft=false' || fail "$name" "$log edits without publishing"
 done
+echo "ok $name"
+
+# The fake curl and sleep for check-module-proxy.sh, in their own directory
+# so no other case sees them. FAKE_CURL_DIR holds:
+#   proxy.body    what a proxy.golang.org URL answers
+#   sumdb.body    what a sum.golang.org URL answers
+#   proxy.fail    when present, the number of proxy calls that fail (exit 22)
+#                 before one answers; "always" fails every call
+#   sumdb.fail    the same for sum.golang.org
+#   curl.log      one line per curl call, the arguments joined by spaces
+#   sleep.log     one line per sleep call, its arguments
+mkdir -p "$ROOT/net"
+cat > "$ROOT/net/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "$*" >> "$FAKE_CURL_DIR/curl.log"
+url="${*: -1}"
+case "$url" in
+    https://proxy.golang.org/*) kind=proxy ;;
+    https://sum.golang.org/*) kind=sumdb ;;
+    *)
+        echo "fake curl: unexpected URL: $url" >&2
+        exit 2
+        ;;
+esac
+calls=$(grep -c "$kind" "$FAKE_CURL_DIR/curl.log" || true)
+if [ -f "$FAKE_CURL_DIR/$kind.fail" ]; then
+    fails=$(cat "$FAKE_CURL_DIR/$kind.fail")
+    if [ "$fails" = always ] || [ "$calls" -le "$fails" ]; then
+        echo "curl: (22) The requested URL returned error: 404" >&2
+        exit 22
+    fi
+fi
+cat "$FAKE_CURL_DIR/$kind.body"
+EOF
+cat > "$ROOT/net/sleep" <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >> "$FAKE_CURL_DIR/sleep.log"
+EOF
+chmod +x "$ROOT/net/curl" "$ROOT/net/sleep"
+
+MODULE=github.com/bawdo/gosbee
+C=c0ffee0123456789abcdef0123456789abcdef01
+D=d00d000123456789abcdef0123456789abcdef02
+PROXY_URL="https://proxy.golang.org/$MODULE/@v/v0.3.0.info"
+SUMDB_URL="https://sum.golang.org/lookup/$MODULE@v0.3.0"
+
+# info TAG HASH: a proxy .info body shaped like the live one.
+info() {
+    printf '{"Version":"%s","Time":"2026-11-01T00:00:00Z","Origin":{"VCS":"git","URL":"https://github.com/bawdo/gosbee","Hash":"%s","Ref":"refs/tags/%s"}}\n' \
+        "$1" "$2" "$1"
+}
+
+# sumdb TAG: a sum.golang.org lookup body recording TAG.
+sumdb() {
+    printf '%s\n' 4242 \
+        "$MODULE $1 h1:Mh2nYLfrlAZbXt7OfUmmanBF91Mv0Aqoqf8MtRVfXA0=" \
+        "$MODULE $1/go.mod h1:eKg3XoAuUt0Y8jT9sVGK3wHBDmdPrTmuRhCnjS1Bxek=" \
+        "" "go.sum database tree" 4243 "PlusDxqVTUm8qLSgZEvp2ozG6v+0yhj3k1GfMBPCPEk=" "" \
+        "— sum.golang.org Az3grlGJGVZtkJXGvMe9VTRtmXsdNk3dwnRtd2Nf7ZHTHvjQ="
+}
+
+# proxy_case NAME [TAG] [HASH]: a directory for one case, whose proxy serves
+# TAG (default v0.3.0) at HASH (default C) and whose sumdb records TAG.
+proxy_case() {
+    local dir="$ROOT/$1" tag="${2:-v0.3.0}"
+    mkdir -p "$dir"
+    : > "$dir/curl.log"
+    : > "$dir/sleep.log"
+    info "$tag" "${3:-$C}" > "$dir/proxy.body"
+    sumdb "$tag" > "$dir/sumdb.body"
+    echo "$dir"
+}
+
+# run_proxy DIR ARGS...: runs check-module-proxy.sh with the fake curl and
+# sleep first on PATH, capturing OUT, ERR and CODE.
+run_proxy() {
+    local dir="$1"
+    shift
+    CODE=0
+    OUT=$(PATH="$ROOT/net:$PATH" FAKE_CURL_DIR="$dir" bash "$SCRIPTS/check-module-proxy.sh" "$@" \
+        2>"$dir/.stderr") || CODE=$?
+    ERR=$(cat "$dir/.stderr")
+}
+
+# calls DIR HOST: how many curl calls went to HOST.
+calls() {
+    grep -c "https://$2/" "$1/curl.log" || true
+}
+
+name=proxy_accepts_matching_commit
+dir=$(proxy_case "$name")
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+[ "$OUT" = "check-module-proxy: proxy.golang.org has $MODULE@v0.3.0 at $C
+check-module-proxy: sum.golang.org records $MODULE@v0.3.0" ] || fail "$name" "wrong output"
+[ "$(cat "$dir/curl.log")" = "-fsS --max-time 5 $PROXY_URL
+-fsS --max-time 5 $SUMDB_URL" ] || fail "$name" "wrong curl calls: $(cat "$dir/curl.log")"
+[ ! -s "$dir/sleep.log" ] || fail "$name" "slept"
+echo "ok $name"
+
+name=proxy_retries_then_succeeds
+dir=$(proxy_case "$name")
+echo 2 > "$dir/proxy.fail"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+[ "$(calls "$dir" proxy.golang.org)" = 3 ] || fail "$name" "expected 3 proxy calls: $(cat "$dir/curl.log")"
+[ "$(cat "$dir/sleep.log")" = "5
+5" ] || fail "$name" "expected two 5 second sleeps: $(cat "$dir/sleep.log")"
+echo "ok $name"
+
+name=proxy_gives_up_after_five
+dir=$(proxy_case "$name")
+echo always > "$dir/proxy.fail"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "::error::proxy.golang.org has no $MODULE@v0.3.0 after 5 attempts" ] || fail "$name" "wrong output"
+[ "$(calls "$dir" proxy.golang.org)" = 5 ] || fail "$name" "expected 5 proxy calls: $(cat "$dir/curl.log")"
+[ "$(calls "$dir" sum.golang.org)" = 0 ] || fail "$name" "called sumdb"
+echo "ok $name"
+
+# The proxy keeps the first commit it saw for a version, so a mismatch never
+# goes away and is not retried.
+name=proxy_rejects_moved_tag
+dir=$(proxy_case "$name" v0.3.0 "$D")
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "::error::proxy.golang.org has $MODULE@v0.3.0 at $D, the tag points at $C" ] || fail "$name" "wrong output"
+[ "$(calls "$dir" proxy.golang.org)" = 1 ] || fail "$name" "retried a mismatch: $(cat "$dir/curl.log")"
+[ "$(calls "$dir" sum.golang.org)" = 0 ] || fail "$name" "called sumdb"
+[ ! -s "$dir/sleep.log" ] || fail "$name" "slept"
+echo "ok $name"
+
+name=proxy_rejects_missing_origin
+dir=$(proxy_case "$name")
+echo '{"Version":"v0.3.0","Time":"2026-11-01T00:00:00Z"}' > "$dir/proxy.body"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "::error::proxy.golang.org has $MODULE@v0.3.0 at unknown, the tag points at $C" ] || fail "$name" "wrong output"
+echo "ok $name"
+
+# The hash reaches the job log, where a line starting "::" is a workflow
+# command, so only a commit hash is ever printed.
+name=proxy_rejects_hostile_hash
+dir=$(proxy_case "$name")
+jq -n --arg h "$D"$'\n::warning::injected' '{Version: "v0.3.0", Origin: {VCS: "git", Hash: $h}}' > "$dir/proxy.body"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "::error::proxy.golang.org has $MODULE@v0.3.0 at unknown, the tag points at $C" ] || fail "$name" "wrong output"
+echo "ok $name"
+
+name=proxy_rejects_bad_json
+dir=$(proxy_case "$name")
+echo 'not json' > "$dir/proxy.body"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "::error::proxy.golang.org returned unreadable JSON for $MODULE@v0.3.0" ] || fail "$name" "wrong output"
+[ "$(calls "$dir" sum.golang.org)" = 0 ] || fail "$name" "called sumdb"
+echo "ok $name"
+
+name=sumdb_miss_fails
+dir=$(proxy_case "$name")
+printf '%s\n' 4242 "$MODULE v0.3.0/go.mod h1:eKg3XoAuUt0Y8jT9sVGK3wHBDmdPrTmuRhCnjS1Bxek=" > "$dir/sumdb.body"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "check-module-proxy: proxy.golang.org has $MODULE@v0.3.0 at $C
+::error::sum.golang.org has no record of $MODULE@v0.3.0 after 2 attempts" ] || fail "$name" "wrong output"
+[ "$(calls "$dir" sum.golang.org)" = 2 ] || fail "$name" "expected 2 sumdb calls: $(cat "$dir/curl.log")"
+echo "ok $name"
+
+# A record of another version, or of another module, that merely contains
+# the tag or the module never satisfies the check.
+name=sumdb_rejects_other_version
+for body in "$(sumdb v0.3.0-rc.1)" "$(sumdb v0.3.0 | sed "s|^$MODULE |$MODULE/sub |")" \
+    "$(sumdb v0.3.0 | sed 's| h1:| x1:|')" "$(sumdb v0.3.0 | sed "s|^$MODULE v0.3.0 |$MODULE v0.3.0x |")"; do
+    dir=$(proxy_case "$name")
+    printf '%s\n' "$body" > "$dir/sumdb.body"
+    run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+    [ "$CODE" -eq 1 ] || fail "$name" "expected exit 1 for: $body"
+    grep -qxF "::error::sum.golang.org has no record of $MODULE@v0.3.0 after 2 attempts" <<<"$OUT" \
+        || fail "$name" "wrong output for: $body"
+    rm -rf "$dir"
+done
+echo "ok $name"
+
+name=proxy_accepts_prerelease
+dir=$(proxy_case "$name" v0.3.0-rc.1)
+run_proxy "$dir" "$MODULE" v0.3.0-rc.1 "$C"
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+[ "$(cat "$dir/curl.log")" = "-fsS --max-time 5 https://proxy.golang.org/$MODULE/@v/v0.3.0-rc.1.info
+-fsS --max-time 5 https://sum.golang.org/lookup/$MODULE@v0.3.0-rc.1" ] || fail "$name" "wrong curl calls: $(cat "$dir/curl.log")"
+echo "ok $name"
+
+name=proxy_rejects_bad_args
+usage="check-module-proxy: usage: check-module-proxy.sh <module> vX.Y.Z[-suffix] <40-hex commit>"
+# shellcheck disable=SC2016 # the $(id) is a literal hostile name, never expanded
+for args in "$MODULE|v0.3.0;id|$C" "$MODULE|"'v0.3.0$(id)'"|$C" "$MODULE|main|$C" "github.com/Bawdo/gosbee|v0.3.0|$C" \
+    "$MODULE|v0.3.0|abc123" "$MODULE|v0.3.0|$(tr a-f A-F <<<"$C")" "gosbee|v0.3.0|$C" "$MODULE|v0.3.0" "$MODULE|v0.3.0|$C|extra" \
+    "$MODULE|v0.3.0|$C"$'\n'"x" "../x/y|v0.3.0|$C" "github.com/bawdo/../x|v0.3.0|$C" "github.com/bawdo/gosbee.|v0.3.0|$C"; do
+    IFS='|' read -r -d '' -a argv < <(printf '%s' "$args") || true
+    dir=$(proxy_case "$name")
+    run_proxy "$dir" "${argv[@]}"
+    expect_refusal "$name ($args)" "$usage"
+    [ ! -s "$dir/curl.log" ] || fail "$name ($args)" "called curl: $(cat "$dir/curl.log")"
+    rm -rf "$dir"
+done
+echo "ok $name"
+
+# The worst case is bounded: 4 waits for the proxy and 1 for sumdb, and 7
+# calls of at most 5 seconds each, so about 60 seconds in all.
+name=proxy_time_is_bounded
+dir=$(proxy_case "$name")
+echo 4 > "$dir/proxy.fail"
+echo always > "$dir/sumdb.fail"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$(awk '{ s += $1 } END { print s }' "$dir/sleep.log")" = 25 ] || fail "$name" "slept: $(cat "$dir/sleep.log")"
+[ "$(wc -l < "$dir/curl.log" | tr -d ' ')" = 7 ] || fail "$name" "expected 7 calls: $(cat "$dir/curl.log")"
+! grep -v -- '^-fsS --max-time 5 ' "$dir/curl.log" || fail "$name" "a call lacks -fsS --max-time 5"
 echo "ok $name"
 
 # The build runs in a copy of the committed tree, so the repository's own
