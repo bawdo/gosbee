@@ -67,6 +67,12 @@ Review lanes: security, correctness, brief
   integration branch merges to `main`, not with `re-actors/alls-green` allowlisted. This unit
   applies `metadata` and `rulesets` and shows `harden`'s dry run; `harden` itself is applied in
   unit 10, after the operator's merge, so the allowlist never names an action already removed.
+- CORRECTION FROM UNIT 08: SECURITY.md now carries "Verifying a release" and describes only what
+  `release.yml` ships. It names a tag ruleset, a publish `environment:` and private vulnerability
+  reporting as this unit's, and omits immutable releases and `gh release verify`; CODE_OF_CONDUCT.md
+  and the bug form route reports through private vulnerability reporting. Separately,
+  `scripts/verify-tag.sh` accepts any tag signature GitHub verifies, while SECURITY.md tells users to
+  accept only signing subkey `9954 8FCC ... EE78`, so CI is looser than the published procedure.
 
 ## Plan
 

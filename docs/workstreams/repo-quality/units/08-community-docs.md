@@ -196,8 +196,27 @@ defect. Every one was checked on the tree before acting, and all were judged rea
 
 No `knownTraps` key is configured, so no trap file is grown.
 
+Questions that fired during the automatic close, with the operator's answers:
+
+- Step 7, verify gate (the sandbox cannot run Go builds, uv, vuln.go.dev or loopback binding):
+  asked the operator to run `WOMBAT_BASE_REF=workstream/repo-quality scripts/wombat-verify.sh` in
+  their shell. Answer: they ran it; 11 gates passed at 6f30dd2 and `vuln` failed on a network
+  timeout to the vulnerability database.
+- Step 7, `vuln` network timeout: asked the operator to re-run rather than skip. Answer: they
+  re-ran it; all 12 gates `pass` at 6f30dd2, tree `clean` (record read back from
+  `.claude/wombat-verification`).
+- Open at hand back, unanswered: deleting `examples/before_after_example.go`, and whether to
+  schedule tightening `scripts/verify-tag.sh` to the release subkey.
+
+Merge: `git merge --no-ff` into `workstream/repo-quality`; the verify gate did not refuse. Unit
+branch deleted behind `git merge-base --is-ancestor` (git could not lock `.git/config` in the
+sandbox to drop the branch's config section).
+
 ## Not done, and why
 
 - `examples/before_after_example.go`, the stale commented-out sketch named in unit 07's correction,
   is left in the tree. Deleting it is outside this unit's Items; the operator was asked at open and
   has not ruled. It is not linked from any document. Operator to schedule.
+- `scripts/verify-tag.sh` accepts any tag signature GitHub verifies (security finding 4), looser
+  than SECURITY.md's pinned release subkey. Changing the script is outside this unit's Items.
+  Carried into unit 09's brief as a CORRECTION FROM UNIT 08; operator to schedule.
