@@ -183,6 +183,29 @@ PUT private-vulnerability-reporting, PUT immutable-releases, PUT environments/re
 reviewers, custom policies), POST policy `v*` (tag), POST policy `main` (branch). Unit 10 must
 re-run the dry run from `main` after the merge: the list is read from the workflows checked out.
 
+Close-out verification (step 1), `WOMBAT_BASE_REF=workstream/repo-quality
+scripts/wombat-verify.sh`, run outside the sandbox: inside it vet, lint, tidy, release-scripts,
+vuln, zizmor and test failed on the Go cache, `vuln.go.dev`, uv and loopback binding. Record at
+`3b2e00b`, tree clean, no gate skipped:
+
+```
+fmt pass; vet pass; lint pass; tidy pass; changelog pass; release-scripts pass;
+repo-settings pass; vuln pass; zizmor pass; shellcheck pass; ci-result pass;
+fuzz-script pass; test pass
+```
+
+Lanes from `select-gates.sh .`: `security`, `correctness`, `brief` (3, none skipped, no
+`unmatched`). `scan-secrets.sh .`: `scan clean: 15 files`.
+
+Sweep, `sweep-docs.sh . --base workstream/repo-quality` with `--claim 'left to the repo-settings
+unit'` (and again with the environment sentence), printed 9 candidates each time: 4 `touched`
+(CHANGELOG.md, CONTRIBUTING.md, SECURITY.md, scripts/README.md: this unit's own edits, read
+back), 5 `named-file` (README.md on `ci.yml`, the CI badge URL; cmd/repl, plugins, plugins/opa,
+plugins/softdelete READMEs on `README.md`, links to other READMEs), all dismissed as basename
+collisions. `git grep` for `repo-settings unit` and `names no` outside the workstream record finds
+nothing. Unit 10's brief was read for criteria this unit made wrong: none; it already applies
+`harden` after the operator's merge.
+
 ## Not done, and why
 
 - `harden` not applied: operator ruling, applied in unit 10 after the integration branch merges.
