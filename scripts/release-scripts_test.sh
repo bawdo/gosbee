@@ -802,8 +802,15 @@ for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
     done
     # -trimpath keeps -ldflags out of the build info, so -s is checked on the
     # binary: it defines no symbols (a darwin one still lists its imports, U).
-    defined=$(go tool nm "$binary" 2>/dev/null | grep -v ' U ' || true)
-    [ -z "$defined" ] || fail "$name" "$target is not stripped"
+    # nm fails on an ELF binary with no symbol table, and only that failure,
+    # word for word, counts as stripped; any other nm error fails the case.
+    if nm=$(go tool nm "$binary" 2>&1); then
+        defined=$(grep -v ' U ' <<<"$nm" || true)
+        [ -z "$defined" ] || fail "$name" "$target is not stripped"
+    else
+        [ "$nm" = "reading $binary: no symbol section
+reading $binary: no symbols" ] || fail "$name" "go tool nm failed on $target: $nm"
+    fi
     # Each binary's SBOM is of that binary: its target is in every purl.
     jq -e --arg q "goarch=${target#*_}&goos=${target%_*}" \
         '[.components[].purl | select(contains($q) | not)] == []' "$binary.cdx.json" >/dev/null \
@@ -879,6 +886,8 @@ cat > "$ROOT/sbom-tool/go" <<EOF
 [ "\$*" = "-C tools tool -n cyclonedx-gomod" ] && { echo "\$FAKE_SBOM_TOOL"; exit 0; }
 exec "$REAL_GO" "\$@"
 EOF
+# A tool that resolves but whose run fails.
+printf '#!/usr/bin/env bash\nexit 3\n' > "$ROOT/sbom-tool/fails"
 # The real tool, after appending to a binary that was already checksummed.
 REAL_TOOL=$(cd "$BUILD" && go -C tools tool -n cyclonedx-gomod)
 cat > "$ROOT/sbom-tool/tampers" <<EOF
@@ -886,7 +895,17 @@ cat > "$ROOT/sbom-tool/tampers" <<EOF
 echo tampered >> "$BUILD/dist/gosbee-repl_v0.0.0-test_linux_arm64"
 exec "$REAL_TOOL" "\$@"
 EOF
-chmod +x "$ROOT/sbom-tool/go" "$ROOT/sbom-tool/tampers"
+chmod +x "$ROOT/sbom-tool/go" "$ROOT/sbom-tool/fails" "$ROOT/sbom-tool/tampers"
+
+# The tool resolves, so only its run's exit status can stop the build.
+name=build_fails_when_sbom_tool_run_fails
+rm -rf "$BUILD/dist"
+PATH="$ROOT/sbom-tool:$PATH" FAKE_SBOM_TOOL="$ROOT/sbom-tool/fails" run_build v0.0.0-test
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+grep -qxF "build-release: SBOM generation failed for gosbee-repl_v0.0.0-test_module.cdx.json" <<<"$ERR" \
+    || fail "$name" "no SBOM failure reported"
+[ ! -e "$BUILD/dist/SHA256SUMS" ] || fail "$name" "wrote SHA256SUMS"
+echo "ok $name"
 
 # The SBOM tool is third-party code run after the binaries exist, so they are
 # checksummed before it runs and must be unchanged after.
