@@ -68,6 +68,23 @@ Review lanes: security, correctness, brief
   strings). `scripts/repo-settings_test.sh`'s fake `ci.yml` uses no input and is left alone. The
   plans `2026-11-01-release-pipeline.md` and `2026-11-01-fuzzing.md` name `inputs.ref` and are left
   as written: they are closed units' plans, a record of what was planned then.
+- 2026-11-01, PR #28 squash merged as `cf168eb` (squash is the only method: `metadata` and the
+  `Protect main` ruleset both allow nothing else). Its tree equals `0b29ba9`'s (`eeab35d`). Joined
+  to the unit branch with a signed merge of `origin/main`, adding no content, so later pull
+  requests diff only new work. Done on the unit branch, not the integration branch, because the
+  close-out carries it there.
+- `harden` dry run from a detached worktree of `origin/main` at `cf168eb`, checked before
+  approval: the only subpath action (`github/codeql-action/upload-sarif`) is GitHub owned; the
+  composite actions' nested actions (`actions/github-script`, `github/codeql-action/upload-sarif`,
+  `actions/attest`) are all GitHub owned and SHA pinned. `ossf/scorecard-action` runs a
+  tag-pinned image (`ghcr.io/ossf/scorecard-action:v2.5.0`), which SHA pinning does not police.
+  OPERATOR APPROVED; applied.
+- Version: `v0.3.0-rc.1`. CHANGELOG.md's Unreleased holds Added, Changed and Fixed since v0.2.1,
+  a minor bump on 0.x. `changelog.sh check` needs a section for every `v*` tag and the build job
+  needs `changelog.sh notes <tag>`, so Unreleased becomes `[v0.3.0-rc.1] - 2026-11-01` through one
+  more pull request to `main`. That pull request also fixes the docs this unit invalidated:
+  CONTRIBUTING.md's release stages (the tag job, the tag input) and its, SECURITY.md's and
+  CHANGELOG.md's wording of `harden` as still to come.
 
 ## Plan
 
@@ -85,6 +102,36 @@ Review lanes: security, correctness, brief
 - Verification at `3fbca7e`, `WOMBAT_BASE_REF=workstream/repo-quality scripts/wombat-verify.sh`, run
   outside the sandbox (the go build cache is not writable in it): tree clean, all 13 gates pass.
   actionlint clean; zizmor 1.31.1 `--offline` "No findings" (1 ignored, 3 suppressed).
-- Not yet proved: that CodeQL clears alert #5. Only CodeQL on #28 can say.
+- CodeQL on #28 at `0b29ba9`: `CodeQL` pass, no open alert on the PR head. Alert #5 cleared by the
+  rename and the tag job; no dismissal.
+- `harden` applied 2026-11-01 from `cf168eb`, all ten writes, exit 0. The query suite read
+  `default` until GitHub's "CodeQL Setup" run finished (success), then `extended` (updated
+  10:10:36Z). `scripts/repo-settings.sh show` after it:
+
+  ```
+  description: A Golang SQL Builder
+  homepage: https://pkg.go.dev/github.com/bawdo/gosbee
+  topics: arel ast go golang mysql postgresql query-builder sql sql-builder sqlite
+  merge_methods: squash
+  allow_auto_merge: true
+  allow_update_branch: true
+  delete_branch_on_merge: true
+  has_discussions: true
+  has_wiki: false
+  has_projects: false
+  rulesets: Protect main, Protect release tag creation, Protect release tags
+  private_vulnerability_reporting: enabled
+  allowed_actions: selected
+  sha_pinning_required: true
+  allowed_action_patterns: codecov/codecov-action@* golangci/golangci-lint-action@* ossf/scorecard-action@* zizmorcore/zizmor-action@*
+  default_workflow_permissions: read
+  fork_pr_approval: all_external_contributors
+  code_scanning_default_setup: configured
+  code_scanning_query_suite: default
+  immutable_releases: enabled
+  release_environment_policies: branch main, tag v*
+  ```
+
+  (`query_suite` re-read from `code-scanning/default-setup` after the setup run: `extended`.)
 
 ## Not done, and why
