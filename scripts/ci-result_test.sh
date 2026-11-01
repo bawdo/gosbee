@@ -77,6 +77,13 @@ expect_line() {
     printf '%s\n' "$OUT" | grep -qxF -- "$2" || fail "$1" "missing line: $2"
 }
 
+# gate_block: prints the ci-ok job from ci.yml, from its key to the line
+# before the next job key or the end of the file. Bounded, so a line that sits
+# in a later job is never read as the gate's.
+gate_block() {
+    awk '/^  ci-ok:/ { f = 1; print; next } f && /^  [^ #]/ { exit } f' "$WORKFLOW"
+}
+
 # The six cases the unit 04 brief names, run for every ci.yml trigger.
 for event in pull_request push schedule workflow_dispatch; do
     t="all_success_passes_$event"
@@ -173,7 +180,7 @@ echo "ok $t"
 t=ci_yml_needs_matches_jobs
 CODE=0
 expected=$(bash "$SCRIPT" --jobs | paste -sd, - | sed 's/,/, /g')
-actual=$(sed -n '/^  ci-ok:/,$p' "$WORKFLOW" | sed -n 's/^    needs: \[ *\(.*[^ ]\) *\]$/\1/p')
+actual=$(gate_block | sed -n 's/^    needs: \[ *\(.*[^ ]\) *\]$/\1/p')
 [ "[$actual]" = "[$expected]" ] || fail $t "needs is [$actual], script expects [$expected]"
 echo "ok $t"
 
@@ -190,7 +197,8 @@ echo "ok $t"
 # jobs it needs did, and hands EVENT and NEEDS to the script through env only.
 t=ci_yml_gate_shape
 CODE=0
-gate=$(sed -n '/^  ci-ok:/,$p' "$WORKFLOW")
+gate=$(gate_block)
+[ -n "$gate" ] || fail $t "no ci-ok job in ci.yml"
 grep -qxF '    name: CI OK' <<<"$gate" || fail $t "gate is not named CI OK"
 grep -qxF '    if: always()' <<<"$gate" || fail $t "gate does not run if: always()"
 # shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally

@@ -73,7 +73,8 @@ Review lanes: security, correctness, brief
   result, which reads as a plain skip or success and hides why it failed).
 - The skip list is split in jq, not into a bash array: `"${arr[@]}"` on an empty array is unbound
   under `set -u` in bash 3.2 (macOS `/bin/bash`), which the first version hit. The test suite and
-  the script were both run under `/bin/bash` 3.2.57 and Homebrew bash 5.3.20.
+  the script were both run under `/bin/bash` 3.2.57 and Homebrew bash 5.3.20. The 3.2 suite run was
+  `PATH=/bin:/usr/bin /bin/bash scripts/ci-result_test.sh`, so the test's inner `bash` was 3.2 too.
 - The `ci-result_test.sh` cases also pin the gate's shape in `ci.yml` (name `CI OK`,
   `if: always()`, `EVENT`/`NEEDS` through `env:`, `run: scripts/ci-result.sh`), that the gate's
   `needs:` equals `--jobs`, that every `ci.yml` job is in `--jobs`, and that no workflow names
@@ -93,9 +94,10 @@ Review lanes: security, correctness, brief
   carry a reason.
 - Codecov project target 93%: the measured 93.9% with `.codecov.yml`'s ignore list applied (the
   figure the project status judges), rounded down. Not the raw 83.1%, which counts `cmd/repl`.
-  Risk named: Codecov scores Go by line, the measurement is by statement, so the first upload may
-  differ slightly; 0.9 points of rounding plus the kept 0.5% threshold are the headroom. Measured
-  outside the sandbox by the operator, because the tests bind local ports.
+  Codecov scores Go by line, the measurement is by statement, so the two can differ. Checked
+  against Codecov's own figure for `main` (review finding, step 6): 94.16%, above the target. The
+  0.5% threshold is kept but not relied on as headroom, since its effect with a fixed target was
+  not confirmed. Measured outside the sandbox by the operator, because the tests bind local ports.
 - Codecov patch target 80% (was 70%, informational). Justification: a patch's percentage moves in
   large steps (one uncovered line in five is 80%), so holding a patch at the 93% project figure
   would fail most small changes on granularity rather than on testing; the project status is what
@@ -157,6 +159,26 @@ every CI step (zizmor, tidy), and shellcheck joins that list without making the 
 Corrections written into later briefs: none (unit 05 adds fuzz to a table that exists as briefed;
 unit 08's rename question stands as written).
 
+### Review (steps 5 and 6)
+
+3 lanes, each a fresh subagent in its own detached worktree at `727f3e9`: `security`,
+`correctness`, `brief`. None skipped.
+
+- security: nothing real. Its note that fork PRs cannot mint the Codecov OIDC token is not a
+  finding here: Codecov statuses are not required checks (carried from 02, unit 08 owns it).
+- correctness, low: `ci_yml_gate_shape` and `ci_yml_needs_matches_jobs` read `ci.yml` from
+  `ci-ok:` to end of file, so a line in a later job passed as the gate's. **Real, fixed**: a
+  bounded `gate_block` (awk, stops at the next job key) and a non-empty guard. Proved by mutation
+  9 (gate's `if: always()` moved to a later job `zz`, with `zz` in `JOBS` and `needs:`):
+  SURVIVED before the fix, KILLED after (ledger below).
+- correctness, low: the threshold headroom claim. **Real in the record**, fixed: target checked
+  against Codecov's `main` (94.16%), Decisions reworded.
+- correctness, note: a quoted job key would escape `ci_yml_jobs_match_gate`. Dismissed: no job in
+  `ci.yml` is quoted, and the repo's workflows never quote keys.
+- brief, medium: the filter producing 93.9% was not pasted. Fixed above.
+- brief, low: zizmor's commit and the `grep -c` command not named. Fixed above.
+- brief, info: how the bash 3.2 run was forced. Recorded in Decisions.
+
 ### What the next units inherit
 
 - Unit 05: add `fuzz` to `JOBS`, to the gate's `needs:`, and to the `skippable` arms of the events
@@ -181,17 +203,41 @@ $ go tool cover -func coverage-ignored.txt | tail -1   (.codecov.yml ignores app
 total:  (statements)  93.9%
 ```
 
+The ignore-applied profile was made from `coverage.txt` by this filter (from the operator-run
+`measure.sh`), which drops every line `.codecov.yml`'s `ignore:` list covers:
+
+```
+{ head -1 coverage.txt; tail -n +2 coverage.txt | grep -v -e '/cmd/repl/' -e '/internal/testutil/' \
+    -e '_test.go:' -e '/testdata/' -e '\.pb\.go:'; } > coverage-ignored.txt
+go tool cover -func=coverage-ignored.txt | tail -1
+```
+
+Cross-check against Codecov's own line-based figure for `main` (step 6):
+
+```
+$ curl -sf "https://api.codecov.io/api/v2/github/bawdo/repos/gosbee/totals/?branch=main"
+{"totals":{"files":48,"lines":3034,"hits":2857,"misses":177,"partials":0,"coverage":94.16,...
+```
+
 Project target: 93%.
 
 ### zizmor (run by the operator)
 
 `zizmor 1.31.1 --offline .github/workflows`: `No findings to report. Good job! (3 suppressed)`,
-exit 0. All three workflows audited.
+exit 0. All three workflows audited. Run with HEAD at `cb3bb0a`, the last commit to touch
+`.github/workflows` (`git log workstream/repo-quality..HEAD -- .github/workflows` names only it),
+so it covers the tip.
 
 ### Mutation ledger (ci-result.sh)
 
 Each run through `record-mutation.sh . --patch <p> --fail-pattern '^FAIL ' --ledger <scratchpad>/mut/ledger.txt -- scripts/ci-result_test.sh`
-against commit `cb3bb0a`. 8 blocks in the ledger, 8 `verdict  KILLED`, measured with `grep -c`.
+against commit `cb3bb0a`:
+
+```
+$ grep -c '^verdict  KILLED' ledger.txt; grep -c '^verdict' ledger.txt
+8
+8
+```
 
 | Mutation | First failing line | Verdict |
 |---|---|---|
