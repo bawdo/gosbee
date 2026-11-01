@@ -86,9 +86,78 @@ release-proof, now unit 10.
   script skips it locally.
 - Mutation ledgers live outside the repository, beside the item worktrees under
   `$TMPDIR/u05-items.suryDu/`; their blocks are copied into `## Outcome`.
+- Item [a] rulings (implementer's, accepted at merge):
+  - Fix 2 is done by attaching exactly the files `dist/SHA256SUMS` lists, then `SHA256SUMS`, then
+    the bundle. A glob also matches the bundle's own name, so the plan's command uploaded it twice.
+    `publish-release.sh` refuses a malformed, duplicate, path-bearing, other-tag or missing entry.
+  - The build tests run the working tree's script from a `git archive HEAD` copy rather than the
+    plan's `git worktree add`, which builds the committed script, so an uncommitted mutation patch
+    would always survive.
+  - `-s -w` is checked with `go tool nm`: under `-trimpath`, Go leaves `-ldflags` out of the build
+    info that `go version -m` reads.
+  - zizmor's `self-repository` audit and actionlint disagree on the reusable call: actionlint rejects
+    the `$/` form. Kept `./.github/workflows/ci.yml` with `# zizmor: ignore[self-repository]` and a
+    comment giving the reason: a job-level reusable workflow resolves from the caller's commit.
+    Revisit once actionlint accepts `$/`.
+  - `coverage.yml` is force-added: the existing `.gitignore` rule `coverage.*` matches it.
+  - The reusable `ci` job carries no `timeout-minutes` (GitHub forbids it there); every job inside
+    `ci.yml` has one.
+  - `scripts/README.md` is edited although outside the item's file list, as plan Task 6 asks.
+  - Plain tags get `--latest`, as planned. For unit 10: a patch for an older line published after a
+    newer release would also be marked latest.
+- Item [b] rulings (implementer's, accepted at merge):
+  - `cyclonedx-gomod bin` takes goos/goarch for every purl from the running `go env`, so the plan's
+    command labelled each binary SBOM with the build host's platform. `build-release.sh` resolves the
+    pinned tool with `go -C tools tool -n cyclonedx-gomod` and runs it under each binary's
+    GOOS/GOARCH. It is the same pinned tool, with a test that each SBOM names its own target.
+  - `cyclonedx-gomod mod` takes the version from a git tag at HEAD and picks `v0.3.0` over
+    `v0.3.0-rc.1` on one commit. The build now dies unless the module SBOM's version is the tag.
+  - Licences are asserted in `.evidence.licenses`, where the plan's command puts them.
+  - `SHA256SUMS` keeps the `gosbee-repl_*` glob, and an exact-set assertion on `dist/` proves
+    nothing else is present.
+  - Module path check tightened beyond the plan's regex, which accepted `../x/y`. A proxy
+    `Origin.Hash` that is not 40 hex is reported as `unknown`, so a hostile response cannot inject
+    workflow commands into the log.
+  - Sleep and curl are faked on PATH; production code is unchanged.
 
 ## Plan
 
 ## Outcome
+
+Work items: `[a]` merged at `dd10469` (6 signed commits, 11 files), verification green on every
+gate there, zizmor included. `[b]` merged at `93810c1` (4 signed commits, 9 files), green on every
+gate there. The 03 plan's precondition check passed before its Task 1 (scripts present; `ci`,
+`build` and `publish` jobs at lines 44, 56 and 142). `scripts/release-scripts_test.sh`: 22 cases
+after `[a]`, 38 after `[b]`, counted on the unit branch. actionlint clean at `93810c1`.
+
+Mutation ledgers (`record-mutation.sh`, fail pattern anchored on the suite's `^FAIL <case>`
+marker), as `patch: first failing line`:
+
+- `[a]`, 6 of 6 KILLED:
+  - `build-smoke-postgres`: `FAIL build_writes_four_binaries_and_sums: expected exit 0`
+  - `build-no-strip`: `FAIL build_writes_four_binaries_and_sums: darwin_amd64 is not stripped`
+  - `verify-tag-unanchored`: `FAIL verify_tag_rejects_bad_name (v1.0.0;id)`
+  - `publish-bundle-twice`: `FAIL publish_creates_when_missing: wrong create line` (bundle twice)
+  - `publish-prerelease-latest`: `FAIL publish_marks_prerelease`
+  - `publish-overwrites-published`: `FAIL publish_stops_on_published_release: expected exit 1`
+- `[b]`, 17 records, 16 KILLED, 1 SURVIVED:
+  - `proxy-retries-mismatch`: `FAIL proxy_rejects_moved_tag: wrong output`
+  - `proxy-six-attempts`: `FAIL proxy_gives_up_after_five: expected 5 proxy calls`
+  - `sumdb-three-attempts`: `FAIL sumdb_miss_fails: expected 2 sumdb calls`
+  - `sleep-four`: `FAIL proxy_retries_then_succeeds: expected two 5 second sleeps`
+  - `moved-tag-undetected`: `FAIL proxy_rejects_moved_tag: expected exit 1`
+  - `no-max-time`: `FAIL proxy_accepts_matching_commit: wrong curl calls`
+  - `hash-unsanitised`: `FAIL proxy_rejects_hostile_hash: wrong output`
+  - `dot-segment-allowed`: `FAIL proxy_rejects_bad_args (../x/y|...)`
+  - `sumdb-substring`: SURVIVED under `^FAIL sumdb_rejects_other_version` (first `none`; the suite
+    failed earlier, at `sumdb_miss_fails`), then KILLED re-recorded with the broader pattern:
+    `FAIL sumdb_miss_fails: expected exit 1`
+  - `sumdb-version-prefix`, `sumdb-any-module`: `FAIL sumdb_rejects_other_version`
+  - `no-module-sbom`: `FAIL build_writes_binaries_sboms_and_sums: dist/ holds: ...` (no module SBOM)
+  - `sboms-after-sums`: `FAIL build_writes_binaries_sboms_and_sums: expected nine checksum lines`
+  - `sbom-host-target`: `FAIL build_writes_binaries_sboms_and_sums: the SBOM for darwin_amd64
+    describes another target`
+  - `no-version-check`: `FAIL build_refuses_module_sbom_of_other_version: expected exit 1`
+  - `sbom-failure-ignored`: `FAIL build_fails_when_sbom_fails: no SBOM failure reported`
 
 ## Not done, and why
