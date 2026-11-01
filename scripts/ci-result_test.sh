@@ -36,7 +36,7 @@ needs() {
     echo "{$json}"
 }
 
-JOBS=(lint test)
+JOBS=(lint test fuzz)
 
 # all_success [JOB=RESULT...]: every expected job as success, with overrides.
 # An override naming a job outside JOBS is added as an extra job.
@@ -84,8 +84,9 @@ gate_block() {
     awk '/^  ci-ok:/ { f = 1; print; next } f && /^  [^ #]/ { exit } f' "$WORKFLOW"
 }
 
-# The six cases the unit 04 brief names, run for every ci.yml trigger.
-for event in pull_request push schedule workflow_dispatch; do
+# The six cases the unit 04 brief names, run for every ci.yml trigger and for
+# workflow_call, the EVENT the gate reports when release.yml calls ci.yml.
+for event in pull_request push schedule workflow_dispatch workflow_call; do
     t="all_success_passes_$event"
     run "$event" "$(all_success)"
     expect_code "$t" 0
@@ -107,11 +108,12 @@ expect_code $t 1
 expect_line $t "  lint: cancelled"
 echo "ok $t"
 
-# No event permits a skip today, so a permitted skip is tested against a copy
-# of the script whose pull_request arm permits "test". The copy must differ
-# from the original, or the rewrite silently missed and the case proves nothing.
+# Only fuzz may be skipped, so a skip of another job is tested against a copy
+# of the script whose pull_request arm also permits "test". The copy must
+# differ from the original, or the rewrite silently missed and the case proves
+# nothing.
 t=permitted_skip_passes
-sed 's/^        pull_request) echo "" ;;$/        pull_request) echo "test" ;;/' \
+sed 's/^        pull_request) echo "fuzz" ;;$/        pull_request) echo "fuzz test" ;;/' \
     "$SCRIPT" > "$TMP/ci-result.sh"
 ! cmp -s "$SCRIPT" "$TMP/ci-result.sh" || fail $t "could not rewrite the pull_request arm"
 run_script "$TMP/ci-result.sh" pull_request "$(all_success test=skipped)"
@@ -125,12 +127,31 @@ expect_code $t 1
 expect_line $t "  test: skipped"
 echo "ok $t"
 
-for event in pull_request push schedule workflow_dispatch merge_group; do
+for event in pull_request push schedule workflow_dispatch workflow_call merge_group; do
     t="unpermitted_skip_fails_$event"
     run "$event" "$(all_success lint=skipped)"
     expect_code "$t" 1
     expect_line "$t" "Not passed:"
     expect_line "$t" "  lint: skipped"
+    echo "ok $t"
+done
+
+# fuzz runs only on schedule and a direct dispatch, so it may be skipped on
+# every other trigger, and on a call from release.yml, but never on those two.
+for event in pull_request push workflow_call; do
+    t="fuzz_skip_permitted_$event"
+    run "$event" "$(all_success fuzz=skipped)"
+    expect_code "$t" 0
+    expect_line "$t" "  fuzz: skipped"
+    echo "ok $t"
+done
+
+for event in schedule workflow_dispatch merge_group; do
+    t="fuzz_skip_refused_$event"
+    run "$event" "$(all_success fuzz=skipped)"
+    expect_code "$t" 1
+    expect_line "$t" "Not passed:"
+    expect_line "$t" "  fuzz: skipped"
     echo "ok $t"
 done
 
@@ -141,9 +162,9 @@ expect_line $t "  test: missing"
 echo "ok $t"
 
 t=extra_job_fails
-run pull_request "$(all_success fuzz=success)"
+run pull_request "$(all_success bench=success)"
 expect_code $t 1
-expect_line $t "  fuzz: unexpected"
+expect_line $t "  bench: unexpected"
 echo "ok $t"
 
 t=needs_not_an_object_fails
@@ -202,10 +223,64 @@ gate=$(gate_block)
 grep -qxF '    name: CI OK' <<<"$gate" || fail $t "gate is not named CI OK"
 grep -qxF '    if: always()' <<<"$gate" || fail $t "gate does not run if: always()"
 # shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
-grep -qxF '          EVENT: ${{ github.event_name }}' <<<"$gate" || fail $t "EVENT not passed through env"
+grep -qxF "          EVENT: \${{ inputs.ref && 'workflow_call' || github.event_name }}" <<<"$gate" || fail $t "EVENT not passed through env"
 # shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
 grep -qxF '          NEEDS: ${{ toJSON(needs) }}' <<<"$gate" || fail $t "NEEDS not passed through env"
 grep -qxF '        run: scripts/ci-result.sh' <<<"$gate" || fail $t "gate does not run scripts/ci-result.sh"
+echo "ok $t"
+
+# job_block NAME: prints a job from ci.yml, bounded as gate_block is.
+job_block() {
+    awk -v key="  $1:" '$0 == key { f = 1; print; next } f && /^  [^ #]/ { exit } f' "$WORKFLOW"
+}
+
+# The fuzz job runs only on schedule and a direct dispatch, never in a call
+# from release.yml, keeps its token out of the checkout, keeps failures 14
+# days and pins every action by sha.
+t=ci_yml_fuzz_job_shape
+CODE=0
+job=$(job_block fuzz)
+[ -n "$job" ] || fail $t "no fuzz job in ci.yml"
+# shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
+grep -qxF "    if: \${{ !inputs.ref && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}" <<<"$job" \
+    || fail $t "fuzz job if: is not schedule or direct dispatch only"
+# shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
+grep -qxF '          ref: ${{ inputs.ref }}' <<<"$job" || fail $t "checkout does not take inputs.ref"
+grep -qxF '          persist-credentials: false' <<<"$job" || fail $t "checkout persists credentials"
+grep -qxF '          retention-days: 14' <<<"$job" || fail $t "failures not kept 14 days"
+grep -qxF "          path: '**/testdata/fuzz/**'" <<<"$job" || fail $t "artifact path is not testdata/fuzz"
+grep -qxF '        run: scripts/fuzz.sh' <<<"$job" || fail $t "fuzz job does not run scripts/fuzz.sh"
+# shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
+grep -qxF "          FUZZTIME: \${{ github.event_name == 'schedule' && '5m' || '15s' }}" <<<"$job" \
+    || fail $t "FUZZTIME is not 5m on schedule and 15s otherwise"
+# A timed out job is cancelled, not failed, and its inputs must still upload.
+grep -qxF '        if: failure() || cancelled()' <<<"$job" || fail $t "failing inputs not uploaded on failure or timeout"
+uses=$(grep -E '^ +(- )?uses:' <<<"$job")
+[ -n "$uses" ] || fail $t "no actions in the fuzz job"
+! grep -vE 'uses: [^ @]+@[0-9a-f]{40} # v[0-9]' <<<"$uses" || fail $t "an action is not pinned by sha"
+echo "ok $t"
+
+# Schedule fuzzes each target for 5m, so the job's timeout must cover every
+# target plus 10m for building, or a target added later times the job out.
+t=ci_yml_fuzz_timeout_sized
+CODE=0
+# Counted as fuzz.sh finds them: any receiver name, and not in tools/, a
+# separate module that go list ./... does not reach.
+count=$(git -C "$DIR/.." grep -hE '^func Fuzz[A-Za-z0-9_]*\([A-Za-z_][A-Za-z0-9_]* \*testing\.F\)' -- '*_test.go' ':!tools/**' | wc -l | tr -d ' ')
+[ "$count" -gt 0 ] || fail $t "no fuzz targets found"
+timeout=$(job_block fuzz | sed -n 's/^    timeout-minutes: \([0-9][0-9]*\)$/\1/p')
+[ -n "$timeout" ] || fail $t "fuzz job has no timeout-minutes"
+[ "$timeout" -ge $((count * 5 + 10)) ] || fail $t "timeout-minutes $timeout is under $count targets x 5 + 10"
+echo "ok $t"
+
+# A scheduled run fuzzes for up to an hour. Sharing ci-refs/heads/main with
+# pushes, whose runs are never cancelled there, would hold every push to main
+# pending that long, and a second push would replace the first's pending run.
+t=ci_yml_schedule_own_concurrency_group
+CODE=0
+# shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
+grep -qxF "  group: ci-\${{ inputs.ref || github.event.pull_request.number || (github.event_name == 'schedule' && 'schedule') || github.ref }}" "$WORKFLOW" \
+    || fail $t "schedule does not have its own concurrency group"
 echo "ok $t"
 
 t=no_alls_green

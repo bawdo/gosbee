@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The release workflow checks that proxy.golang.org serves the tagged commit
   and that sum.golang.org records the version.
 
+- Native Go fuzz targets cover identifier quoting and string escaping for
+  PostgreSQL, MySQL and SQLite, the OPA plugin's column masks and the REPL's
+  input parsing, each checking a property such as a quoted value never closing
+  its quotes early.
+  `make fuzz` runs them all, and CI fuzzes every target weekly and on a manual
+  run, keeping failing inputs as an artifact for 14 days.
+
 ### Changed
 
 - The `CI OK` check is decided by an in-repo script, `scripts/ci-result.sh`,

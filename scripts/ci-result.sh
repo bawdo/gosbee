@@ -16,15 +16,19 @@
 set -euo pipefail
 
 # Every job in ci.yml the CI OK gate needs, in file order.
-JOBS=(lint test)
+JOBS=(lint test fuzz)
 
-# The jobs each event may skip, space separated. Today no event may skip
-# anything. scripts/ci-result_test.sh rewrites the pull_request arm in a copy,
-# so keep its exact shape.
+# The jobs each event may skip, space separated. fuzz runs only on schedule
+# and a direct workflow_dispatch, so every other event may skip it.
+# workflow_call is not a GitHub event name: the gate reports it when
+# release.yml calls ci.yml (inputs.ref is set), because a called workflow
+# otherwise inherits the caller's event. scripts/ci-result_test.sh rewrites
+# the pull_request arm in a copy, so keep its exact shape.
 skippable() {
     case "$1" in
-        pull_request) echo "" ;;
-        push) echo "" ;;
+        pull_request) echo "fuzz" ;;
+        push) echo "fuzz" ;;
+        workflow_call) echo "fuzz" ;;
         schedule) echo "" ;;
         workflow_dispatch) echo "" ;;
         *) echo "" ;;
