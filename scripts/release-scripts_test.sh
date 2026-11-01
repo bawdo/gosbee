@@ -737,6 +737,10 @@ grep -qxF '    permissions: {}' <<<"$job" || fail "$name" "tag job does not drop
 grep -qxF '      TAG: ${{ inputs.tag || github.ref_name }}' <<<"$job" || fail "$name" "TAG not passed through env"
 ! grep -E '^ +(- )?uses:' <<<"$job" || fail "$name" "tag job runs an action"
 ! grep -qF 'needs:' <<<"$job" || fail "$name" "tag job waits on another job"
+# A job-level if: could skip the check on some events, and continue-on-error
+# would let a refused name through, while ci, which needs the job, still ran.
+! grep -E '^ +if:' <<<"$job" || fail "$name" "tag job or its step has a condition"
+! grep -E '^ +continue-on-error:' <<<"$job" || fail "$name" "tag job tolerates a failed check"
 echo "ok $name"
 
 # ci needs the tag job and is called with the bare tag, never a ref.

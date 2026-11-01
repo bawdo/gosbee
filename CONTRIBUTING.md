@@ -551,8 +551,9 @@ only place release notes are written.
      not `vX.Y.Z` or `vX.Y.Z-suffix`, so no other tag's code is ever run.
    - **CI** then runs on the tag itself (the whole CI workflow, called with
      the tag name, which it checks out as `refs/tags/<tag>`).
-   - **Build**, with a read-only token, checks the tag is annotated and its signature verified by GitHub
-     (`scripts/verify-tag.sh`), is on `main` and has a changelog section. It
+   - **Build**, with a read-only token, checks the tag is annotated and its
+     signature verified by GitHub (`scripts/verify-tag.sh`), is on `main` and
+     has a changelog section. It
      builds the REPL binaries for Linux and macOS on amd64 and arm64
      (`scripts/build-release.sh`), smoke tests the Linux amd64 one and writes
      a CycloneDX SBOM for the module (`gosbee-repl_<tag>_module.cdx.json`) and

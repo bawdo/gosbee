@@ -65,7 +65,10 @@ by Keith Bawden's key with primary fingerprint
 `661B 030E 1C0F F788 151B  9525 E8C1 84EB 4B8F 82D1`, through the signing
 subkey `9954 8FCC B94B E845 41E5  73AA 4823 4C2C 292E EE78`. A good result
 from `git verify-tag` is a good signature naming that subkey. Treat a
-signature from any other key as a failure. A new release key will be named
+signature from any other key as a failure. On a keyring that has not
+certified the key, gpg adds "WARNING: This key is not certified with a trusted
+signature!". That is expected: the fingerprint check here is the trust
+decision, not gpg's web of trust. A new release key will be named
 here, in this file on `main`, before any release is signed with it. The key
 and this fingerprint both come from GitHub, so for more assurance compare the
 fingerprint with one you got another way, such as a keyserver or an earlier
@@ -85,6 +88,10 @@ gh attestation verify gosbee-repl_v<version>_<os>_<arch> --repo bawdo/gosbee \
   --source-digest <commit sha> \
   --deny-self-hosted-runners
 ```
+
+`gh attestation verify` prints its summary only to a terminal. In a script or
+a pipe it prints nothing when the check passes, so read its exit status: 0 is
+a pass, and anything else is a failure, with the reason on stderr.
 
 The same command checks an SBOM: name the `.cdx.json` file instead of the
 binary. To verify without querying GitHub's attestation API, download the
