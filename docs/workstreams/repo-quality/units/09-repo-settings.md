@@ -221,6 +221,12 @@ detached worktree, none skipped. Triage (step 6), every finding read in this ses
 - Fixed. Correctness 3: policy type match untested; test
   `harden_matches_policies_on_type_as_well_as_name`.
 - Fixed. Security nit: "no one can move or delete" a `v*` tag is now "no push can".
+- Mutations for the two new tests, through `record-mutation.sh`, both KILLED by the intended
+  test: type match dropped (`select(.name == $n)`): `FAIL
+  harden_matches_policies_on_type_as_well_as_name`; glob guard removed (`|| true`): `FAIL
+  harden_refuses_a_glob_in_an_action_name: evil/*: expected exit 1`. A first attempt widening the
+  guard's character class was killed by an unrelated case (it broke the regex), so it was
+  discarded as no evidence and replaced by the removal.
 - For unit 10, not fixed here. Correctness 1: whether GitHub matches `owner/repo/path@ref` against
   `owner/repo@*` (no workflow uses a third-party subpath today). Correctness 2: whether a
   composite action (codecov-action, say) uses a nested third-party or tag-pinned action that the
