@@ -29,6 +29,12 @@ Review lanes: security, correctness, brief
 
 ## Decisions
 
+- CORRECTION FROM UNIT 06: unit 06's fuzz targets do not cover the OPA plugin's star expansion
+  branch (`plugins/opa/opa.go` `applyMasks` with a `ColumnResolver`) or its `refuseMaskedUse` check.
+  Unit 06 judged the first covered on the claim that it renders through the same
+  `maskedProjection`, which nothing fuzzes directly. An example that shows masking with `SELECT *`
+  exercises a path no fuzz property holds.
+
 ## Plan
 
 ## Outcome

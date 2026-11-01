@@ -275,6 +275,19 @@ Judged not to need a change, with reasons:
 - The backslash defect has no owner beyond this record. It is carried in the index handover for
   the operator to schedule (brief lane).
 
+### Re-verify, merge and index (steps 7 to 9)
+
+- Step 7: `WOMBAT_BASE_REF=workstream/repo-quality scripts/wombat-verify.sh` at c31f214 (outside
+  the sandbox) wrote tree `clean`, and every gate passed: fmt, vet, lint, tidy, changelog,
+  release-scripts, vuln, zizmor, shellcheck, ci-result, fuzz-script, test. None was skipped.
+- Step 8: `git merge --no-ff` of `unit/06-fuzzing` into `workstream/repo-quality`. The verify gate
+  did not fire, and the merge commit is signed. The unit branch was deleted behind the
+  `--is-ancestor` guard. Git warned it could not lock `.git/config` (the sandbox) while deleting.
+- Step 9: Not done notes, 3 in all. The backslash defect is an operator decision, so it went into
+  the index handover. "No fuzz finding" makes no claim about the tree, so it went nowhere. The OPA
+  star expansion note is a claim about the tree, so it went into unit 07's brief as
+  `CORRECTION FROM UNIT 06:`.
+
 ### What the next units inherit
 
 - 08 (community-docs): fuzzing exists, is documented in CONTRIBUTING (Testing, Fuzzing), and
