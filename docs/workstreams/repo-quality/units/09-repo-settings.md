@@ -206,6 +206,30 @@ collisions. `git grep` for `repo-settings unit` and `names no` outside the works
 nothing. Unit 10's brief was read for criteria this unit made wrong: none; it already applies
 `harden` after the operator's merge.
 
+Review (step 5): 3 lanes, `security`, `correctness`, `brief`, each a fresh subagent in its own
+detached worktree, none skipped. Triage (step 6), every finding read in this session:
+
+- Fixed. Brief 1 and security 2: CONTRIBUTING Releasing and CHANGELOG stated the `release`
+  environment's policy as in force before `harden`; now conditional on `harden`.
+- Fixed. Security 1: "a run dispatched from any other branch cannot publish" overstated it, since a
+  branch editing `release.yml` can drop `environment:` and the environment holds no secret the job
+  needs. SECURITY, CONTRIBUTING, CHANGELOG and the `release.yml` comment now say write access is
+  the boundary.
+- Fixed. Security 3: a glob in a `uses:` name (`evil/*@<sha>`) became a wide allowlist pattern.
+  `third_party_actions` now dies on a name outside `owner/repo[/path]`; test
+  `harden_refuses_a_glob_in_an_action_name`.
+- Fixed. Correctness 3: policy type match untested; test
+  `harden_matches_policies_on_type_as_well_as_name`.
+- Fixed. Security nit: "no one can move or delete" a `v*` tag is now "no push can".
+- For unit 10, not fixed here. Correctness 1: whether GitHub matches `owner/repo/path@ref` against
+  `owner/repo@*` (no workflow uses a third-party subpath today). Correctness 2: whether a
+  composite action (codecov-action, say) uses a nested third-party or tag-pinned action that the
+  allowlist or SHA pinning would refuse. Check both at the `harden` dry run.
+- Dismissed. Brief 2 (CHANGELOG): covered by the first fix. Brief 3: the lane said no change.
+  Correctness, `show` falling back to `disabled` and `none`: a 404 there means off or absent, and
+  `show` reports rather than gates. Correctness, quoted or `docker://` refs: none in use, and the
+  parser refuses them rather than passing them.
+
 ## Not done, and why
 
 - `harden` not applied: operator ruling, applied in unit 10 after the integration branch merges.

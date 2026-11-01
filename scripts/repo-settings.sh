@@ -197,6 +197,10 @@ third_party_actions() {
             [[ "$ref" =~ ^([^@]+)@([0-9a-f]{40})$ ]] \
                 || die "$(basename "$file"): $ref is not pinned to a commit SHA"
             name="${BASH_REMATCH[1]}"
+            # The name becomes an allowlist pattern, so a glob character in
+            # it ("evil/*") would allow far more than the one action.
+            [[ "$name" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[A-Za-z0-9_./-]+)?$ ]] \
+                || die "$(basename "$file"): $ref is not an owner/repo action name"
             case "$name" in
                 actions/* | github/*) continue ;;
             esac

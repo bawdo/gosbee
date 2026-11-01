@@ -624,11 +624,16 @@ only from `main`. A dispatched run's provenance attestation also records the
 dispatched ref and that branch's commit as its source, not the tag, so
 `gh attestation verify --source-ref refs/tags/<tag>` fails for its assets,
 while `--signer-workflow bawdo/gosbee/.github/workflows/release.yml` still
-holds. The publish job runs in the `release` environment, whose deployment
-policy (set by `scripts/repo-settings.sh harden`) admits only `v*` tags and
-`main`, so a run dispatched from any other branch cannot publish; `main` is
-admitted so the recovery run above still works. With `Protect release tag
-creation`, only an admin can push the tag that starts a release.
+holds. The publish job names the `release` environment. Once
+`scripts/repo-settings.sh harden` is applied (after the current workstream
+merges to `main`), that environment deploys only from `v*` tags and `main`, so
+`release.yml` as `main` has it, dispatched from any other branch, cannot
+publish; `main` is admitted so the recovery run above still works. Until then
+GitHub creates the environment on first use with no deployment rule. Neither
+binds a branch that edits `release.yml` itself, which can drop the
+`environment:` line, so who has write access remains the boundary. With
+`Protect release tag creation`, only an admin can push the tag that starts a
+release.
 
 Preview a release's notes locally with `scripts/changelog.sh notes v0.3.0`.
 

@@ -151,7 +151,7 @@ commit was reviewed: a `v*` tag pushed at an unmerged commit would run that
 commit's own `release.yml` and pass the same check. The three git commands
 above close that gap, because they show the tag is signed by the maintainer
 and its commit is on `main`. The repository's rulesets narrow it too: only
-an admin can create a `v*` tag, and no one can move or delete one.
+an admin can create a `v*` tag, and no push can move or delete one.
 
 A release run started by hand from the Actions tab records the branch it was
 dispatched from, and that branch's commit, as its source, not the tag. Both
@@ -159,9 +159,11 @@ dispatched from, and that branch's commit, as its source, not the tag. Both
 still passes, but it matches `release.yml` as it stands on any branch, so on
 its own it does not bind the source at all. A failure there is a reason to ask
 in an issue, not to drop the flags. Once `scripts/repo-settings.sh harden` is
-applied, the publish job runs in the `release` environment, which deploys only
-from a `v*` tag or from `main`, so a run dispatched from any other branch
-cannot publish.
+applied, the publish job's `release` environment deploys only from a `v*` tag
+or from `main`, so `release.yml` as `main` has it cannot publish from a run
+dispatched from another branch. A branch that edits the workflow can drop the
+environment, so this narrows mistakes rather than binding someone with write
+access; the tag check above is what binds.
 
 ### The SBOMs
 

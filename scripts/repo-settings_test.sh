@@ -342,6 +342,31 @@ body "$name" "$dir" PUT "$P/7" '. == {"name":"v*"}'
 body "$name" "$dir" POST "$P" '. == {"name":"main","type":"branch"}'
 echo "ok $name"
 
+name=harden_matches_policies_on_type_as_well_as_name
+dir=$(fake "$name")
+echo '{"total_count":2,"branch_policies":[{"id":7,"name":"v*","type":"tag"},{"id":5,"name":"main","type":"tag"}]}' > "$dir/policies.json"
+run "$dir" harden
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+[ "$(writes "$dir" | grep "$P")" = "PUT $P/7
+POST $P
+DELETE $P/5" ] || fail "$name" "a tag policy named main was taken for the branch policy: $(cat "$dir/bodies.log")"
+body "$name" "$dir" POST "$P" '. == {"name":"main","type":"branch"}'
+echo "ok $name"
+
+name=harden_refuses_a_glob_in_an_action_name
+n=0
+for bad in 'evil/*' '*/*' 'evil/act?on' 'evil/[ab]'; do
+    n=$((n + 1))
+    dir=$(fake "$name-$n")
+    echo "      - uses: $bad@303a32d7a59b442fa8d48b6a1cc6825c09c847a5" >> "$dir/workflows/ci.yml"
+    run "$dir" harden
+    [ "$CODE" -eq 1 ] || fail "$name" "$bad: expected exit 1"
+    [ "$ERR" = "repo-settings: ci.yml: $bad@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 is not an owner/repo action name" ] \
+        || fail "$name" "$bad: wrong refusal"
+    no_writes "$name" "$dir"
+done
+echo "ok $name"
+
 name=harden_stops_when_policies_cannot_be_read
 dir=$(fake "$name")
 echo '{"total_count":0,"branch_policies":[]}' > "$dir/policies.json"
