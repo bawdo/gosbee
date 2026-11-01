@@ -78,8 +78,8 @@ chmod +x "$ROOT/bin/gh"
 
 # fake NAME [TAG]: makes a fresh directory for one case's canned answers, with
 # a dist/ holding a stand-in binary for TAG (default v0.1.0), a SHA256SUMS
-# listing it and a bundle.json (a two-line pretty JSON object), and prints its
-# path.
+# listing it, a notes.md and a bundle.json (a two-line pretty JSON object),
+# and prints its path.
 fake() {
     local dir="$ROOT/$1" tag="${2:-v0.1.0}"
     mkdir -p "$dir/dist"
@@ -88,6 +88,7 @@ fake() {
     printf '%s  %s\n' 0000000000000000000000000000000000000000000000000000000000000000 \
         "gosbee-repl_${tag}_linux_amd64" > "$dir/dist/SHA256SUMS"
     printf '{\n  "mediaType": "bundle"\n}\n' > "$dir/bundle.json"
+    echo "notes" > "$dir/notes.md"
     echo "$dir"
 }
 
@@ -211,6 +212,155 @@ for bad in 'v1.0.0;id' 'v1.0.0$(id)' main v1.0 '' $'v1.0.0\nid' 'v1.0.0 ' '-v1.0
     expect_refusal "$name ($bad)" "verify-tag: usage: $SCRIPTS/verify-tag.sh vX.Y.Z[-suffix]"
     [ ! -s "$dir/gh.log" ] || fail "$name ($bad)" "called gh: $(cat "$dir/gh.log")"
     rm -rf "$dir"
+done
+echo "ok $name"
+
+# The release create line of a case's gh log.
+create_line() {
+    grep '^release create ' "$1/gh.log"
+}
+
+name=publish_stops_on_published_release
+dir=$(fake "$name")
+echo false > "$dir/is_draft"
+run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+expect_refusal "$name" "publish-release: v0.1.0 is already published"
+[ "$(cat "$dir/gh.log")" = "release view v0.1.0 --json isDraft --jq .isDraft" ] \
+    || fail "$name" "made a call after finding the release published: $(cat "$dir/gh.log")"
+[ "$(cat "$dir/is_draft")" = false ] || fail "$name" "the release changed"
+echo "ok $name"
+
+name=publish_replaces_draft
+dir=$(fake "$name")
+echo true > "$dir/is_draft"
+run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+log_order "$name" "$dir" "release delete v0.1.0 --yes" "release create v0.1.0 --draft --verify-tag" \
+    "release edit v0.1.0 --draft=false --latest"
+[ "$OUT" = "https://github.com/bawdo/gosbee/releases/tag/v0.1.0" ] || fail "$name" "did not print the release URL"
+echo "ok $name"
+
+name=publish_creates_when_missing
+dir=$(fake "$name")
+run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+! grep -q "release delete" "$dir/gh.log" || fail "$name" "deleted a release"
+log_order "$name" "$dir" "release view v0.1.0 --json isDraft" "release create v0.1.0" \
+    "release edit v0.1.0 --draft=false --latest" "release view v0.1.0 --json url"
+[ "$(create_line "$dir")" = "release create v0.1.0 --draft --verify-tag --title v0.1.0 --notes-file $dir/notes.md dist/gosbee-repl_v0.1.0_linux_amd64 dist/SHA256SUMS dist/gosbee-repl_v0.1.0_provenance.intoto.jsonl" ] \
+    || fail "$name" "wrong create line: $(create_line "$dir")"
+bundle="$dir/dist/gosbee-repl_v0.1.0_provenance.intoto.jsonl"
+[ "$(wc -l < "$bundle" | tr -d ' ')" = 1 ] || fail "$name" "bundle is not one line"
+[ "$(cat "$bundle")" = "$(jq -c . "$dir/bundle.json")" ] || fail "$name" "bundle is not the compacted input"
+echo "ok $name"
+
+# Every file SHA256SUMS lists is attached once, with SHA256SUMS and the
+# bundle once each, even though the bundle's name matches the binaries'
+# prefix. A file in dist/ that SHA256SUMS does not list (so was neither
+# checksummed nor attested) is not attached.
+name=publish_attaches_each_asset_once
+dir=$(fake "$name")
+: > "$dir/dist/SHA256SUMS"
+for target in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64; do
+    echo "$target" > "$dir/dist/gosbee-repl_v0.1.0_$target"
+    printf '%s  %s\n' 0000000000000000000000000000000000000000000000000000000000000000 \
+        "gosbee-repl_v0.1.0_$target" >> "$dir/dist/SHA256SUMS"
+done
+echo stray > "$dir/dist/gosbee-repl_v0.1.0_stray"
+run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+line=$(create_line "$dir")
+for asset in gosbee-repl_v0.1.0_linux_amd64 gosbee-repl_v0.1.0_linux_arm64 gosbee-repl_v0.1.0_darwin_amd64 \
+    gosbee-repl_v0.1.0_darwin_arm64 SHA256SUMS gosbee-repl_v0.1.0_provenance.intoto.jsonl; do
+    [ "$(tr ' ' '\n' <<<"$line" | grep -cxF "dist/$asset")" = 1 ] || fail "$name" "dist/$asset not attached exactly once: $line"
+done
+[ "$(tr ' ' '\n' <<<"$line" | grep -c '^dist/')" = 6 ] || fail "$name" "expected six assets: $line"
+echo "ok $name"
+
+name=publish_refuses_bad_bundle_before_touching_draft
+dir=$(fake "$name")
+echo true > "$dir/is_draft"
+echo "not json" > "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+expect_refusal "$name" "publish-release: BUNDLE_FILE is not a single JSON document"
+[ ! -s "$dir/gh.log" ] || fail "$name" "called gh: $(cat "$dir/gh.log")"
+[ "$(cat "$dir/is_draft")" = true ] || fail "$name" "the draft is gone"
+[ ! -e "$dir/dist/gosbee-repl_v0.1.0_provenance.intoto.jsonl" ] || fail "$name" "left a bundle in dist/"
+echo "ok $name"
+
+name=publish_needs_a_bundle
+dir=$(fake "$name")
+run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md"
+expect_refusal "$name" "publish-release: usage: $SCRIPTS/publish-release.sh vX.Y.Z[-suffix] NOTES_FILE BUNDLE_FILE"
+[ ! -s "$dir/gh.log" ] || fail "$name" "called gh"
+echo "ok $name"
+
+name=publish_needs_the_notes_file
+dir=$(fake "$name")
+run_gh "$dir" publish-release.sh v0.1.0 "$dir/missing.md" "$dir/bundle.json"
+expect_refusal "$name" "publish-release: NOTES_FILE $dir/missing.md is not a file"
+[ ! -s "$dir/gh.log" ] || fail "$name" "called gh"
+echo "ok $name"
+
+name=publish_rejects_bad_tag
+# shellcheck disable=SC2016 # the $(id) is a literal hostile name, never expanded
+for bad in 'v1.0.0;id' 'v1.0.0$(id)' main v1.0; do
+    dir=$(fake "$name")
+    run_gh "$dir" publish-release.sh "$bad" "$dir/notes.md" "$dir/bundle.json"
+    expect_refusal "$name ($bad)" "publish-release: usage: $SCRIPTS/publish-release.sh vX.Y.Z[-suffix] NOTES_FILE BUNDLE_FILE"
+    [ ! -s "$dir/gh.log" ] || fail "$name ($bad)" "called gh"
+    rm -rf "$dir"
+done
+echo "ok $name"
+
+# SHA256SUMS comes from the build job's artifact. A line naming anything but
+# an existing gosbee-repl_<tag>_ file directly in dist/ is refused before any
+# gh call, so it can neither attach an outside file nor one of another tag.
+name=publish_refuses_bad_checksums_entry
+for entry in "../notes.md" "gosbee-repl_v0.2.0_linux_amd64" "gosbee-repl_v0.1.0_missing" \
+    "gosbee-repl_v0.1.0_a/../../notes.md" "-gosbee-repl_v0.1.0_x" "gosbee-repl_v0.1.0_provenance.intoto.jsonl"; do
+    dir=$(fake "$name")
+    printf '%s  %s\n' 0000000000000000000000000000000000000000000000000000000000000000 "$entry" \
+        >> "$dir/dist/SHA256SUMS"
+    run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+    expect_refusal "$name ($entry)" "publish-release: SHA256SUMS lists $entry, which is not a v0.1.0 asset in dist/"
+    [ ! -s "$dir/gh.log" ] || fail "$name ($entry)" "called gh"
+    rm -rf "$dir"
+done
+dir=$(fake "$name-empty")
+: > "$dir/dist/SHA256SUMS"
+run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+expect_refusal "$name (empty)" "publish-release: SHA256SUMS lists no assets"
+[ ! -s "$dir/gh.log" ] || fail "$name (empty)" "called gh"
+dir=$(fake "$name-duplicate")
+cat "$dir/dist/SHA256SUMS" "$dir/dist/SHA256SUMS" > "$dir/sums" && mv "$dir/sums" "$dir/dist/SHA256SUMS"
+run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+expect_refusal "$name (duplicate)" "publish-release: SHA256SUMS lists gosbee-repl_v0.1.0_linux_amd64 twice"
+[ ! -s "$dir/gh.log" ] || fail "$name (duplicate)" "called gh"
+dir=$(fake "$name-malformed")
+echo "not-a-checksum  gosbee-repl_v0.1.0_linux_amd64" > "$dir/dist/SHA256SUMS"
+run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+expect_refusal "$name (malformed)" "publish-release: SHA256SUMS line 1 is not <sha256>  <name>"
+[ ! -s "$dir/gh.log" ] || fail "$name (malformed)" "called gh"
+echo "ok $name"
+
+name=publish_marks_prerelease
+dir=$(fake "$name" v0.1.0-rc.1)
+run_gh "$dir" publish-release.sh v0.1.0-rc.1 "$dir/notes.md" "$dir/bundle.json"
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+[ "$(create_line "$dir")" = "release create v0.1.0-rc.1 --draft --verify-tag --title v0.1.0-rc.1 --notes-file $dir/notes.md --prerelease dist/gosbee-repl_v0.1.0-rc.1_linux_amd64 dist/SHA256SUMS dist/gosbee-repl_v0.1.0-rc.1_provenance.intoto.jsonl" ] \
+    || fail "$name" "wrong create line: $(create_line "$dir")"
+grep -qx "release edit v0.1.0-rc.1 --draft=false" "$dir/gh.log" || fail "$name" "not published: $(cat "$dir/gh.log")"
+! grep -q -- "--latest" "$dir/gh.log" || fail "$name" "a pre-release was marked latest"
+echo "ok $name"
+
+# Across every publish case: assets are only ever attached by the create of a
+# draft, never uploaded to or replaced on an existing release, and every edit
+# is the one that publishes the draft.
+name=publish_never_mutates_assets
+for log in "$ROOT"/publish_*/gh.log; do
+    ! grep -E 'release upload|--clobber' "$log" || fail "$name" "$log uploads assets"
+    ! grep '^release edit' "$log" | grep -v -- '--draft=false' || fail "$name" "$log edits without publishing"
 done
 echo "ok $name"
 
