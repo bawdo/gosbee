@@ -1,8 +1,8 @@
-# Unit 05: fuzzing
+# Unit 06: fuzzing
 
 Mode: plan
 Close: auto
-Branch: unit/05-fuzzing
+Branch: unit/06-fuzzing
 Review lanes: security, correctness, brief
 
 ## Items
@@ -12,6 +12,7 @@ Review lanes: security, correctness, brief
 - Add `make fuzz FUZZTIME=...`.
 - Add a fuzz job to `ci.yml` and its row in `scripts/ci-result.sh`'s skip table.
 - Update CONTRIBUTING.md (testing) and CHANGELOG.md.
+- Continue from the plan into the build in this unit, and build every task of it.
 
 ## Acceptance criteria
 
@@ -42,6 +43,11 @@ Review lanes: security, correctness, brief
   `[Unreleased]` entry.
 
 ## Decisions
+
+- OPERATOR RULING 2026-11-01 (after unit 04 closed): this unit writes its plan and then continues
+  into implement in the same unit, so the fuzz targets, `make fuzz` and the CI fuzz job land here
+  rather than as a plan nothing builds. Renumbered from 05 when the release-build unit was
+  inserted before it.
 
 ## Plan
 

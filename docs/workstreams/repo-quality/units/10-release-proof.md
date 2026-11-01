@@ -1,8 +1,8 @@
-# Unit 09: release-proof
+# Unit 10: release-proof
 
 Mode: implement
 Close: auto
-Branch: unit/09-release-proof
+Branch: unit/10-release-proof
 Review lanes: security, correctness, brief
 
 ## Items
@@ -13,6 +13,8 @@ Review lanes: security, correctness, brief
 - Verify it end to end with the commands in SECURITY.md, exactly as written.
 - Record the first published Scorecard result.
 - Fix whatever the proof shows is wrong, or record it.
+- Before the release candidate, apply `scripts/repo-settings.sh harden` (from unit 09) on the
+  operator's approval of its dry run, now that `main` no longer runs `re-actors/alls-green`.
 
 ## Acceptance criteria
 
@@ -36,6 +38,10 @@ Review lanes: security, correctness, brief
   (gosbee unscored; caddy_shack 8.3, jellyfish 8.0, go-blinkstick 7.6).
 
 ## Decisions
+
+- OPERATOR RULING 2026-11-01 (after unit 04 closed): sequence is unit 09 applies `metadata` and
+  `rulesets`, the operator merges `workstream/repo-quality` to `main` by PR, then this unit applies
+  `harden` before cutting the rc. Renumbered from 09.
 
 ## Plan
 

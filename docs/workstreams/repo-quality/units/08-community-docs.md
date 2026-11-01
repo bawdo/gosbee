@@ -1,8 +1,8 @@
-# Unit 07: community-docs
+# Unit 08: community-docs
 
 Mode: implement
 Close: auto
-Branch: unit/07-community-docs
+Branch: unit/08-community-docs
 Review lanes: security, correctness, brief
 
 ## Items

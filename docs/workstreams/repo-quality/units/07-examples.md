@@ -1,8 +1,8 @@
-# Unit 06: examples
+# Unit 07: examples
 
 Mode: implement
 Close: auto
-Branch: unit/06-examples
+Branch: unit/07-examples
 Review lanes: security, correctness, brief
 
 ## Items

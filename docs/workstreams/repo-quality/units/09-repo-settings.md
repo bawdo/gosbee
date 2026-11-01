@@ -1,8 +1,8 @@
-# Unit 08: repo-settings
+# Unit 09: repo-settings
 
 Mode: plan
 Close: auto
-Branch: unit/08-repo-settings
+Branch: unit/09-repo-settings
 Review lanes: security, correctness, brief
 
 ## Items
@@ -14,6 +14,8 @@ Review lanes: security, correctness, brief
   allowlist, topics, homepage, auto-merge.
 - Decide whether the required check is renamed from `CI OK` to `CI result`.
 - Update CONTRIBUTING.md and CHANGELOG.md.
+- Continue from the plan into the build in this unit: write the script and apply `metadata` and
+  `rulesets`; dry-run `harden` for unit 10 to apply.
 
 ## Acceptance criteria
 
@@ -53,6 +55,18 @@ Review lanes: security, correctness, brief
   `[Unreleased]` entry.
 
 ## Decisions
+
+- OPERATOR RULING 2026-11-01 (after unit 04 closed): this unit writes its plan and then continues
+  into implement in the same unit. Renumbered from 08.
+- OPERATOR RULING 2026-11-01: the required check keeps the name `CI OK`; no rename, so `ci.yml`,
+  the ruleset and CONTRIBUTING need no change for it.
+- OPERATOR RULING 2026-11-01: Codecov is not a required status check. Fork PRs cannot mint the
+  OIDC token the upload uses, so a required Codecov status could never post and would block
+  them; Codecov's own statuses already gate.
+- OPERATOR RULING 2026-11-01, the allowlist criterion's choice: `harden` is applied after the
+  integration branch merges to `main`, not with `re-actors/alls-green` allowlisted. This unit
+  applies `metadata` and `rulesets` and shows `harden`'s dry run; `harden` itself is applied in
+  unit 10, after the operator's merge, so the allowlist never names an action already removed.
 
 ## Plan
 
