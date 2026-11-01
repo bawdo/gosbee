@@ -50,6 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   issues are turned off, and security reports are pointed at private
   reporting.
 
+- `scripts/repo-settings.sh` keeps the repository's GitHub settings in the
+  tree, in phases (`metadata`, `rulesets`, `harden`, `show`) that each send
+  their whole desired state and can be dry-run with `DRY_RUN=1`. Pull
+  requests to `main` must now be up to date and pass CodeQL with no blocking
+  alert, and only an admin can create a `v*` tag. The release workflow's
+  publish job runs in a `release` environment, limited to `v*` tags and
+  `main`. SECURITY.md covers `gh release verify` for releases published once
+  immutable releases are on.
+
 ### Changed
 
 - The `CI OK` check is decided by an in-repo script, `scripts/ci-result.sh`,
