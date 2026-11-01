@@ -83,6 +83,11 @@ if command -v jq > /dev/null 2>&1; then
 else
     skip release-scripts "jq not installed (CI runs it)"
 fi
+if command -v jq > /dev/null 2>&1; then
+    run repo-settings bash scripts/repo-settings_test.sh
+else
+    skip repo-settings "jq not installed (CI runs it)"
+fi
 run vuln go -C tools tool govulncheck -C .. ./...
 if command -v zizmor > /dev/null 2>&1; then
     run zizmor zizmor --offline .github/workflows
