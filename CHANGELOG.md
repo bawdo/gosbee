@@ -71,9 +71,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drops below their targets, instead of being informational.
 - REPL release binaries are built without the symbol table and DWARF debug
   data, which makes them about a third smaller.
-- Releases check the tag name first, with no token and no checkout, so a
-  by-hand run naming any other tag stops before its code runs. They then run
-  the whole CI workflow on the tag, then build with a read-only token, then publish from a job that is the only one able to write.
+- Releases check the tag name first, with no token scope and no checkout, so
+  a by-hand run naming any other tag stops before its code runs. They then
+  run the whole CI workflow on the tag, then build with a read-only token,
+  then publish from a job that is the only one able to write.
   The build checks the tag is signed and verified by GitHub and smoke tests a
   binary. Publishing goes through a draft, so a release never exists without
   its assets, and a run that fails before publishing is recovered by running
