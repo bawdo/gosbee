@@ -93,6 +93,27 @@ gate's `needs:` too; `ci-result_test.sh` fails until both agree. It needs `jq`.
 
 **Tests**: `./scripts/ci-result_test.sh`, run by CI and by `wombat-verify.sh`.
 
+## fuzz.sh
+
+**Purpose**: Runs every native Go fuzz target in the module, one after
+another, since `go test` fuzzes one target per run. `make fuzz` and the CI
+`fuzz` job both call it.
+
+**Usage**:
+```bash
+./scripts/fuzz.sh                 # 10s per target
+FUZZTIME=1m ./scripts/fuzz.sh     # a Go duration, or an iteration count such as 500x
+./scripts/fuzz.sh --list          # list "<package> <target>", fuzz nothing
+```
+
+A failing target does not stop the run: every target is fuzzed, the failures
+are listed at the end and the exit is 1. A package that cannot be listed, or a
+malformed `FUZZTIME`, stops it before anything is fuzzed. `go test` writes each
+failing input to `<package>/testdata/fuzz/<target>/`.
+
+**Tests**: `./scripts/fuzz_test.sh` (a fake `go`), run by CI and by
+`wombat-verify.sh`.
+
 ## verify-tag.sh
 
 **Purpose**: Checks a release tag is annotated and that GitHub verified its

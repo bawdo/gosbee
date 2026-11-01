@@ -9,6 +9,7 @@ BIN_DIR     ?= bin
 COVER_DIR   ?= coverage
 COVER_FILE  ?= $(COVER_DIR)/coverage.out
 LINT_TIMEOUT ?= 5m
+FUZZTIME    ?= 10s
 
 .DEFAULT_GOAL := help
 
@@ -53,6 +54,10 @@ test: ## Run the full test suite
 .PHONY: test-race
 test-race: ## Run the test suite with the race detector, as CI does
 	$(GO) test -race -v ./...
+
+.PHONY: fuzz
+fuzz: ## Run every fuzz target in turn for FUZZTIME each (default 10s)
+	FUZZTIME=$(FUZZTIME) GO=$(GO) ./scripts/fuzz.sh
 
 .PHONY: coverage
 coverage: ## Run tests with coverage and write coverage/coverage.out

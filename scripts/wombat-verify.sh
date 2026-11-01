@@ -102,6 +102,7 @@ if command -v jq > /dev/null 2>&1; then
 else
     skip ci-result "jq not installed (CI runs it)"
 fi
+run fuzz-script bash scripts/fuzz_test.sh
 run test go test -race -count=1 -shuffle=on ./...
 
 # The tree state is taken after the gates, so a gate that rewrote a file
