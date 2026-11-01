@@ -97,6 +97,13 @@ Review lanes: security, correctness, brief
   dropping it is policy rather than a constraint: a published release is never changed,
   notes included, and publish stays release.yml's only write job. release.yml loses its
   `push: branches: main, paths: CHANGELOG.md` trigger with it.
+- ci.yml's lint job gains a `Test the release scripts` step, so pull request and push runs
+  change by one lint step. The brief says that behaviour is unchanged, and this is a deliberate
+  exception: the new scripts' tests should gate merges, as `changelog.sh check` already does.
+- ci.yml's concurrency key is `ci-${{ inputs.ref || pr number || github.ref }}`, with `inputs.ref`
+  first. This came from the brief lane's review: a dispatch re-run's `github.ref` is the
+  dispatching branch, so its CI would queue in the main push group, and GitHub keeps one
+  pending run per group.
 - Asset names stay as v0.2.x shipped them: `gosbee-repl_<tag>_<os>_<arch>` and `SHA256SUMS`,
   with the tag keeping its `v`. The bundle follows suit as
   `gosbee-repl_<tag>_provenance.intoto.jsonl`, reading the brief's `<version>` as the tag so
@@ -181,6 +188,21 @@ claim was passed, because this unit changed no documented behaviour. A manual
 `git grep -n "docs/plans\|docs/specs"` found only this brief and
 `nodes/rawsql_security_test.go:32`, a pre-existing citation of a local plan that this unit
 did not touch. No later brief was corrected.
+
+Review triage (step 6). The `brief` lane reported 8 findings, which I counted myself from its
+report: 0 blocking, 4 should fix, 4 nits. All 8 were judged real:
+1. The plan did not state how the workflow is exercised. Fixed: a section in the plan.
+2. Nothing in the workstream builds this plan before unit 09 needs it. Not fixed here (scope).
+   Put to the operator, who answered "Note it, decide later (Recommended)". It stays in
+   Not done and goes into the index handover, and the re-cut is the operator's before 03 or 09.
+3. Review Focus 4 overclaimed validation before checkout. Fixed: the `ci` job's unvalidated
+   checkout is stated as accepted, with the reason.
+4. A dispatch re-run's CI would share the `ci-refs/heads/main` group. Fixed: the key leads
+   with `inputs.ref`, recorded under Decisions.
+5. The new CI lint step was not recorded as a PR/push change. Fixed under Decisions.
+6. CONTRIBUTING's `Lint and audit` bullet would miss the new step. Fixed in Task 6.
+7. The offline zizmor run does not prove the online audits. Fixed: the plan says CI proves them.
+8. Artifact download paths were unstated. Fixed in Task 5.
 
 For unit 03 (release-supply-chain): the release chain grants `id-token` only in publish, and
 the verification docs should pin `--signer-workflow` to `release.yml`. For unit 04: ci.yml

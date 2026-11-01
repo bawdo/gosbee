@@ -18,7 +18,7 @@
 - Every action pinned by full commit SHA with a `# vX.Y.Z` comment, reusing the SHAs already in `ci.yml` and `release.yml`. New ones: `actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2` and `actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2` (as caddy_shack pins them).
 - Every checkout sets `persist-credentials: false`. Every job sets `timeout-minutes`.
 - Untrusted values (tag names, `inputs.*`, `github.ref_name`) reach `run:` only through `env:`. `${{ }}` is allowed in `with:`, `env:`, `concurrency:` and `if:`, never inside a `run:` body.
-- `zizmor --offline .github/workflows` (through `uvx zizmor@1.31.1` where zizmor is not installed) reports no findings. `actionlint` reports nothing. `shellcheck` passes on every script touched.
+- `zizmor --offline .github/workflows` (through `uvx zizmor@1.31.1` where zizmor is not installed) reports no findings. The online audits run only in CI's zizmor-action, so the pull request's CI run is where the full criterion is proved. `actionlint` reports nothing. `shellcheck` passes on every script touched.
 - Scripts: `#!/usr/bin/env bash`, `set -euo pipefail`, a `die()` that prints `<script>: <message>` to stderr and exits 1, four-space indentation (as caddy_shack's are; `changelog.sh` uses tabs and stays as it is).
 - Commits: past tense, 60 characters or fewer, gpg signed, no agent attribution, never on `main`. No push.
 - Every behaviour change goes through `superpowers:test-driven-development`: write the failing test and see it fail before the code. Workflow YAML has no unit test, so its proof is actionlint and zizmor plus the grep assertions each task names.
@@ -31,12 +31,16 @@ The close-out runs three lanes (`security`, `correctness`, `brief`) against the 
 - **correctness:** whether the code does what it claims under the cases it will actually meet, including the edges, the errors and the concurrent ones. Here that means pre-release tags, a re-run after a part-failed run, a dispatch re-run of an existing tag, and two runs for one tag.
 - **brief:** whether the change delivers what the brief specified, criterion by criterion, with each divergence recorded under the brief's Decisions.
 
+## How the workflow is exercised before unit 09
+
+Locally only. The scripts are covered by `scripts/release-scripts_test.sh` with a fake `gh`, and the workflows by actionlint and zizmor. The job graph, artifact paths, nested permission validation, OIDC and the attestation get no run at all until the first real tag in unit 09 (an `-rc.1` is suggested). `act` was rejected because it cannot run OIDC, attestations or a faithful `workflow_call`. A fork dry run was rejected because a solo account cannot fork its own repository, and `remotes: local` forbids pushing a scratch repository. The pull request's CI does exercise `ci.yml` and `coverage.yml` themselves.
+
 ## Review Focus
 
 1. **A dispatch re-run tests the tag, not the branch it was dispatched from.** The `ci` job passes `ref: refs/tags/<tag>`, and every checkout in `ci.yml` uses `inputs.ref`. Pinned by Task 1's grep and Task 5's grep.
 2. **A pre-release tag (`v0.3.0-rc.1`) is accepted end to end and is never marked latest.** Pinned by `verify_tag_accepts_prerelease` (Task 2), `publish_marks_prerelease` (Task 3) and `build_accepts_prerelease_tag` (Task 4).
 3. **A part-failed run is recoverable, and a published release is untouchable.** A stale draft is replaced, a published one is refused before any write, and a bad bundle is refused before the draft is touched. Pinned by Task 3's cases.
-4. **A hostile tag or input (`v1.0.0;id`, `v1.0.0$(id)`, `main`) is refused before checkout** and never reaches a shell by interpolation. Pinned by `verify_tag_rejects_bad_name` and `build_rejects_bad_tag`, and by zizmor in Task 5.
+4. **A hostile tag or input (`v1.0.0;id`, `v1.0.0$(id)`, `main`) is refused before the build job's checkout** and never reaches a shell by interpolation. The `ci` job runs first and checks out `refs/tags/<input>` before any validation. That is accepted: the ref reaches `actions/checkout` through `with:`, never a shell, and a bad ref just fails the fetch. Pinned by `verify_tag_rejects_bad_name` and `build_rejects_bad_tag`, and by zizmor in Task 5.
 5. **Re-running a tag made before this pipeline existed (`v0.2.1`)** fails cleanly at the build job, because that tag carries no `scripts/verify-tag.sh`. Accepted, not fixed. CONTRIBUTING says so in Task 6.
 
 ---
@@ -52,7 +56,7 @@ The close-out runs three lanes (`security`, `correctness`, `brief`) against the 
 
 - [ ] **Step 1: Edit ci.yml**
   - Add `workflow_call` with the `ref` input above.
-  - Concurrency becomes `group: ci-${{ github.event.pull_request.number || github.ref }}` and keeps `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`. Add a comment saying why the prefix is literal: in a called workflow `github.workflow` names the caller, so caller and callee would share a group and deadlock.
+  - Concurrency becomes `group: ci-${{ inputs.ref || github.event.pull_request.number || github.ref }}` and keeps `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`. Add a comment covering two things. The prefix is literal because in a called workflow `github.workflow` names the caller, so caller and callee would share a group and deadlock. `inputs.ref` comes first because on a dispatch re-run `github.ref` is the dispatching branch, so the release's CI would share `ci-refs/heads/main` with ordinary pushes, and GitHub keeps only one pending run per group.
   - Add `ref: ${{ inputs.ref }}` to both checkouts (lint and test).
   - Test job: remove its `permissions:` block (the top-level `contents: read` applies), the `coverage: true` matrix key, the `COVERAGE` env and branch, and the Codecov step.
 - [ ] **Step 2: Create coverage.yml**
@@ -148,7 +152,7 @@ The close-out runs three lanes (`security`, `correctness`, `brief`) against the 
     10. Upload `dist/gosbee-repl_*` and `dist/SHA256SUMS` as artifact `dist`, and `${{ runner.temp }}/notes.md` as `release-notes`, each with `if-no-files-found: error` and `retention-days: 1`.
   - `publish`: `needs: build`, `timeout-minutes: 10`, `permissions` `contents: write`, `id-token: write` and `attestations: write`, each with caddy_shack's comment. Steps:
     1. Sparse checkout of `scripts/publish-release.sh` only (`sparse-checkout-cone-mode: false`) at `refs/tags/<tag>`.
-    2. Download both artifacts.
+    2. Download artifact `dist` with `path: dist`, and `release-notes` with `path: notes`, so the next steps find `dist/SHA256SUMS` and `notes/notes.md`.
     3. `cd dist && sha256sum -c SHA256SUMS`.
     4. `actions/attest-build-provenance` with `id: attest` and `subject-checksums: dist/SHA256SUMS`.
     5. `scripts/publish-release.sh "$TAG" notes/notes.md "$BUNDLE_PATH"`, with `GH_TOKEN`, `GH_REPO: ${{ github.repository }}` and `BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}` in `env:`.
@@ -170,9 +174,9 @@ The close-out runs three lanes (`security`, `correctness`, `brief`) against the 
 - Modify: `CHANGELOG.md` (`[Unreleased]`)
 
 - [ ] **Step 1: wombat-verify.sh.** Add `scripts/verify-tag.sh`, `scripts/publish-release.sh`, `scripts/build-release.sh` and `scripts/release-scripts_test.sh` to the shellcheck line. Add `run release-scripts bash scripts/release-scripts_test.sh` after `changelog`. Where `zizmor` is absent but `uvx` is present, run `uvx zizmor@1.31.1 --offline .github/workflows` instead of skipping (the unit 01 handover suggests it, and it is what proves this unit's zizmor criterion). An actionlint gate is left to unit 04 (ci-gate-and-lint).
-- [ ] **Step 2: ci.yml lint job.** Add the step `Test the release scripts` running `bash scripts/release-scripts_test.sh`, after `Check CHANGELOG.md`.
+- [ ] **Step 2: ci.yml lint job.** Add the step `Test the release scripts` running `bash scripts/release-scripts_test.sh`, after `Check CHANGELOG.md`. This is a deliberate change to pull request and push behaviour (one more lint step), recorded under the brief's Decisions.
 - [ ] **Step 3: CONTRIBUTING.md.**
-  - Branch Rules: coverage is uploaded by the separate `Coverage` workflow, which is not a required check.
+  - Branch Rules: coverage is uploaded by the separate `Coverage` workflow, which is not a required check. The `Lint and audit` bullet gains the release script tests.
   - Releasing step 3: CI runs first. The build job checks the tag is signed and verified by GitHub, is on `main` and has a changelog section. It builds and smoke tests the binaries and writes `SHA256SUMS`. The publish job attests them, attaches the Sigstore bundle as `gosbee-repl_<tag>_provenance.intoto.jsonl` and publishes through a draft.
   - Replace the "rewrites the notes" paragraph: a published release is never changed, so a changelog fix after release lives in `CHANGELOG.md` only. A part-failed run is recovered from the Actions tab by running `Release` with the tag. Tags made before this pipeline (v0.2.1 and earlier) cannot be re-run that way.
 - [ ] **Step 4: scripts/README.md.** One entry per new script, in the file's existing format.
