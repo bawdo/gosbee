@@ -4675,7 +4675,7 @@ func TestREPLUpdateBasic(t *testing.T) {
 		"set users.name = 'Bob'",
 		"where users.id = 1",
 	)
-	testutil.AssertEqual(t, got, `UPDATE "users" SET "users"."name" = 'Bob' WHERE "users"."id" = 1`)
+	testutil.AssertEqual(t, got, `UPDATE "users" SET "name" = 'Bob' WHERE "users"."id" = 1`)
 }
 
 func TestREPLUpdateMultipleSet(t *testing.T) {
@@ -4685,7 +4685,7 @@ func TestREPLUpdateMultipleSet(t *testing.T) {
 		"set users.name = 'Bob'",
 		"set users.email = 'bob@test.com'",
 	)
-	testutil.AssertEqual(t, got, `UPDATE "users" SET "users"."name" = 'Bob', "users"."email" = 'bob@test.com'`)
+	testutil.AssertEqual(t, got, `UPDATE "users" SET "name" = 'Bob', "email" = 'bob@test.com'`)
 }
 
 func TestREPLUpdateReturning(t *testing.T) {
@@ -4695,7 +4695,7 @@ func TestREPLUpdateReturning(t *testing.T) {
 		"set users.name = 'Bob'",
 		"returning users.id, users.name",
 	)
-	testutil.AssertEqual(t, got, `UPDATE "users" SET "users"."name" = 'Bob' RETURNING "users"."id", "users"."name"`)
+	testutil.AssertEqual(t, got, `UPDATE "users" SET "name" = 'Bob' RETURNING "users"."id", "users"."name"`)
 }
 
 func TestREPLDeleteBasic(t *testing.T) {
