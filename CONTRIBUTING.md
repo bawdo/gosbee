@@ -452,8 +452,10 @@ If your change breaks backwards compatibility:
 `main` only changes through pull requests. Direct pushes, force pushes and
 deleting `main` are all blocked. Pull requests are squash merged, so GitHub
 signs the resulting commit (a rebase merge cannot be signed). The pull request
-title becomes the commit subject, so write it in the past tense. A pull
-request can merge once these checks pass:
+title becomes the commit subject, so write it in the past tense. Auto-merge is
+allowed, and the branch is deleted once merged. A pull request must be up to
+date with `main` before it merges (use **Update branch**), and can merge once
+these checks pass:
 
 - `CI OK`, which passes only when every job in the CI workflow passed.
   `scripts/ci-result.sh` decides this from each job's result: a failed,
@@ -461,8 +463,9 @@ request can merge once these checks pass:
   script's per-event table permits that skip (only `Fuzz`, which runs on the
   weekly schedule and a manual dispatch alone). The jobs:
   - `Lint and audit`: golangci-lint, shellcheck over `scripts/*.sh` (a pinned
-    release, checked by sha256), the `ci-result.sh` and `fuzz.sh` tests,
-    `go mod tidy -diff`, the changelog check, the release script tests
+    release, checked by sha256), the `ci-result.sh`, `fuzz.sh` and
+    `repo-settings.sh` tests, `go mod tidy -diff`, the changelog check, the
+    release script tests
     (`scripts/release-scripts_test.sh`, which cover the build with its SBOMs,
     publishing and the module proxy check), govulncheck and a zizmor audit of
     the workflows
@@ -470,7 +473,8 @@ request can merge once these checks pass:
     (`stable`), both with the race detector, plus macOS on `stable`.
   - `Fuzz`: every fuzz target in turn (see [Fuzzing](#fuzzing)). Skipped on
     pull requests, pushes and release runs.
-- `Analyze (go)` (CodeQL)
+- `Analyze (go)` (CodeQL), and CodeQL must report no alert at `error` severity
+  and no security alert at `high` or above.
 
 Coverage is measured and uploaded to Codecov by the separate `Coverage`
 workflow (`coverage.yml`), which is not a required check. It lives outside CI
@@ -484,6 +488,42 @@ vulnerability fails the build without waiting for a pull request.
 Every commit must be signed (GPG, SSH or S/MIME) and every conversation on
 the pull request resolved. No approving review is required. Pull requests from
 forks need a maintainer to approve their CI run before it starts.
+
+### Repository Settings
+
+These rules, and the rest of the repository's GitHub settings, are kept in
+`scripts/repo-settings.sh` rather than set by hand, so they can be read,
+reviewed and re-applied. It runs one phase at a time, as a repository admin
+with `gh` logged in:
+
+```bash
+DRY_RUN=1 scripts/repo-settings.sh rulesets   # print each write and its body; send nothing
+scripts/repo-settings.sh rulesets             # apply
+scripts/repo-settings.sh show                 # print the current settings
+```
+
+- `metadata`: description, homepage, topics, squash merge only, auto-merge,
+  **Update branch**, and deleting the branch on merge.
+- `rulesets`: `Protect main` (the branch rules above, with no bypass),
+  `Protect release tags` (a `v*` tag can never be moved or deleted) and
+  `Protect release tag creation` (only an admin can create a `v*` tag). It
+  refuses to run until a successful CI run on `main` has a `CI OK` job.
+- `harden`: Actions limited to GitHub's own and the third-party actions the
+  workflows use (it prints the list, read from their `uses:` lines, and
+  refuses an action not pinned to a commit SHA), SHA pinning required, a
+  read-only default token, fork approval for all external contributors,
+  CodeQL default setup with the `extended` suite, private vulnerability
+  reporting, immutable releases, and the `release` environment that the
+  publish job runs in, deployable only from `v*` tags and `main`.
+
+Every write sends the whole desired state (rulesets and environment policies
+are found by name and replaced in place), so any phase can be re-run, and
+each prints its method and path before it is sent. `REPO` names another
+repository (default `bawdo/gosbee`). The `harden` allowlist is computed from
+the workflows as they are checked out, so run it from an up to date `main`,
+and run it again after a pull request adds a third-party action, or that
+action is refused. `scripts/repo-settings_test.sh` checks every phase against
+a fake `gh`; CI runs it.
 
 ## Releasing
 
@@ -552,9 +592,9 @@ only place release notes are written.
 
 A published release is never changed, its notes included, so a changelog fix
 made after release lives in `CHANGELOG.md` only. Release tags (`v*`) must never
-be moved or deleted once pushed. A tag ruleset enforcing that is a repository
-setting, left to the repo-settings unit; until it exists, publish's checks
-refuse a tag moved during a run, but nothing stops a move between runs.
+be moved or deleted once pushed, and the `Protect release tags` ruleset
+refuses both (see [Repository Settings](#repository-settings)). Publish's
+checks also refuse a tag moved during a run.
 
 If a release run fails before the release is published, fix the cause and
 recover it from the Actions tab by running the `Release` workflow from `main`
@@ -584,10 +624,16 @@ only from `main`. A dispatched run's provenance attestation also records the
 dispatched ref and that branch's commit as its source, not the tag, so
 `gh attestation verify --source-ref refs/tags/<tag>` fails for its assets,
 while `--signer-workflow bawdo/gosbee/.github/workflows/release.yml` still
-holds. The controls that make this binding are repository settings, left to
-the repo-settings unit: an `environment:` on the publish job whose deployment
-rule admits only `v*` tags, and a tag ruleset. The workflow names no
-environment yet, since that unit creates it.
+holds. The publish job names the `release` environment. Once
+`scripts/repo-settings.sh harden` is applied (after the current workstream
+merges to `main`), that environment deploys only from `v*` tags and `main`, so
+`release.yml` as `main` has it, dispatched from any other branch, cannot
+publish; `main` is admitted so the recovery run above still works. Until then
+GitHub creates the environment on first use with no deployment rule. Neither
+binds a branch that edits `release.yml` itself, which can drop the
+`environment:` line, so who has write access remains the boundary. With
+`Protect release tag creation`, only an admin can push the tag that starts a
+release.
 
 Preview a release's notes locally with `scripts/changelog.sh notes v0.3.0`.
 

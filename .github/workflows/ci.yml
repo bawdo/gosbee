@@ -92,6 +92,10 @@ jobs:
       - name: Test the fuzz runner script
         run: bash scripts/fuzz_test.sh
 
+      # Fake gh, so no network or token.
+      - name: Test the repository settings script
+        run: bash scripts/repo-settings_test.sh
+
       - name: Check go.mod and go.sum are tidy
         run: |
           go mod tidy -diff

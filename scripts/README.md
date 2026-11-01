@@ -225,3 +225,27 @@ The build cases cross-compile the four binaries and write their SBOMs, so they
 run last. It prints `ok <case>` per case and stops at the first failure, on a
 line starting `FAIL`. Run by CI and by `wombat-verify.sh`. It needs `jq` and
 Go.
+
+## repo-settings.sh
+
+**Purpose**: Applies the repository's GitHub settings (metadata, rulesets, and
+the Actions, CodeQL, release and environment hardening) from the tree, so they
+are reviewed like code. CONTRIBUTING.md, "Repository Settings", says what each
+phase sets.
+
+**Usage** (as a repository admin, with `gh` logged in):
+```bash
+DRY_RUN=1 ./scripts/repo-settings.sh metadata   # print each write and its body, send nothing
+./scripts/repo-settings.sh metadata             # or rulesets, or harden
+./scripts/repo-settings.sh show                 # print the current settings
+```
+
+Every write sends the whole desired state and prints its method and path
+first, so a phase can be re-run. A read a phase needs to choose between
+creating and replacing (the ruleset list, the environment's policies) stops
+the phase when it fails, rather than creating a duplicate. `REPO` names
+another repository; `WORKFLOWS_DIR` the workflows `harden` reads its action
+allowlist from.
+
+**Tests**: `./scripts/repo-settings_test.sh` (a fake `gh`), run by CI and by
+`wombat-verify.sh`. It needs `jq`.

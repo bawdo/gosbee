@@ -121,6 +121,25 @@ shasum -a 256 -c SHA256SUMS --ignore-missing
 
 Either way, check that each file you downloaded is reported `OK` by name.
 
+### The release itself
+
+Once immutable releases are on for this repository (they are switched on by
+`scripts/repo-settings.sh harden`, after the current release pipeline reaches
+`main`), a published release cannot have its tag moved or its assets added,
+replaced or deleted, and GitHub attests the release when it is published.
+Releases published before that carry no release attestation, so this check
+does not apply to them. For a later release:
+
+```bash
+gh release verify v<version> --repo bawdo/gosbee
+gh release verify-asset v<version> gosbee-repl_v<version>_<os>_<arch> --repo bawdo/gosbee
+```
+
+The first checks GitHub's attestation for the release and lists the asset
+digests it records; the second checks a file you downloaded is one of them.
+This is GitHub's record of what was published, not of how it was built, so
+it complements the build provenance check above rather than replacing it.
+
 ### What an attestation proves
 
 An attestation is provenance, not a security guarantee. It links a file to
@@ -131,14 +150,20 @@ on a GitHub-hosted runner, from that tag and commit. It does not prove the
 commit was reviewed: a `v*` tag pushed at an unmerged commit would run that
 commit's own `release.yml` and pass the same check. The three git commands
 above close that gap, because they show the tag is signed by the maintainer
-and its commit is on `main`.
+and its commit is on `main`. The repository's rulesets narrow it too: only
+an admin can create a `v*` tag, and no push can move or delete one.
 
 A release run started by hand from the Actions tab records the branch it was
 dispatched from, and that branch's commit, as its source, not the tag. Both
 `--source-ref` and `--source-digest` fail for its assets. `--signer-workflow`
 still passes, but it matches `release.yml` as it stands on any branch, so on
 its own it does not bind the source at all. A failure there is a reason to ask
-in an issue, not to drop the flags.
+in an issue, not to drop the flags. Once `scripts/repo-settings.sh harden` is
+applied, the publish job's `release` environment deploys only from a `v*` tag
+or from `main`, so `release.yml` as `main` has it cannot publish from a run
+dispatched from another branch. A branch that edits the workflow can drop the
+environment, so this narrows mistakes rather than binding someone with write
+access; the tag check above is what binds.
 
 ### The SBOMs
 

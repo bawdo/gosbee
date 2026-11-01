@@ -181,6 +181,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Once scripts/repo-settings.sh harden is applied, its deployment policy
+    # admits only v* tags and main, so this file dispatched from another
+    # branch cannot publish. A branch that edits this file can drop the line.
+    environment: release
     permissions:
       contents: write     # create the release and upload its assets
       id-token: write     # sign the build provenance attestation

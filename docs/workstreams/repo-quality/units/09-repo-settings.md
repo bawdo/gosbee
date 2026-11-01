@@ -73,9 +73,171 @@ Review lanes: security, correctness, brief
   and the bug form route reports through private vulnerability reporting. Separately,
   `scripts/verify-tag.sh` accepts any tag signature GitHub verifies, while SECURITY.md tells users to
   accept only signing subkey `9954 8FCC ... EE78`, so CI is looser than the published procedure.
+- OPERATOR RULING 2026-11-01, on the unit 08 correction: `harden` also sends private
+  vulnerability reporting (already on; the PUT keeps it on) and the publish environment. Both are
+  written and dry-run here and applied with the rest of `harden` in unit 10.
+- OPERATOR RULING 2026-11-01: SECURITY.md is updated in this unit to cover immutable releases and
+  `gh release verify`. Tightening `scripts/verify-tag.sh` to the published subkey stays open for
+  the operator to schedule.
+- Live state read 2026-11-01 (GET only): rulesets "Protect main" (13059268; requires `CI OK` and
+  `Analyze (go)`, strict off, squash only) and "Protect release tags" (25916143; deletion, update,
+  non fast forward) exist; no branch protection; CodeQL default setup on, `default` suite,
+  languages actions and go; private vulnerability reporting on; Actions `allowed_actions: all`
+  with SHA pinning on; fork approval `all_external_contributors`; default token read; immutable
+  releases off; no environments; topics empty; homepage null; auto-merge off;
+  `allow_update_branch` off; `has_discussions` on.
+- Ruleset names: the script keeps the existing names "Protect main" and "Protect release tags" so
+  both are replaced in place rather than duplicated, and adds "Protect release tag creation".
+  Caddy_shack's names (`main`, `release-tags`) would have created two more rulesets beside them.
+- Required status checks stay `CI OK` and `Analyze (go)`, both from integration 15368 (GitHub
+  Actions). Caddy_shack dropped its CodeQL check for the `code_scanning` rule; keeping `Analyze (go)`
+  is the current state and costs nothing, so applying the ruleset removes no check `main` has now.
+- `metadata` also sets `allow_update_branch: true`: the strict status check policy makes a pull
+  request behind `main` unmergeable, and the button is how a solo maintainer brings it up to date.
+  `has_discussions`, `has_wiki` and `has_projects` are sent at their current values (true, false,
+  false), so the phase's PATCH states the whole of what it owns and changes nothing it does not.
+  The description is sent as its current value, `A Golang SQL Builder`.
+- Publish environment `release`: deployment policy custom, admitting tag `v*` **and branch
+  `main`**. A tag-only rule would refuse the documented recovery path (dispatching `Release` from
+  `main` with an existing tag, where `github.ref` is `refs/heads/main`); admitting `main` alone
+  still refuses a dispatch from any other branch, which is the hole CONTRIBUTING describes. No
+  required reviewers: solo maintainer. `release.yml`'s publish job names the environment, which
+  CONTRIBUTING says this unit adds.
+- The live "Protect main" pull request rule carries
+  `require_extra_approval_for_unattributed_changes: true`, which the caddy_shack body omits; a PUT
+  without it would likely reset it. Found comparing the first `rulesets` dry run with the live
+  ruleset. The script sends it as `true`, its current value, and the test pins it.
+- Census for `release.yml`'s `environment:`: `grep -rn 'environment' .github scripts
+  CONTRIBUTING.md SECURITY.md README.md` found only CONTRIBUTING.md:588-590 ("The workflow names no
+  environment yet"); no script parses the publish job.
+- Caller census before changing shared contracts: `grep -rn "environment\|repo-settings\|Analyze (go)\|Protect main" --include='*.md' --include='*.yml' --include='*.sh' . | grep -v '^./docs/workstreams/repo-quality/units/0[1-8]'`
+  is run at the step that edits each file and its hits recorded in `## Plan`.
 
 ## Plan
 
+`docs/workstreams/repo-quality/plans/2026-11-01-repo-settings.md`, written with
+`superpowers:writing-plans` (`skills.plan`); built in this session with
+`superpowers:test-driven-development` (`skills.testFirst`); `skills.implement` is not configured.
+Items carry no ids, so `work-items.sh` was not needed: the unit ran as a legacy list.
+
 ## Outcome
 
+Close mode as run: `auto`. Questions that fired, with answers:
+
+- Scope (unit 08 correction): private vulnerability reporting and the publish environment.
+  Operator: add both to `harden`.
+- SECURITY.md wording and `verify-tag.sh`. Operator: SECURITY.md only.
+- Commit grant. Operator: yes, for this unit.
+- `metadata` dry run. Operator: apply. `rulesets` dry run. Operator: apply.
+
+Built: `scripts/repo-settings.sh` (phases `metadata`, `rulesets`, `harden`, `show`) and
+`scripts/repo-settings_test.sh`, 17 cases, all `ok` (counted from the run's `^ok ` lines),
+shellcheck clean; the test runs in CI (`Lint and audit`) and as the `repo-settings` gate in
+`scripts/wombat-verify.sh`. `release.yml`'s publish job names `environment: release`. zizmor
+1.31.1 offline: no findings (run in the sandbox with uv's cache, tool and Python dirs under
+`$TMPDIR`). CONTRIBUTING (Branch Rules, new Repository Settings, Releasing), SECURITY.md,
+scripts/README.md and CHANGELOG `[Unreleased]` updated.
+
+Mutations, through `record-mutation.sh` with `--fail-pattern '^FAIL '`, all four KILLED:
+
+- `DRY_RUN` check never true: first failing line `FAIL dry_run_sends_nothing_for_every_phase: sent a write`.
+- `Protect main` strict policy false: `FAIL rulesets_creates_when_absent: wrong main ruleset`.
+- GitHub-owned actions kept in the allowlist: `FAIL harden_sends_every_setting_in_order: PUT .../selected-actions body fails`.
+- A failed list read answered as `[]`: `FAIL rulesets_stops_when_the_list_cannot_be_read: expected exit 1`.
+
+Applied, after approval: `metadata` (PATCH repo, PUT topics, exit 0) and `rulesets` (PUT
+13059268, PUT 25916143, POST created `Protect release tag creation` 26305661, exit 0). A dry
+re-run of `rulesets` afterwards PUTs all three by id and POSTs nothing. `show` after applying:
+
+```
+description: A Golang SQL Builder
+homepage: https://pkg.go.dev/github.com/bawdo/gosbee
+topics: arel ast go golang mysql postgresql query-builder sql sql-builder sqlite
+merge_methods: squash
+allow_auto_merge: true
+allow_update_branch: true
+delete_branch_on_merge: true
+has_discussions: true
+has_wiki: false
+has_projects: false
+rulesets: Protect main, Protect release tag creation, Protect release tags
+private_vulnerability_reporting: enabled
+allowed_actions: all
+sha_pinning_required: true
+allowed_action_patterns: none
+default_workflow_permissions: read
+fork_pr_approval: all_external_contributors
+code_scanning_default_setup: configured
+code_scanning_query_suite: default
+immutable_releases: disabled
+release_environment_policies: none
+```
+
+`harden` dry run for unit 10 (not applied, operator ruling): third-party actions
+`codecov/codecov-action@*`, `golangci/golangci-lint-action@*`, `ossf/scorecard-action@*`,
+`zizmorcore/zizmor-action@*`; writes, in order: PUT actions/permissions (selected, SHA pinning),
+PUT selected-actions (GitHub-owned yes, verified no, those four patterns), PUT
+actions/permissions/workflow (read, no PR approval), PUT fork-pr-contributor-approval
+(`all_external_contributors`), PATCH code-scanning/default-setup (`extended`, actions and go),
+PUT private-vulnerability-reporting, PUT immutable-releases, PUT environments/release (no
+reviewers, custom policies), POST policy `v*` (tag), POST policy `main` (branch). Unit 10 must
+re-run the dry run from `main` after the merge: the list is read from the workflows checked out.
+
+Close-out verification (step 1), `WOMBAT_BASE_REF=workstream/repo-quality
+scripts/wombat-verify.sh`, run outside the sandbox: inside it vet, lint, tidy, release-scripts,
+vuln, zizmor and test failed on the Go cache, `vuln.go.dev`, uv and loopback binding. Record at
+`3b2e00b`, tree clean, no gate skipped:
+
+```
+fmt pass; vet pass; lint pass; tidy pass; changelog pass; release-scripts pass;
+repo-settings pass; vuln pass; zizmor pass; shellcheck pass; ci-result pass;
+fuzz-script pass; test pass
+```
+
+Lanes from `select-gates.sh .`: `security`, `correctness`, `brief` (3, none skipped, no
+`unmatched`). `scan-secrets.sh .`: `scan clean: 15 files`.
+
+Sweep, `sweep-docs.sh . --base workstream/repo-quality` with `--claim 'left to the repo-settings
+unit'` (and again with the environment sentence), printed 9 candidates each time: 4 `touched`
+(CHANGELOG.md, CONTRIBUTING.md, SECURITY.md, scripts/README.md: this unit's own edits, read
+back), 5 `named-file` (README.md on `ci.yml`, the CI badge URL; cmd/repl, plugins, plugins/opa,
+plugins/softdelete READMEs on `README.md`, links to other READMEs), all dismissed as basename
+collisions. `git grep` for `repo-settings unit` and `names no` outside the workstream record finds
+nothing. Unit 10's brief was read for criteria this unit made wrong: none; it already applies
+`harden` after the operator's merge.
+
+Review (step 5): 3 lanes, `security`, `correctness`, `brief`, each a fresh subagent in its own
+detached worktree, none skipped. Triage (step 6), every finding read in this session:
+
+- Fixed. Brief 1 and security 2: CONTRIBUTING Releasing and CHANGELOG stated the `release`
+  environment's policy as in force before `harden`; now conditional on `harden`.
+- Fixed. Security 1: "a run dispatched from any other branch cannot publish" overstated it, since a
+  branch editing `release.yml` can drop `environment:` and the environment holds no secret the job
+  needs. SECURITY, CONTRIBUTING, CHANGELOG and the `release.yml` comment now say write access is
+  the boundary.
+- Fixed. Security 3: a glob in a `uses:` name (`evil/*@<sha>`) became a wide allowlist pattern.
+  `third_party_actions` now dies on a name outside `owner/repo[/path]`; test
+  `harden_refuses_a_glob_in_an_action_name`.
+- Fixed. Correctness 3: policy type match untested; test
+  `harden_matches_policies_on_type_as_well_as_name`.
+- Fixed. Security nit: "no one can move or delete" a `v*` tag is now "no push can".
+- Mutations for the two new tests, through `record-mutation.sh`, both KILLED by the intended
+  test: type match dropped (`select(.name == $n)`): `FAIL
+  harden_matches_policies_on_type_as_well_as_name`; glob guard removed (`|| true`): `FAIL
+  harden_refuses_a_glob_in_an_action_name: evil/*: expected exit 1`. A first attempt widening the
+  guard's character class was killed by an unrelated case (it broke the regex), so it was
+  discarded as no evidence and replaced by the removal.
+- For unit 10, not fixed here. Correctness 1: whether GitHub matches `owner/repo/path@ref` against
+  `owner/repo@*` (no workflow uses a third-party subpath today). Correctness 2: whether a
+  composite action (codecov-action, say) uses a nested third-party or tag-pinned action that the
+  allowlist or SHA pinning would refuse. Check both at the `harden` dry run.
+- Dismissed. Brief 2 (CHANGELOG): covered by the first fix. Brief 3: the lane said no change.
+  Correctness, `show` falling back to `disabled` and `none`: a 404 there means off or absent, and
+  `show` reports rather than gates. Correctness, quoted or `docker://` refs: none in use, and the
+  parser refuses them rather than passing them.
+
 ## Not done, and why
+
+- `harden` not applied: operator ruling, applied in unit 10 after the integration branch merges.
+- `scripts/verify-tag.sh` still accepts any GitHub-verified signature: operator ruling, left for
+  the operator to schedule.
