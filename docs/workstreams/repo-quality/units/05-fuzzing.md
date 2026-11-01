@@ -1,0 +1,50 @@
+# Unit 05: fuzzing
+
+Mode: plan
+Close: auto
+Branch: unit/05-fuzzing
+Review lanes: security, correctness, brief
+
+## Items
+
+- Choose fuzz targets and the property each asserts, and record them in the plan.
+- Write native Go fuzz targets with seed corpora.
+- Add `make fuzz FUZZTIME=...`.
+- Add a fuzz job to `ci.yml` and its row in `scripts/ci-result.sh`'s skip table.
+- Update CONTRIBUTING.md (testing) and CHANGELOG.md.
+
+## Acceptance criteria
+
+- Native Go fuzz targets (`func FuzzXxx(f *testing.F)`) cover at least:
+  - identifier quoting for each dialect (PostgreSQL, MySQL, SQLite);
+  - string and literal escaping for each dialect;
+  - the OPA plugin's MaskLiteral path;
+  - one parser-style entry point (the REPL's input parsing, or the closest equivalent).
+- Each target asserts a property, not just "does not panic", where one exists: for
+  example a quoted identifier round trips, or escaped output never closes the quote
+  early. The property per target is written in the plan.
+- Seed corpora are added with `f.Add` and, where useful, under `testdata/fuzz/`. The
+  seeds run as ordinary tests in every `go test` run.
+- `make fuzz FUZZTIME=<d>` runs every fuzz target in turn (Go fuzzes one target at a
+  time), defaulting to a short time.
+- The CI fuzz job runs only on `schedule` (5m per target, timeout sized to the target
+  count) and `workflow_dispatch` (15s per target), never on pull requests or pushes;
+  uploads `testdata/fuzz/` failures as an artifact with 14 day retention; has
+  `persist-credentials: false` and SHA-pinned actions.
+- `scripts/ci-result.sh` permits `fuzz` to be skipped on `pull_request` and `push`,
+  and its test script gains cases proving that, and proving fuzz may not be skipped on
+  `schedule` or `workflow_dispatch`.
+- **A real defect found by fuzzing is not fixed in this unit.** A vulnerability is
+  reported to the operator for a private security advisory; any other defect is
+  recorded under Not done with the failing input. The target stays, with the failing
+  input either fixed in a separate change or the target skipped with a reason.
+- golangci-lint, zizmor and `scripts/wombat-verify.sh` pass; CHANGELOG.md has an
+  `[Unreleased]` entry.
+
+## Decisions
+
+## Plan
+
+## Outcome
+
+## Not done, and why
