@@ -51,6 +51,26 @@ jobs:
           version: v2.15.0
           args: --timeout=5m
 
+      - name: Lint shell scripts
+        env:
+          # The runner image ships an older shellcheck that can disagree with
+          # current releases, so install this one and check its digest before
+          # extracting. Dependabot does not track it: bump both together.
+          SHELLCHECK_VERSION: v0.11.0
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+        run: |
+          set -euo pipefail
+          archive="shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/${archive}"
+          echo "${SHELLCHECK_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/shellcheck-${SHELLCHECK_VERSION}/shellcheck" --version
+          "$RUNNER_TEMP/shellcheck-${SHELLCHECK_VERSION}/shellcheck" scripts/*.sh
+
+      - name: Test the CI OK gate script
+        run: scripts/ci-result_test.sh
+
       - name: Check go.mod and go.sum are tidy
         run: |
           go mod tidy -diff
@@ -129,8 +149,12 @@ jobs:
           fail_ci_if_error: false
           verbose: true
 
-  # The single required check: passes only when every job above passed, so
-  # the ruleset never has to track matrix job names.
+  # The single required check, so the main ruleset never has to track job or
+  # matrix names. Every job in needs must pass except those the event skips on
+  # purpose, which scripts/ci-result.sh decides (today, none). A failed,
+  # cancelled, missing or wrongly skipped job fails the gate. EVENT and NEEDS
+  # go in through env, never into the script, and scripts/ci-result_test.sh
+  # checks this job's needs against the script's job list.
   ci-ok:
     name: CI OK
     if: always()
@@ -139,7 +163,13 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Check all jobs passed
-        uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          jobs: ${{ toJSON(needs) }}
+          persist-credentials: false
+
+      - name: Fail unless every expected job passed
+        env:
+          EVENT: ${{ github.event_name }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: scripts/ci-result.sh

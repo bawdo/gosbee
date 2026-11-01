@@ -138,7 +138,7 @@ Code contributions might include:
    | 3 | Code formatting | `gofmt -s` (auto-fixable via `--fix gofmt`) |
    | 4 | Tests with race detector | `go test -race` |
    | 5 | Linting | `golangci-lint` |
-   | 6 | Test coverage (target: 80%) | `go test -coverprofile` |
+   | 6 | Test coverage (local guide: 80% raw; Codecov gates on `.codecov.yml`) | `go test -coverprofile` |
    | 7 | Build | `go build` |
    | 8 | Vulnerability scan | `govulncheck` |
 
@@ -403,12 +403,18 @@ signs the resulting commit (a rebase merge cannot be signed). The pull request
 title becomes the commit subject, so write it in the past tense. A pull
 request can merge once these checks pass:
 
-- `CI OK`, which passes only when every job in the CI workflow passed:
-  - `Lint and audit`: golangci-lint, `go mod tidy -diff`, the changelog check,
-    govulncheck and a zizmor audit of the workflows
+- `CI OK`, which passes only when every job in the CI workflow passed.
+  `scripts/ci-result.sh` decides this from each job's result: a failed,
+  cancelled or missing job fails it, and so does a skipped job unless the
+  script's per-event table permits that skip (today it permits none). The jobs:
+  - `Lint and audit`: golangci-lint, shellcheck over `scripts/*.sh` (a pinned
+    release, checked by sha256), the `ci-result.sh` tests,
+    `go mod tidy -diff`, the changelog check, govulncheck and a zizmor audit
+    of the workflows
   - `Test`: Linux on the oldest supported Go (`oldstable`) and the current one
     (`stable`), both with the race detector, plus macOS on `stable`. Coverage
-    is uploaded from the Linux `stable` run.
+    is uploaded from the Linux `stable` run. Codecov's project and patch
+    statuses gate on the coverage targets in `.codecov.yml`.
 - `Analyze (go)` (CodeQL)
 
 CI also runs on every push to `main` and weekly, so a newly published

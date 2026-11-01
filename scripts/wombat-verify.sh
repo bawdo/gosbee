@@ -85,12 +85,14 @@ else
     skip zizmor "zizmor not installed (CI runs it)"
 fi
 if command -v shellcheck > /dev/null 2>&1; then
-    # Scoped to the scripts that pass today. pre-ci-check.sh has outstanding
-    # findings; unit 04 of the repo-quality workstream fixes them and widens
-    # this to scripts/*.sh.
-    run shellcheck shellcheck scripts/changelog.sh scripts/wombat-verify.sh
+    run shellcheck shellcheck scripts/*.sh
 else
     skip shellcheck "shellcheck not installed"
+fi
+if command -v jq > /dev/null 2>&1; then
+    run ci-result scripts/ci-result_test.sh
+else
+    skip ci-result "jq not installed (CI runs it)"
 fi
 run test go test -race -count=1 -shuffle=on ./...
 
