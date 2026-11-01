@@ -324,6 +324,34 @@ go test -run TestSelectManager_Where ./managers
 
 Current test count: **~1096 tests** across the entire codebase.
 
+### Fuzzing
+
+Native Go fuzz targets (`func FuzzXxx(f *testing.F)`) cover identifier quoting
+and string escaping for each dialect (`internal/quoting`, `visitors`), the OPA
+plugin's column mask path (`plugins/opa`), and the REPL's input parsing
+(`cmd/repl`). Each one checks a property, not only that nothing panics: the
+rendered SQL is read back with `internal/sqllex` under the dialect's own
+quoting rules, and must give back exactly the identifier or value that went in.
+
+```bash
+make fuzz                  # every target in turn, 10s each
+make fuzz FUZZTIME=1m      # longer; FUZZTIME also takes an iteration count, 500x
+./scripts/fuzz.sh --list   # list the targets
+```
+
+The seeds added with `f.Add` run as ordinary tests in every `go test` run.
+When fuzzing finds a failing input, `go test` writes it to
+`<package>/testdata/fuzz/<Target>/`. Commit that file alongside the fix, so it
+stays as a regression seed. CI fuzzes every target weekly (5m each) and on a
+manual run of the CI workflow (15s each), never on a pull request, and keeps
+any failing inputs for 14 days as the `fuzz-failures` artifact. A finding that
+could be a security issue is reported privately through
+[SECURITY.md](SECURITY.md), not in a public issue.
+
+`TestEscapeStringANSIRoundTripBackslash` is skipped on purpose: it records a
+known defect, where string escaping doubles a backslash for PostgreSQL and
+SQLite, for which a backslash is an ordinary character.
+
 ## Documentation
 
 Documentation lives in multiple places depending on the audience:
@@ -406,15 +434,18 @@ request can merge once these checks pass:
 - `CI OK`, which passes only when every job in the CI workflow passed.
   `scripts/ci-result.sh` decides this from each job's result: a failed,
   cancelled or missing job fails it, and so does a skipped job unless the
-  script's per-event table permits that skip (today it permits none). The jobs:
+  script's per-event table permits that skip (only `Fuzz`, which runs on the
+  weekly schedule and a manual dispatch alone). The jobs:
   - `Lint and audit`: golangci-lint, shellcheck over `scripts/*.sh` (a pinned
-    release, checked by sha256), the `ci-result.sh` tests,
+    release, checked by sha256), the `ci-result.sh` and `fuzz.sh` tests,
     `go mod tidy -diff`, the changelog check, the release script tests
     (`scripts/release-scripts_test.sh`, which cover the build with its SBOMs,
     publishing and the module proxy check), govulncheck and a zizmor audit of
     the workflows
   - `Test`: Linux on the oldest supported Go (`oldstable`) and the current one
     (`stable`), both with the race detector, plus macOS on `stable`.
+  - `Fuzz`: every fuzz target in turn (see [Fuzzing](#fuzzing)). Skipped on
+    pull requests, pushes and release runs.
 - `Analyze (go)` (CodeQL)
 
 Coverage is measured and uploaded to Codecov by the separate `Coverage`
