@@ -21,7 +21,7 @@ JOBS=(lint test fuzz)
 # The jobs each event may skip, space separated. fuzz runs only on schedule
 # and a direct workflow_dispatch, so every other event may skip it.
 # workflow_call is not a GitHub event name: the gate reports it when
-# release.yml calls ci.yml (inputs.ref is set), because a called workflow
+# release.yml calls ci.yml (inputs.tag is set), because a called workflow
 # otherwise inherits the caller's event. scripts/ci-result_test.sh rewrites
 # the pull_request arm in a copy, so keep its exact shape.
 skippable() {

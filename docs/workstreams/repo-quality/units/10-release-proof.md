@@ -42,6 +42,32 @@ Review lanes: security, correctness, brief
 - OPERATOR RULING 2026-11-01 (after unit 04 closed): sequence is unit 09 applies `metadata` and
   `rulesets`, the operator merges `workstream/repo-quality` to `main` by PR, then this unit applies
   `harden` before cutting the rc. Renumbered from 09.
+- 2026-11-01, precondition not met at open: `origin/main` at `ed10f4e` (#27), the integration
+  branch 94 commits ahead and its remote copy 28 behind (at unit 06). The operator pushed it and
+  opened PR #28. Branch cut only after that, off `8a5d877`.
+- 2026-11-01, PR #28 is blocked by the `CodeQL` check: alert #5, high,
+  `actions/cache-poisoning/poisonable-step` at `.github/workflows/ci.yml:92-96`, from the
+  `ref: ${{ inputs.ref }}` checkouts, under `workflow_dispatch` and `schedule`. Fixed in this unit
+  under the Item "fix whatever the proof shows is wrong", since #28 cannot merge without it.
+- Diagnosis, read from github/codeql `actions/ql`: `CachePoisoningViaPoisonableStep.ql` looks at no
+  cache step at all (and `setup-go` is not one of its `CacheWritingStep`s), so turning the Go cache
+  off would not clear it. A first proposal to do that was withdrawn. The checkout counts as
+  untrusted through `ActionsMutableRefCheckout`'s field-name heuristic (`.*(head|branch|ref).*` on a
+  simple reference), which `inputs.ref` matches. The real gap behind it: a by-hand `release.yml`
+  dispatch can name any existing tag, a non-`v*` one included, and `ci` runs that tag's code in
+  main's context before `build` checks the tag name.
+- OPERATOR RULING 2026-11-01: (b) move the tag-name check out of `build` into a read-only `tag` job
+  that `ci` needs, and rename `ci.yml`'s `workflow_call` input `ref` to `tag` (the bare tag name;
+  `ci.yml` builds `refs/tags/<tag>`). The Go cache stays on. Unprovable locally (no CodeQL CLI):
+  proof is CodeQL on #28. Fallback if it still fires: dismiss #5 citing (b), operator's call.
+- Caller census, `git grep -n -E 'inputs\.ref|inputs\.tag|ref: refs/tags|Check the tag name|workflow_call'`:
+  `ci.yml` lines 12-18 (input), 28 and 35 (concurrency comment and group), 48, 140, 182, 227
+  (checkouts), 168 and 174 (fuzz comment and `if`), 214 and 232 (gate comment and `EVENT`);
+  `release.yml` 58, 66-72 (`ci` job), 88-99 (build's `TAG` and tag-name check), 106, 193, 271;
+  `scripts/ci-result.sh` 23-24 (comment); `scripts/ci-result_test.sh` 226, 245, 248, 282 (exact
+  strings). `scripts/repo-settings_test.sh`'s fake `ci.yml` uses no input and is left alone. The
+  plans `2026-11-01-release-pipeline.md` and `2026-11-01-fuzzing.md` name `inputs.ref` and are left
+  as written: they are closed units' plans, a record of what was planned then.
 
 ## Plan
 

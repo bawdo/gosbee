@@ -1,9 +1,10 @@
 name: Release
 
 # Pushing a vX.Y.Z tag (or vX.Y.Z-suffix, a pre-release) publishes its GitHub
-# release. CI runs first, on the tag itself (ci.yml, called with the tag's
-# ref). The build job then checks the tag is annotated, signed (GitHub
-# verifies the signature) and on main, and that CHANGELOG.md is consistent.
+# release. The tag name is checked first, then CI runs on the tag itself
+# (ci.yml, called with the tag). The build job then checks the tag is
+# annotated, signed (GitHub verifies the signature) and on main, and that
+# CHANGELOG.md is consistent.
 # The release notes are the version's changelog section, never written by
 # hand. REPL binaries for linux and darwin on amd64 and arm64 are built and
 # smoke tested, CycloneDX SBOMs are written for the module and for each
@@ -59,17 +60,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The dispatch input reaches ci's checkouts, and ci runs the tag's code in
+  # this run's cache scope (main's, on a dispatch from main), so the name is
+  # checked before anything is checked out. A tag outside v* is in no
+  # ruleset's reach, so this is what stops one being tested here.
+  tag:
+    name: Check the tag name
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Check the tag name
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::the tag to release is not of the form vX.Y.Z or vX.Y.Z-suffix"
+            exit 1
+          fi
+
   ci:
     name: CI
+    needs: tag
     # A job-level reusable workflow call is resolved from this workflow's own
     # commit, never the runner's filesystem, so "./" is as pinned as zizmor's
     # suggested "$/" here. "./" stays because actionlint cannot read "$/" and
-    # checks the ref input against ci.yml only through it.
+    # checks the tag input against ci.yml only through it.
     uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository]
     with:
-      # Fully qualified, so a dispatch re-run tests the tag, not the branch it
-      # was dispatched from.
-      ref: refs/tags/${{ inputs.tag || github.ref_name }}
+      # ci.yml qualifies it as refs/tags/<tag>, so a dispatch re-run tests the
+      # tag, not the branch it was dispatched from.
+      tag: ${{ inputs.tag || github.ref_name }}
 
   build:
     name: Build release
@@ -88,15 +111,7 @@ jobs:
       TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
-      # The dispatch input reaches checkout below, so check its shape first.
-      - name: Check the tag name
-        run: |
-          set -euo pipefail
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::the tag to release is not of the form vX.Y.Z or vX.Y.Z-suffix"
-            exit 1
-          fi
-
+      # The tag job checked TAG's name before ci, which build needs.
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -719,6 +719,59 @@ run_proxy "$dir" "$MODULE" v0.3.0 "$C"
 ! grep -v -- '^-fsS --max-time 5 ' "$dir/curl.log" || fail "$name" "a call lacks -fsS --max-time 5"
 echo "ok $name"
 
+# release.yml's jobs, bounded as a top-level job key to the next one.
+RELEASE_YML="$REPO/.github/workflows/release.yml"
+release_job() {
+    awk -v key="  $1:" '$0 == key { f = 1; print; next } f && /^  [^ #]/ { exit } f' "$RELEASE_YML"
+}
+
+# The tag job checks the tag name before ci runs any of the tag's code, so a
+# by-hand dispatch naming a tag outside v* (which no ruleset protects) stops
+# there. It holds no token scope, checks nothing out and runs no action.
+name=release_yml_tag_job_shape
+CODE=0
+job=$(release_job tag)
+[ -n "$job" ] || fail "$name" "no tag job in release.yml"
+grep -qxF '    permissions: {}' <<<"$job" || fail "$name" "tag job does not drop every permission"
+# shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
+grep -qxF '      TAG: ${{ inputs.tag || github.ref_name }}' <<<"$job" || fail "$name" "TAG not passed through env"
+! grep -E '^ +(- )?uses:' <<<"$job" || fail "$name" "tag job runs an action"
+! grep -qF 'needs:' <<<"$job" || fail "$name" "tag job waits on another job"
+echo "ok $name"
+
+# ci needs the tag job and is called with the bare tag, never a ref.
+name=release_yml_ci_needs_tag
+CODE=0
+job=$(release_job ci)
+[ -n "$job" ] || fail "$name" "no ci job in release.yml"
+grep -qxF '    needs: tag' <<<"$job" || fail "$name" "ci does not need the tag job"
+# shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
+grep -qxF '      tag: ${{ inputs.tag || github.ref_name }}' <<<"$job" || fail "$name" "ci is not called with the tag"
+! grep -qE '^ +ref:' <<<"$job" || fail "$name" "ci is still called with a ref"
+echo "ok $name"
+
+# The tag job's check, run as the runner would run it, on names it must pass
+# and names it must stop.
+TAG_CHECK="$ROOT/tag-check.sh"
+release_job tag | awk '/^        run: \|$/ { f = 1; next } f && !/^          / && !/^$/ { exit } f { sub(/^          /, ""); print }' > "$TAG_CHECK"
+[ -s "$TAG_CHECK" ] || fail release_yml_tag_check "no run block in the tag job"
+for good in v0.1.0 v1.22.333 v0.1.0-rc.1 v2.0.0-beta.2-x; do
+    name="release_yml_tag_check_passes ($good)"
+    CODE=0
+    OUT=$(TAG="$good" bash -e "$TAG_CHECK" 2>&1) || CODE=$?
+    [ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+    echo "ok $name"
+done
+# shellcheck disable=SC2016 # $(id) is a literal tag name that must not expand
+for bad in main v1 v1.2 x-v1.2.3 v1.2.3- 'v1.2.3 ' 'v1.2.3/x' 'v1.2.3-$(id)' ''; do
+    name="release_yml_tag_check_stops ($bad)"
+    CODE=0
+    OUT=$(TAG="$bad" bash -e "$TAG_CHECK" 2>&1) || CODE=$?
+    [ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+    [ "$OUT" = "::error::the tag to release is not of the form vX.Y.Z or vX.Y.Z-suffix" ] || fail "$name" "wrong message"
+    echo "ok $name"
+done
+
 # The build runs in a copy of the committed tree, so the repository's own
 # dist/ and worktree list are never touched. The working tree's
 # build-release.sh is the one run, so an uncommitted change to it is what is
