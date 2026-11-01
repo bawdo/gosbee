@@ -95,6 +95,11 @@ jobs:
       - name: Check CHANGELOG.md
         run: scripts/changelog.sh check
 
+      # Fake gh, so no network or token; the build cases cross-compile the
+      # four release binaries and smoke test the linux/amd64 one.
+      - name: Test the release scripts
+        run: bash scripts/release-scripts_test.sh
+
       - name: Scan for known vulnerabilities
         # Pinned in tools/go.mod, so Dependabot keeps it current.
         run: go -C tools tool govulncheck -C .. ./...

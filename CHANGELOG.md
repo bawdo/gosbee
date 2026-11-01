@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI lints every script under `scripts/` with a pinned, checksum verified
   shellcheck release.
 
+- Each release attaches the Sigstore bundle of its build provenance
+  attestation as `gosbee-repl_<tag>_provenance.intoto.jsonl`, so
+  `gh attestation verify --bundle` can check a binary without the attestation
+  API.
+
 ### Changed
 
 - The `CI OK` check is decided by an in-repo script, `scripts/ci-result.sh`,
@@ -26,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drops below their targets, instead of being informational.
 - REPL release binaries are built without the symbol table and DWARF debug
   data, which makes them about a third smaller.
+- Releases run the whole CI workflow on the tag first, then build with a
+  read-only token, then publish from a job that is the only one able to write.
+  The build checks the tag is signed and verified by GitHub and smoke tests a
+  binary. Publishing goes through a draft, so a release never exists without
+  its assets, and a part-failed run is recovered by running `Release` again
+  with the tag. A pre-release tag is never marked latest.
+- Release notes are no longer rewritten after publication: a published
+  release is never changed.
+- Coverage is uploaded to Codecov by a separate `Coverage` workflow instead of
+  the CI test job.
 
 ### Fixed
 

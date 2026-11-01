@@ -409,13 +409,18 @@ request can merge once these checks pass:
   script's per-event table permits that skip (today it permits none). The jobs:
   - `Lint and audit`: golangci-lint, shellcheck over `scripts/*.sh` (a pinned
     release, checked by sha256), the `ci-result.sh` tests,
-    `go mod tidy -diff`, the changelog check, govulncheck and a zizmor audit
-    of the workflows
+    `go mod tidy -diff`, the changelog check, the release script tests
+    (`scripts/release-scripts_test.sh`), govulncheck and a zizmor audit of the
+    workflows
   - `Test`: Linux on the oldest supported Go (`oldstable`) and the current one
-    (`stable`), both with the race detector, plus macOS on `stable`. Coverage
-    is uploaded from the Linux `stable` run. Codecov's project and patch
-    statuses gate on the coverage targets in `.codecov.yml`.
+    (`stable`), both with the race detector, plus macOS on `stable`.
 - `Analyze (go)` (CodeQL)
+
+Coverage is measured and uploaded to Codecov by the separate `Coverage`
+workflow (`coverage.yml`), which is not a required check. It lives outside CI
+because the `Release` workflow calls CI, and keeping the Codecov OIDC token out
+of CI means no job in a release except publish holds `id-token`. Codecov's
+project and patch statuses gate on the coverage targets in `.codecov.yml`.
 
 CI also runs on every push to `main` and weekly, so a newly published
 vulnerability fails the build without waiting for a pull request.
@@ -445,15 +450,38 @@ only place release notes are written.
    git tag -s v0.3.0 -m v0.3.0
    git push origin v0.3.0
    ```
-3. The `Release` workflow checks that the tag is on `main` and has a changelog
-   section, builds the REPL binaries for Linux and macOS with a `SHA256SUMS`
-   file and build provenance attestations, then publishes the GitHub release
-   using that section as its notes. A tag with a suffix (`v0.3.0-rc.1`) is
-   published as a pre-release.
+3. The `Release` workflow runs in three stages:
+   - **CI** runs first, on the tag itself (the whole CI workflow, called with
+     `refs/tags/<tag>`).
+   - **Build**, with a read-only token, refuses a tag name that is not
+     `vX.Y.Z` or `vX.Y.Z-suffix` before checking anything out. It then checks
+     the tag is annotated and its signature verified by GitHub
+     (`scripts/verify-tag.sh`), is on `main` and has a changelog section. It
+     builds the REPL binaries for Linux and macOS on amd64 and arm64
+     (`scripts/build-release.sh`), smoke tests the Linux amd64 one and writes
+     `SHA256SUMS`.
+   - **Publish**, the only job that can write, checks the binaries against
+     `SHA256SUMS`, attests their build provenance and publishes through a
+     draft (`scripts/publish-release.sh`): the draft is created with every
+     asset attached, then published. The attestation's Sigstore bundle is
+     attached as `gosbee-repl_<tag>_provenance.intoto.jsonl`, so
+     `gh attestation verify --bundle` can check a binary without the
+     attestation API.
 
-Editing `CHANGELOG.md` on `main` later rewrites the notes of every existing
-release to match, and running the `Release` workflow by hand on `main` does
-the same. Release tags (`v*`) cannot be moved or deleted once pushed.
+   The release notes are that version's changelog section. A tag with a
+   suffix (`v0.3.0-rc.1`) is published as a pre-release and is never marked
+   latest.
+
+A published release is never changed, its notes included, so a changelog fix
+made after release lives in `CHANGELOG.md` only. Release tags (`v*`) cannot be
+moved or deleted once pushed.
+
+If a release run fails part way, fix the cause and recover it from the Actions
+tab by running the `Release` workflow with the existing tag: a leftover draft
+is replaced and the release published, and a release already published is
+refused before anything is written. Tags made before this pipeline existed
+(`v0.2.1` and earlier) cannot be re-run that way, because they do not carry
+`scripts/verify-tag.sh`, so the build job fails.
 
 Preview a release's notes locally with `scripts/changelog.sh notes v0.3.0`.
 
