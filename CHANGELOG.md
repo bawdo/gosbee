@@ -30,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Native Go fuzz targets cover identifier quoting and string escaping for
   PostgreSQL, MySQL and SQLite, the OPA plugin's column masks and the REPL's
-  input parsing, each checking that the SQL reads back to what went in.
+  input parsing, each checking a property such as a quoted value never closing
+  its quotes early.
   `make fuzz` runs them all, and CI fuzzes every target weekly and on a manual
   run, keeping failing inputs as an artifact for 14 days.
 

@@ -329,9 +329,18 @@ Current test count: **~1096 tests** across the entire codebase.
 Native Go fuzz targets (`func FuzzXxx(f *testing.F)`) cover identifier quoting
 and string escaping for each dialect (`internal/quoting`, `visitors`), the OPA
 plugin's column mask path (`plugins/opa`), and the REPL's input parsing
-(`cmd/repl`). Each one checks a property, not only that nothing panics: the
-rendered SQL is read back with `internal/sqllex` under the dialect's own
-quoting rules, and must give back exactly the identifier or value that went in.
+(`cmd/repl`). Each one checks a property, not only that nothing panics. The
+quoting, visitor and OPA targets read the rendered SQL back with
+`internal/sqllex` under the dialect's own quoting rules: an identifier or value
+must come back as one token, never closing its quotes early, and must decode to
+what went in (except a backslash in a PostgreSQL or SQLite literal, below). The
+REPL targets check that tokenising keeps every byte and that a quoted value
+parses back to itself.
+
+`internal/sqllex` reads bytes, so these properties hold for single-byte and
+UTF-8 connections only. A MySQL connection with a multibyte client charset such
+as GBK or SJIS is outside them, which is one more reason to keep the default
+parameterised mode.
 
 ```bash
 make fuzz                  # every target in turn, 10s each
@@ -344,9 +353,11 @@ When fuzzing finds a failing input, `go test` writes it to
 `<package>/testdata/fuzz/<Target>/`. Commit that file alongside the fix, so it
 stays as a regression seed. CI fuzzes every target weekly (5m each) and on a
 manual run of the CI workflow (15s each), never on a pull request, and keeps
-any failing inputs for 14 days as the `fuzz-failures` artifact. A finding that
-could be a security issue is reported privately through
-[SECURITY.md](SECURITY.md), not in a public issue.
+any failing inputs for 14 days as the `fuzz-failures` artifact. The CI logs and
+artifacts are public, so a finding there is disclosed the moment the run
+fails: fix one that could be a security issue straight away, and report it
+through [SECURITY.md](SECURITY.md). A security finding from a local run is
+reported privately through SECURITY.md, not in a public issue.
 
 `TestEscapeStringANSIRoundTripBackslash` is skipped on purpose: it records a
 known defect, where string escaping doubles a backslash for PostgreSQL and

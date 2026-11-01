@@ -42,8 +42,8 @@ func lex(t *testing.T, d sqllex.Dialect, sql string) []sqllex.Token {
 }
 
 // FuzzIdentifierQuoting: SELECT t.c FROM t, with both names fuzzed, reads
-// back under each dialect's rules with exactly the identifiers t, c, t, in
-// that order, so neither name can close its quotes early.
+// back under each dialect's rules as exactly SELECT, t, ".", c, FROM, t, so
+// neither name can close its quotes early or leak into the statement.
 func FuzzIdentifierQuoting(f *testing.F) {
 	for _, s := range visitorSeeds {
 		f.Add(s, s)
@@ -54,9 +54,14 @@ func FuzzIdentifierQuoting(f *testing.F) {
 		core := &nodes.SelectCore{From: tbl, Projections: []nodes.Node{tbl.Col(col)}}
 		for _, d := range dialects {
 			sql := core.Accept(d.new(visitors.WithoutParams()))
-			got := sqllex.Of(lex(t, d.lex, sql), sqllex.Ident)
-			if want := []string{table, col, table}; !reflect.DeepEqual(got, want) {
-				t.Fatalf("%s: %q has identifiers %q, want %q", d.name, sql, got, want)
+			got := lex(t, d.lex, sql)
+			want := []sqllex.Token{
+				{Kind: sqllex.Other, Value: "SELECT"}, {Kind: sqllex.Ident, Value: table},
+				{Kind: sqllex.Other, Value: "."}, {Kind: sqllex.Ident, Value: col},
+				{Kind: sqllex.Other, Value: "FROM"}, {Kind: sqllex.Ident, Value: table},
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("%s: %q reads back as %#v, want %#v", d.name, sql, got, want)
 			}
 		}
 	})

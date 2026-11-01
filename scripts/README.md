@@ -81,7 +81,7 @@ job, whatever their outcome.
 
 **Usage**:
 ```bash
-EVENT=pull_request NEEDS='{"lint":{"result":"success"},"test":{"result":"success"}}' \
+EVENT=pull_request NEEDS='{"lint":{"result":"success"},"test":{"result":"success"},"fuzz":{"result":"skipped"}}' \
   ./scripts/ci-result.sh
 ./scripts/ci-result.sh --jobs   # list the jobs it expects
 ```
@@ -102,7 +102,7 @@ another, since `go test` fuzzes one target per run. `make fuzz` and the CI
 **Usage**:
 ```bash
 ./scripts/fuzz.sh                 # 10s per target
-FUZZTIME=1m ./scripts/fuzz.sh     # a Go duration, or an iteration count such as 500x
+FUZZTIME=1m ./scripts/fuzz.sh     # a positive Go duration, or an iteration count such as 500x
 ./scripts/fuzz.sh --list          # list "<package> <target>", fuzz nothing
 ```
 

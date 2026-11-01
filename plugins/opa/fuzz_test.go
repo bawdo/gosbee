@@ -72,6 +72,15 @@ func FuzzMaskedProjection(f *testing.F) {
 			if got, want := sqllex.Of(ts, sqllex.Ident), []string{col, "t"}; !reflect.DeepEqual(got, want) {
 				t.Fatalf("%s params: %q has identifiers %q, want %q", d.name, sql, got, want)
 			}
+			// SELECT <placeholder> AS <col> FROM <t>, and nothing else.
+			kinds := make([]sqllex.Kind, len(ts))
+			for i, tok := range ts {
+				kinds[i] = tok.Kind
+			}
+			want := []sqllex.Kind{sqllex.Other, sqllex.Other, sqllex.Other, sqllex.Ident, sqllex.Other, sqllex.Ident}
+			if !reflect.DeepEqual(kinds, want) || ts[0].Value != "SELECT" || ts[2].Value != "AS" || ts[4].Value != "FROM" {
+				t.Fatalf("%s params: %q reads back as %#v, want SELECT <placeholder> AS <col> FROM <t>", d.name, sql, ts)
+			}
 
 			sql = core.Accept(d.new(visitors.WithoutParams()))
 			ts, err = sqllex.Lex(d.lex, sql)

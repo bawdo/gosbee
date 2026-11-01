@@ -93,6 +93,14 @@ Close mode as run: auto. Questions that fired, each with its cause and the opera
 - Backslash escaping property for PostgreSQL and SQLite: "Safety + record defect".
 - Commit grant: "Yes, for this unit".
 
+Questions at step 6 triage (no gate command named, so none went through `record-answer.sh`):
+
+- MySQL multibyte client charset (GBK/SJIS/BIG5) defeating EscapeString in non-params mode, from
+  the security lane. It is pre-existing, and quoting.go's SECURITY comment already documents it:
+  "Docs caveat only". No advisory. The reproducer stays out of the committed record.
+- Scheduled runs sharing the `ci-refs/heads/main` concurrency group with pushes, now for 45-60m:
+  "Fix in this unit".
+
 ### What landed
 
 - `internal/sqllex`: a read-back lexer (ANSI, MySQL) the properties are checked against.

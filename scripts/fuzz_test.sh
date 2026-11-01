@@ -125,11 +125,12 @@ expect_code $t 1
 grep -qF 'no fuzz targets found' <<<"$OUT" || fail $t "wrong message"
 echo "ok $t"
 
-for bad in '5 m' abc '' '10' '-1s' '1s;id'; do
+# 0s and 0x are refused by go test itself, so they are refused here too.
+for bad in '5 m' abc '' '10' '-1s' '1s;id' 0s 0x 00m 0.0s; do
     t="bad_fuzztime_refused_[$bad]"
     run "FUZZTIME=$bad"
     expect_code "$t" 2
-    grep -qF "FUZZTIME must be a Go duration or Nx, got '$bad'" <<<"$OUT" || fail "$t" "wrong message"
+    grep -qF "FUZZTIME must be a positive duration (30s, 1m30s) or count (500x), got '$bad'" <<<"$OUT" || fail "$t" "wrong message"
     [ ! -s "$TMP/go.log" ] || fail "$t" "go was called"
     echo "ok $t"
 done
@@ -156,18 +157,32 @@ expect_code $t 2
 [ -z "$(fuzz_calls)" ] || fail $t "a target was fuzzed"
 echo "ok $t"
 
-t=make_fuzz_calls_script
-CODE=0
-OUT=$(make -C "$DIR/.." -n fuzz FUZZTIME=7s 2>&1) || CODE=$?
+# make_fuzz ARGS...: runs "make fuzz" against the fake go with a fresh log.
+make_fuzz() {
+    : > "$TMP/go.log"
+    CODE=0
+    OUT=$(FAKE_LOG="$TMP/go.log" make -s -C "$DIR/.." fuzz GO="$TMP/go" "$@" 2>&1) || CODE=$?
+}
+
+t=make_fuzz_passes_fuzztime
+make_fuzz FUZZTIME=7s
 expect_code $t 0
-grep -qE '^FUZZTIME=7s GO=[^ ]+ \./scripts/fuzz\.sh$' <<<"$OUT" || fail $t "make fuzz does not run fuzz.sh with FUZZTIME"
+[ "$(fuzz_calls | grep -c -- '-fuzztime 7s ')" -eq 3 ] || fail $t "make fuzz did not pass FUZZTIME to every target"
 echo "ok $t"
 
 t=make_fuzz_default_10s
-CODE=0
-OUT=$(make -C "$DIR/.." -n fuzz 2>&1) || CODE=$?
+make_fuzz
 expect_code $t 0
-grep -qE '^FUZZTIME=10s ' <<<"$OUT" || fail $t "default FUZZTIME is not 10s"
+[ "$(fuzz_calls | grep -c -- '-fuzztime 10s ')" -eq 3 ] || fail $t "default FUZZTIME is not 10s"
+echo "ok $t"
+
+# A value make would otherwise splice into the recipe reaches fuzz.sh as
+# data, so its check refuses it and no shell runs it.
+t=make_fuzz_value_is_not_shell
+make_fuzz "FUZZTIME=1s; touch $TMP/pwned"
+expect_code $t 2
+[ ! -e "$TMP/pwned" ] || fail $t "FUZZTIME ran as shell"
+grep -qF "FUZZTIME must be a positive duration" <<<"$OUT" || fail $t "fuzz.sh did not refuse it"
 echo "ok $t"
 
 echo "all fuzz tests passed"

@@ -250,6 +250,11 @@ grep -qxF '          persist-credentials: false' <<<"$job" || fail $t "checkout 
 grep -qxF '          retention-days: 14' <<<"$job" || fail $t "failures not kept 14 days"
 grep -qxF "          path: '**/testdata/fuzz/**'" <<<"$job" || fail $t "artifact path is not testdata/fuzz"
 grep -qxF '        run: scripts/fuzz.sh' <<<"$job" || fail $t "fuzz job does not run scripts/fuzz.sh"
+# shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
+grep -qxF "          FUZZTIME: \${{ github.event_name == 'schedule' && '5m' || '15s' }}" <<<"$job" \
+    || fail $t "FUZZTIME is not 5m on schedule and 15s otherwise"
+# A timed out job is cancelled, not failed, and its inputs must still upload.
+grep -qxF '        if: failure() || cancelled()' <<<"$job" || fail $t "failing inputs not uploaded on failure or timeout"
 uses=$(grep -E '^ +(- )?uses:' <<<"$job")
 [ -n "$uses" ] || fail $t "no actions in the fuzz job"
 ! grep -vE 'uses: [^ @]+@[0-9a-f]{40} # v[0-9]' <<<"$uses" || fail $t "an action is not pinned by sha"
@@ -259,11 +264,23 @@ echo "ok $t"
 # target plus 10m for building, or a target added later times the job out.
 t=ci_yml_fuzz_timeout_sized
 CODE=0
-count=$(git -C "$DIR/.." grep -hE '^func Fuzz[A-Za-z0-9_]*\(f \*testing\.F\)' -- '*_test.go' | wc -l | tr -d ' ')
+# Counted as fuzz.sh finds them: any receiver name, and not in tools/, a
+# separate module that go list ./... does not reach.
+count=$(git -C "$DIR/.." grep -hE '^func Fuzz[A-Za-z0-9_]*\([A-Za-z_][A-Za-z0-9_]* \*testing\.F\)' -- '*_test.go' ':!tools/**' | wc -l | tr -d ' ')
 [ "$count" -gt 0 ] || fail $t "no fuzz targets found"
 timeout=$(job_block fuzz | sed -n 's/^    timeout-minutes: \([0-9][0-9]*\)$/\1/p')
 [ -n "$timeout" ] || fail $t "fuzz job has no timeout-minutes"
 [ "$timeout" -ge $((count * 5 + 10)) ] || fail $t "timeout-minutes $timeout is under $count targets x 5 + 10"
+echo "ok $t"
+
+# A scheduled run fuzzes for up to an hour. Sharing ci-refs/heads/main with
+# pushes, whose runs are never cancelled there, would hold every push to main
+# pending that long, and a second push would replace the first's pending run.
+t=ci_yml_schedule_own_concurrency_group
+CODE=0
+# shellcheck disable=SC2016 # the ${{ }} is GitHub expression text, matched literally
+grep -qxF "  group: ci-\${{ inputs.ref || github.event.pull_request.number || (github.event_name == 'schedule' && 'schedule') || github.ref }}" "$WORKFLOW" \
+    || fail $t "schedule does not have its own concurrency group"
 echo "ok $t"
 
 t=no_alls_green

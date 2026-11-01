@@ -17,10 +17,13 @@ const (
 	// ANSI is PostgreSQL and SQLite: "identifiers" with "" doubling, and
 	// 'strings' with '' doubling, where a backslash is an ordinary byte.
 	ANSI Dialect = iota
-	// MySQL has `identifiers` with `` doubling, and 'strings' with ''
-	// doubling where a backslash escapes the byte after it. \x decodes to x
-	// for every x, which is exact for the escaping gosbee emits (\\ and '').
-	// A double quote is not a quote character here.
+	// MySQL has `identifiers` with `` doubling, and 'strings' or "strings"
+	// (the default sql_mode, without ANSI_QUOTES) with the quote doubled or
+	// backslash escaped. \x decodes to x for every x. That is exact for the
+	// escaping gosbee emits (\\ and ''), but not for MySQL in general, which
+	// keeps the backslash in \% and \_ and reads \n, \0 and \Z as control bytes.
+	// Lex reads bytes, so it cannot model a multibyte client charset such as
+	// GBK, where a lead byte can swallow an escaping backslash.
 	MySQL
 )
 
@@ -53,18 +56,19 @@ func Lex(d Dialect, sql string) ([]Token, error) {
 	var tokens []Token
 	i := 0
 	for i < len(sql) {
-		switch sql[i] {
-		case ' ', '\t', '\n':
+		c := sql[i]
+		switch {
+		case c == ' ' || c == '\t' || c == '\n':
 			i++
-		case identQuote:
+		case c == identQuote:
 			val, next, err := quoted(sql, i, identQuote, false)
 			if err != nil {
 				return nil, err
 			}
 			tokens = append(tokens, Token{Ident, val})
 			i = next
-		case '\'':
-			val, next, err := quoted(sql, i, '\'', d == MySQL)
+		case c == '\'' || (d == MySQL && c == '"'):
+			val, next, err := quoted(sql, i, c, d == MySQL)
 			if err != nil {
 				return nil, err
 			}
@@ -74,7 +78,7 @@ func Lex(d Dialect, sql string) ([]Token, error) {
 			start := i
 			for i < len(sql) {
 				c := sql[i]
-				if c == ' ' || c == '\t' || c == '\n' || c == identQuote || c == '\'' {
+				if c == ' ' || c == '\t' || c == '\n' || c == identQuote || c == '\'' || (d == MySQL && c == '"') {
 					break
 				}
 				i++

@@ -6,8 +6,8 @@
 #   scripts/fuzz.sh            fuzz every target
 #   scripts/fuzz.sh --list     list "<package> <target>" lines, fuzz nothing
 #
-# FUZZTIME (default 10s) is a Go duration (30s, 1m30s) or an iteration count
-# (500x). GO (default go) is the go binary. Both come in through the
+# FUZZTIME (default 10s) is a positive Go duration (30s, 1m30s) or iteration
+# count (500x). GO (default go) is the go binary. Both come in through the
 # environment only. A failing target does not stop the run: every target is
 # fuzzed, the failures are listed at the end and the exit is 1. go test
 # writes a failing input to <package dir>/testdata/fuzz/<target>/.
@@ -29,9 +29,10 @@ case "${1:-}" in
     *) echo "fuzz: unknown argument '$1' (usage: fuzz.sh [--list])" >&2; exit 2 ;;
 esac
 
+# A subset of what go test accepts, and never zero, which go test refuses.
 duration='^([0-9]+x|([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+)$'
-if [ "$list" -eq 0 ] && ! [[ "$FUZZTIME" =~ $duration ]]; then
-    echo "fuzz: FUZZTIME must be a Go duration or Nx, got '$FUZZTIME'" >&2
+if [ "$list" -eq 0 ] && { ! [[ "$FUZZTIME" =~ $duration ]] || ! [[ "$FUZZTIME" =~ [1-9] ]]; }; then
+    echo "fuzz: FUZZTIME must be a positive duration (30s, 1m30s) or count (500x), got '$FUZZTIME'" >&2
     exit 2
 fi
 

@@ -20,7 +20,9 @@ func TestLex(t *testing.T) {
 		{"mysql doubled backslash", MySQL, `'a\\b'`, []Token{{String, `a\b`}}},
 		{"mysql doubled quote", MySQL, `'it''s'`, []Token{{String, "it's"}}},
 		{"mysql backtick doubled", MySQL, "`x``y`", []Token{{Ident, "x`y"}}},
-		{"mysql double quote is a string", MySQL, `"a"`, []Token{{Other, `"a"`}}},
+		{"mysql double quote is a string", MySQL, `"a"`, []Token{{String, "a"}}},
+		{"mysql double quoted string escapes", MySQL, `"a""b\"c'd"`, []Token{{String, `a"b"c'd`}}},
+		{"mysql single quote inside double", MySQL, `"a' 'b"`, []Token{{String, "a' 'b"}}},
 		{"empty ident", ANSI, `""`, []Token{{Ident, ""}}},
 		{"empty string", ANSI, `''`, []Token{{String, ""}}},
 		{"nul and invalid utf8", ANSI, "'\xff\x00'", []Token{{String, "\xff\x00"}}},
@@ -57,6 +59,7 @@ func TestLexErrors(t *testing.T) {
 		{"unterminated ansi ident", ANSI, `"a`},
 		{"unterminated ansi string", ANSI, `'a`},
 		{"unterminated backtick", MySQL, "`a"},
+		{"unterminated mysql double quoted string", MySQL, `"a`},
 		{"mysql escaped closing quote", MySQL, `'a\'`},
 		{"mysql dangling backslash", MySQL, `'a\`},
 	}
