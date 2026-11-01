@@ -85,6 +85,13 @@ Review lanes: security, correctness, brief
   more pull request to `main`. That pull request also fixes the docs this unit invalidated:
   CONTRIBUTING.md's release stages (the tag job, the tag input) and its, SECURITY.md's and
   CHANGELOG.md's wording of `harden` as still to come.
+- 2026-11-01, PR #29 squash merged as `d4de27c` (tree `83c6586`, equal to `8fe9325`'s). The
+  operator tagged `d4de27c` and pushed `v0.3.0-rc.1`; GitHub reported the `Protect release tag
+  creation` admin bypass, which is that ruleset admitting its one bypass actor.
+- OPERATOR RULING 2026-11-01 on the proof's findings: bump `golang.org/x/net` to v0.62.0 in
+  `tools/go.mod`; record `GO-2026-5932` under Not done rather than suppress it in an
+  `osv-scanner.toml`; add SECURITY.md notes on the gpg trust warning and on reading
+  `gh attestation verify`'s exit status.
 
 ## Plan
 
@@ -133,5 +140,93 @@ Review lanes: security, correctness, brief
   ```
 
   (`query_suite` re-read from `code-scanning/default-setup` after the setup run: `extended`.)
+- Release run 41296868668 (push of `v0.3.0-rc.1`), success. Job order and times (UTC):
+  `Check the tag name` 10:18:03-10:18:05; CI jobs from 10:18:05, `CI / CI OK` 10:19:25-10:19:29
+  (Fuzz skipped, as ci-result.sh permits on `workflow_call`); `Build release` 10:19:31-10:22:27;
+  `Publish release` 10:22:31-10:23:03; `Check the module proxy` 10:23:05-10:23:22.
+  - Tag job token: `Metadata: read` only; `TAG: v0.3.0-rc.1`. Build token: `Contents: read`,
+    `Metadata: read` (no write). Publish token: `Attestations: write`, `Contents: write`,
+    `Metadata: read`.
+  - Build steps all success, including "Check the tag is on main" and "Check the tag is signed"
+    (`verify-tag: v0.3.0-rc.1 is annotated and its signature is verified by GitHub`).
+  - Publish: `publish-release: v0.3.0-rc.1 can be published from tag object 9c95bf7...`;
+    "Attestation created for 9 subjects" (attestations/62306225); the log names the draft
+    (`releases/tag/untagged-9478bada8c52663e7e48`) and then `releases/tag/v0.3.0-rc.1`.
+  - Proxy: `proxy.golang.org has github.com/bawdo/gosbee@v0.3.0-rc.1 at d4de27c...`, one 5s curl
+    timeout retried, then `sum.golang.org records github.com/bawdo/gosbee@v0.3.0-rc.1`.
+- The release, from `gh api repos/bawdo/gosbee/releases/tags/v0.3.0-rc.1`: `draft: false`,
+  `prerelease: true`, `immutable: true`, published 10:22:59Z; latest is still `v0.2.1`. Eleven
+  assets: the four `gosbee-repl_v0.3.0-rc.1_{darwin,linux}_{amd64,arm64}` binaries, `SHA256SUMS`,
+  `gosbee-repl_v0.3.0-rc.1_provenance.intoto.jsonl`, and five CycloneDX SBOMs (module and one per
+  binary).
+- SECURITY.md's commands, run as written from a fresh clone with `<version>` = `0.3.0-rc.1`:
+  - `curl -fsSL https://github.com/bawdo.gpg | gpg --import`: two keys imported, exit 0, into a
+    temporary `GNUPGHOME` (a first attempt failed only because that path was too long for
+    gpg-agent's socket). The served key carries signing subkey `99548FCC...292EEE78`.
+  - `git fetch origin main tag v0.3.0-rc.1`, `git merge-base --is-ancestor v0.3.0-rc.1
+    origin/main`, `git rev-parse 'v0.3.0-rc.1^{commit}'` (`d4de27c...`): all exit 0.
+  - `git verify-tag v0.3.0-rc.1`: Good signature, subkey `99548FCC...292EEE78`. Run against the
+    operator's keyring, since the git-guard hook takes only a plain git call; cross-checked with
+    `gpg --verify` of the tag payload against the temporary keyring alone: Good signature, plus
+    gpg's "not certified with a trusted signature" warning.
+  - `gh attestation verify` online and with `--bundle`, for `darwin_arm64` and `linux_amd64`, and
+    online for `module.cdx.json` and `darwin_arm64.cdx.json`: all exit 0. It prints nothing on
+    success when not on a terminal; a control with a wrong `--source-digest` exits 1 ("expected
+    SourceRepositoryDigest to be cf168eb..., got d4de27c...").
+  - `shasum -a 256 -c SHA256SUMS --ignore-missing`: all nine listed files `OK`.
+  - `gh release verify v0.3.0-rc.1` "verified", listing all eleven digests; `gh release
+    verify-asset` for `darwin_arm64` and `linux_amd64`: "Verification succeeded".
+  - `go mod download -json github.com/bawdo/gosbee@v0.3.0-rc.1`: the first try timed out reading
+    the zip over IPv6; the retry exit 0, `Origin.Hash` `d4de27c...`, `Ref refs/tags/v0.3.0-rc.1`.
+    `go env GOSUMDB GONOSUMDB GOPRIVATE`: `sum.golang.org`, empty, empty.
+  - No command needed changing. Two notes added to SECURITY.md: the gpg trust warning is expected,
+    and `gh attestation verify` is read by its exit status.
+- Scorecard, first published result. Command:
+  `curl -fsS https://api.securityscorecards.dev/projects/github.com/bawdo/gosbee`. Date
+  2026-11-01T10:16:58Z, commit `d4de27c`, Scorecard v5.6.0, **aggregate 7.5** (baseline: unscored;
+  caddy_shack 8.3, jellyfish 8.0, go-blinkstick 7.6). Per check:
+
+  ```
+  10  Dependency-Update-Tool  update tool detected
+  10  Maintained              30 commit(s) and 0 issue activity found in the last 90 days -- score normalized to 10
+   0  Code-Review             Found 0/9 approved changesets -- score normalized to 0
+  10  Token-Permissions       GitHub workflow tokens follow principle of least privilege
+  -1  Packaging               packaging workflow not detected
+  10  Security-Policy         security policy file detected
+  10  Binary-Artifacts        no binaries found in the repo
+  10  Dangerous-Workflow      no dangerous workflow patterns detected
+  10  Pinned-Dependencies     all dependencies are pinned
+   2  CII-Best-Practices      badge detected: InProgress
+  10  License                 license file detected
+   7  Vulnerabilities         3 existing vulnerabilities detected
+  10  Fuzzing                 project is fuzzed
+   4  Branch-Protection       branch protection is not maximal on development and all release branches
+   0  Signed-Releases         Project has not signed or included provenance with any releases.
+  10  SAST                    SAST tool is run on all commits
+   6  Contributors            project has 2 contributing companies or organizations -- score normalized to 6
+   9  CI-Tests                11 out of 12 merged PRs checked by a CI test -- score normalized to 9
+  ```
+
+- `golang.org/x/net` v0.61.0 to v0.62.0 in `tools/go.mod` (`go -C tools get`, then `mod tidy`;
+  only `x/net` moved), fixing `GO-2026-6860` and `GO-2026-6866`, both pulled in through
+  cyclonedx-gomod's go-license-detector.
 
 ## Not done, and why
+
+- Scorecard checks below 10 outside the brief's exempt four (Code-Review, Contributors,
+  Branch-Protection, CII-Best-Practices):
+  - Signed-Releases 0: the scan at `d4de27c` ran at 10:16:58Z, before the rc was published at
+    10:22:59Z, so the only release it saw was v0.2.1, with no provenance. It moves on the next
+    scan (the next push to `main`, or the weekly run), and lags after that, because v0.2.1 and
+    earlier carry no provenance and Scorecard scores across recent releases.
+  - Vulnerabilities 7: three OSV findings, all in `tools/go.mod` and none in the library's
+    `go.mod`. `GO-2026-6860` and `GO-2026-6866` (`golang.org/x/net` below v0.62.0) are fixed in
+    this unit, which shows on the scan after it reaches `main`. `GO-2026-5932` (the unmaintained
+    `golang.org/x/crypto/openpgp` package) affects every x/crypto version and has no fixed
+    release. It reaches the tools through cyclonedx-gomod, go-git and ProtonMail's go-crypto,
+    which import only `x/crypto/hkdf`. Not suppressed with an `osv-scanner.toml`, on the
+    operator's ruling, so it stays until cyclonedx-gomod drops the dependency.
+  - CI-Tests 9: 11 of 12 merged pull requests were checked by CI. The twelfth predates this
+    workstream; the ratio rises as pull requests land.
+  - Packaging -1 (inconclusive, left out of the aggregate): Scorecard recognises known publishing
+    actions, and the release publishes through `gh` in `scripts/publish-release.sh`.
