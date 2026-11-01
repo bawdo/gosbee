@@ -249,5 +249,7 @@ $ grep -c '^verdict  KILLED' ledger.txt; grep -c '^verdict' ledger.txt
 | push arm permits `lint` | `FAIL unpermitted_skip_fails_push: expected exit 1` | KILLED |
 | missing job defaults to success | `FAIL missing_job_fails: expected exit 1` | KILLED |
 | extra job scored by its own result | `FAIL extra_job_fails: expected exit 1` | KILLED |
+| 9: gate's `if: always()` moved to a later job `zz` (at `727f3e9`, before the fix) | none | SURVIVED |
+| 9: same patch (at `55babb1`, after the bounded `gate_block` fix) | `FAIL ci_yml_gate_shape: gate does not run if: always()` | KILLED |
 
 ## Not done, and why
