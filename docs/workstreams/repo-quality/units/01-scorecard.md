@@ -44,8 +44,9 @@ Review lanes: security, correctness, brief
   prints nothing. Source defects checked: actionlint is clean, and zizmor 1.31.1 (the
   version CI pins) run through `uvx zizmor@1.31.1 --offline` reports no findings at
   the default persona. The `actions/checkout` SHA (`3d3c42e…`, v7.0.1) is the one
-  `release.yml` already uses.
-- zizmor's auditor persona reports three suppressed findings on the file:
+  `ci.yml` and `release.yml` already use.
+- `uvx zizmor@1.31.1 --offline --persona auditor .github/workflows/scorecard.yml` reports
+  three findings that the default persona suppresses (`(3 suppressed)`):
   `excessive-permissions` (top-level `read-all`), `undocumented-permissions` and
   `concurrency-limits`. These are left as they are. CI runs the default persona, the brief
   mandates `permissions: read-all` (the pattern Scorecard's own template uses), and
@@ -115,6 +116,29 @@ made no documented sentence untrue) printed two candidates, `CHANGELOG.md touche
 no further change. A `git grep -ni scorecard -- '*.md'` across the rest of the docs found
 only the index and briefs 07 and 09, and both briefs assume what this unit shipped. No
 document was rewritten or deleted, and no later brief got a correction.
+
+Review triage (step 6). Lanes run: security, correctness and brief, each a fresh
+subagent in its own detached worktree. None was skipped.
+
+- Security, `scorecard.yml:13` (low): top-level `read-all` is broader than `ci.yml`'s
+  `contents: read`, and a future job without its own block would inherit it. Not changed:
+  the brief mandates `read-all`, the only job overrides it, and the Scorecard template
+  uses it.
+- Security, `scorecard.yml:21-22` (info): no `contents: read`, so checkout and the API
+  reads would fail if the repository went private. Not acted on: the repository is public.
+- Brief, Decisions (nit): the checkout SHA is shared with `ci.yml` too, not only
+  `release.yml`. Fixed.
+- Brief, Decisions (nit): the three-findings figure had no command beside it. Fixed, with
+  the auditor-persona command.
+- Correctness, `scorecard.yml:7` (info): `branch_protection_rule` fires only for classic
+  branch protection, not repository rulesets. Not changed here. Carried in the handover
+  for unit 08.
+- Both the security and correctness lanes reported that the pinned SHAs match their tags.
+  This session measured that again rather than relaying it, with
+  `git ls-remote https://github.com/<owner>/<action> 'refs/tags/<tag>*'`: scorecard-action
+  `v2.5.0^{}` resolves to `fa7117db…`, upload-artifact `v7.0.2` to `cf430e03…`,
+  codeql-action `v4.39.1^{}` to `9b325408…`, and checkout `v7.0.1` to `3d3c42e5…`. All
+  four match the version comments.
 
 Known limit: the score only appears once this workflow runs on `main`, which happens
 when the integration branch merges. Until then the README badge will not resolve to a
