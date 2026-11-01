@@ -119,6 +119,20 @@ release-proof, now unit 10.
     `Origin.Hash` that is not 40 hex is reported as `unknown`, so a hostile response cannot inject
     workflow commands into the log.
   - Sleep and curl are faked on PATH; production code is unchanged.
+- The CI lint job gains the step `Test the release scripts` (`bash scripts/release-scripts_test.sh`)
+  after `Check CHANGELOG.md`. This is a deliberate change to pull request and push behaviour, one
+  more lint step, as 02 plan Task 6 Step 2 asks to be recorded here (raised by the brief lane).
+- The local `release-scripts` gate in `scripts/wombat-verify.sh` is skipped, with a reason, where
+  jq is missing, like the `ci-result` gate. CI runs the suite unconditionally, so the criterion
+  holds there. Locally, a skip is visible in the record and is not a pass (raised by the brief lane).
+- Review triage (step 6), decided in this session: the fixes go to a fresh fix subagent on
+  `unit/05-release-build-fix`, test first, then merge into the unit branch. Fixed: the tag moving
+  between build and publish; an attestation minted before the published-release refusal; every gh
+  error read as "no release"; the SBOM tool running before the binaries are checksummed; the test
+  power gaps; and the docs on proxy recovery and the dispatch trust model. Not acted on, with reasons
+  in `## Outcome`. The `environment:` and tag ruleset that would bind `workflow_dispatch` are
+  repository settings: they go to unit 09 (repo-settings) through the handover. That is not a
+  re-cut, because unit 09's scope already covers repository settings.
 
 ## Plan
 
