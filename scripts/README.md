@@ -149,7 +149,9 @@ Run it from a directory holding `dist/`. It attaches exactly the files
 `dist/SHA256SUMS` lists, `SHA256SUMS` itself and the provenance bundle
 (compacted to `dist/gosbee-repl_<tag>_provenance.intoto.jsonl`), each once.
 Every input is checked before any `gh` call. A published release is refused
-before any write, and a leftover draft is replaced. The release is created as
+before any write, and a leftover draft is replaced. Only `gh`'s own "release
+not found" counts as no release: any other `gh` failure stops it with `gh`'s
+message. The release is created as
 a draft with its assets, then published. A tag with a suffix is a pre-release
 and is never marked latest.
 

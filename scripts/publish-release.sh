@@ -17,11 +17,12 @@
 # before any gh call, so a bad one leaves a stale draft alone.
 #
 # A published release is never touched: finding one stops the script before
-# any write. A draft is left over from a failed run and is replaced. The
-# release is created as a draft with its assets and only then published, so
-# it never exists without them. A tag with a suffix is a pre-release and is
-# never marked latest. Needs GH_REPO or GITHUB_REPOSITORY (owner/repo, for
-# gh) and an authenticated gh.
+# any write. Only gh's own "release not found" means there is no release, so
+# any other gh failure stops it too. A draft is left over from a failed run
+# and is replaced. The release is created as a draft with its assets and
+# only then published, so it never exists without them. A tag with a suffix
+# is a pre-release and is never marked latest. Needs GH_REPO or
+# GITHUB_REPOSITORY (owner/repo, for gh) and an authenticated gh.
 
 set -euo pipefail
 
@@ -76,13 +77,20 @@ case "$tag" in
         ;;
 esac
 
-draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || echo missing)
+# Only gh's own "release not found" means there is no release; any other
+# failure (an outage, a rate limit, a bad token) stops here, with gh's message.
+if ! draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>&1); then
+    [ "$draft" = "release not found" ] || die "could not read the release for $tag: $draft"
+    draft=missing
+fi
 case "$draft" in
+    missing) ;;
     false) die "$tag is already published" ;;
     true)
         echo "publish-release: replacing the draft release for $tag" >&2
         gh release delete "$tag" --yes
         ;;
+    *) die "could not read the release for $tag: unexpected answer $draft" ;;
 esac
 
 gh release create "$tag" --draft --verify-tag --title "$tag" --notes-file "$notes" \

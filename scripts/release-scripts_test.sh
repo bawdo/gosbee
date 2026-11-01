@@ -38,6 +38,8 @@ fail() {
 #   is_draft      what "release view --json isDraft" prints; when absent the
 #                 release does not exist and the view exits 1. Create, edit
 #                 and delete keep it in step, as GitHub would.
+#   view.fail     when present, "release view" prints it to stderr and exits
+#                 1, as gh does on an API error other than a missing release
 #   gh.log        one line per call, the arguments joined by spaces
 mkdir -p "$ROOT/bin"
 cat > "$ROOT/bin/gh" <<'EOF'
@@ -56,6 +58,10 @@ case "$1 $2" in
     "api "*/git/ref/tags/*) answer "$FAKE_GH_DIR/ref.json" ;;
     "api "*/git/tags/*) answer "$FAKE_GH_DIR/tag.json" ;;
     "release view")
+        if [ -f "$FAKE_GH_DIR/view.fail" ]; then
+            cat "$FAKE_GH_DIR/view.fail" >&2
+            exit 1
+        fi
         if [ ! -f "$FAKE_GH_DIR/is_draft" ]; then
             echo "release not found" >&2
             exit 1
@@ -230,6 +236,19 @@ expect_refusal "$name" "publish-release: v0.1.0 is already published"
 [ "$(cat "$dir/gh.log")" = "release view v0.1.0 --json isDraft --jq .isDraft" ] \
     || fail "$name" "made a call after finding the release published: $(cat "$dir/gh.log")"
 [ "$(cat "$dir/is_draft")" = false ] || fail "$name" "the release changed"
+echo "ok $name"
+
+# Only gh's own "release not found" means there is no release. Any other
+# failure (an outage, a rate limit, a bad token) stops the script before any
+# write, with gh's message, rather than going on to create a release.
+name=publish_stops_on_other_gh_error
+dir=$(fake "$name")
+echo false > "$dir/is_draft"
+echo "HTTP 502: Bad Gateway (https://api.github.com/repos/bawdo/gosbee/releases/tags/v0.1.0)" > "$dir/view.fail"
+run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+expect_refusal "$name" "publish-release: could not read the release for v0.1.0: HTTP 502: Bad Gateway (https://api.github.com/repos/bawdo/gosbee/releases/tags/v0.1.0)"
+[ "$(cat "$dir/gh.log")" = "release view v0.1.0 --json isDraft --jq .isDraft" ] \
+    || fail "$name" "made a call after the failed read: $(cat "$dir/gh.log")"
 echo "ok $name"
 
 name=publish_replaces_draft
