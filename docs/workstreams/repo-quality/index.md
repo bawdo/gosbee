@@ -1,7 +1,7 @@
 # Workstream: repo-quality
 
 Integration branch: workstream/repo-quality
-Next unit: 02
+Next unit: 03
 
 Bring gosbee's GitHub, CI and release practice up to (and past) bawdo/caddy_shack,
 bawdo/jellyfish and bawdo/go-blinkstick: a strong OpenSSF Scorecard and readiness for
@@ -18,8 +18,8 @@ documents what 02 and 03 ship, 08 needs the final action set, 09 proves it all.
 | # | Slug | Mode | Branch | Status | Brief |
 |---|---|---|---|---|---|
 | 01 | scorecard | implement | unit/01-scorecard | done | units/01-scorecard.md |
-| 02 | release-pipeline | plan | unit/02-release-pipeline | next | units/02-release-pipeline.md |
-| 03 | release-supply-chain | plan | unit/03-release-supply-chain | pending | units/03-release-supply-chain.md |
+| 02 | release-pipeline | plan | unit/02-release-pipeline | done | units/02-release-pipeline.md |
+| 03 | release-supply-chain | plan | unit/03-release-supply-chain | next | units/03-release-supply-chain.md |
 | 04 | ci-gate-and-lint | implement | unit/04-ci-gate-and-lint | pending | units/04-ci-gate-and-lint.md |
 | 05 | fuzzing | plan | unit/05-fuzzing | pending | units/05-fuzzing.md |
 | 06 | examples | implement | unit/06-examples | pending | units/06-examples.md |
@@ -27,14 +27,17 @@ documents what 02 and 03 ship, 08 needs the final action set, 09 proves it all.
 | 08 | repo-settings | plan | unit/08-repo-settings | pending | units/08-repo-settings.md |
 | 09 | release-proof | implement | unit/09-release-proof | pending | units/09-release-proof.md |
 
-## Handover from unit 01
+## Handover from unit 02
 
-Unit 01 landed `.github/workflows/scorecard.yml`, byte identical to caddy_shack's
-(push to `main`, weekly cron, `branch_protection_rule`; `read-all` top level), the
-README Scorecard badge and a CHANGELOG `### Added` entry. No score until the
-integration branch reaches `main`; unit 09 records the first result. For unit 08:
-`branch_protection_rule` fires only for classic branch protection, not repository
-rulesets, so a ruleset change refreshes the score only on the next push or weekly run.
-Local verification needs to run outside the agent sandbox (Go build cache, test port
-binding, vuln.go.dev). zizmor can run through
-`uvx zizmor@1.31.1` on PATH, which turns the zizmor skip into a real run.
+Unit 02 landed a plan only:
+`docs/workstreams/repo-quality/plans/2026-11-01-release-pipeline.md`, six TDD tasks. Plans and
+specs now live under this workstream (`planDir`/`specDir` in `.claude/wombat-workstream.json`),
+because `/docs/plans` is gitignored. **Open question for the operator: nothing builds this plan.**
+02 and 03 are plan units, and 09 assumes the pipeline is on `main`, so a re-cut is due before 03
+or 09 opens. The operator chose to decide later. Decided in 02: sync-notes is dropped; Codecov
+moves to a new `coverage.yml` (OIDC), so the release chain holds `id-token` only in publish;
+`ci.yml` `workflow_call` takes a `ref` input and keys concurrency on it; asset names keep the
+v-prefixed tag (`gosbee-repl_<tag>_*`, `SHA256SUMS`, `..._provenance.intoto.jsonl`); building
+moves to `scripts/build-release.sh`; pre-09 exercise is local only. For 03: verification docs
+should pin `--signer-workflow` to `release.yml`. For 04: an actionlint gate is left to it. For 08:
+`Coverage` is not a required check. gpg signing fails inside the agent sandbox, so commit outside it.
