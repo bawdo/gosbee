@@ -136,24 +136,31 @@ SBOM stops it before `SHA256SUMS` is written. It needs `jq`.
 
 ## publish-release.sh
 
-**Purpose**: Publishes the GitHub release for a tag. The `Release`
-workflow's publish job runs it, and it is the only script that writes to a
-release.
+**Purpose**: Publishes the GitHub release for a tag, or checks that it can be
+published. The `Release` workflow's publish job runs it, and it is the only
+script that writes to a release.
 
 **Usage**:
 ```bash
-GH_REPO=bawdo/gosbee ./scripts/publish-release.sh v0.3.0 notes.md bundle.json
+GH_REPO=bawdo/gosbee ./scripts/publish-release.sh --check v0.3.0 "$TAG_OBJECT"
+GH_REPO=bawdo/gosbee ./scripts/publish-release.sh v0.3.0 "$TAG_OBJECT" notes.md bundle.json
 ```
 
-Run it from a directory holding `dist/`. It attaches exactly the files
-`dist/SHA256SUMS` lists, `SHA256SUMS` itself and the provenance bundle
+`TAG_OBJECT` is the sha of the annotated tag object the build verified
+(`git rev-parse refs/tags/v0.3.0` in its checkout). Both forms refuse a
+release already published and a tag on GitHub that no longer points at
+`TAG_OBJECT`, naming both shas, so a tag moved since the build is never
+released. `--check` only reads: the publish job runs it before its first
+write, the attestation. Only `gh`'s own "release not found" counts as no
+release: any other `gh` failure stops it with `gh`'s message.
+
+Publishing runs from a directory holding `dist/`. It attaches exactly the
+files `dist/SHA256SUMS` lists, `SHA256SUMS` itself and the provenance bundle
 (compacted to `dist/gosbee-repl_<tag>_provenance.intoto.jsonl`), each once.
-Every input is checked before any `gh` call. A published release is refused
-before any write, and a leftover draft is replaced. Only `gh`'s own "release
-not found" counts as no release: any other `gh` failure stops it with `gh`'s
-message. The release is created as
-a draft with its assets, then published. A tag with a suffix is a pre-release
-and is never marked latest.
+Every input is checked before any `gh` call. A leftover draft is replaced,
+and the tag is read once more just before the release is created. The
+release is created as a draft with its assets, then published. A tag with a
+suffix is a pre-release and is never marked latest.
 
 **Tests**: `./scripts/release-scripts_test.sh`.
 

@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 #
-# Publishes the GitHub release for a tag with the assets in dist/.
+# Publishes the GitHub release for a tag with the assets in dist/, or checks
+# that it can be published without writing anything.
 #
-#   scripts/publish-release.sh vX.Y.Z[-suffix] NOTES_FILE BUNDLE_FILE
+#   scripts/publish-release.sh vX.Y.Z[-suffix] TAG_OBJECT NOTES_FILE BUNDLE_FILE
+#   scripts/publish-release.sh --check vX.Y.Z[-suffix] TAG_OBJECT
+#
+# TAG_OBJECT is the sha of the annotated tag object the build verified and
+# built. The tag on GitHub must still point at it, so a tag moved since the
+# build is refused, naming both, rather than released over binaries built
+# from another commit. --check only reads: it refuses a release already
+# published and a moved tag, and the publish job runs it before its first
+# write (the attestation). Publishing checks both again, then reads the tag
+# once more on the call just before the release is created.
 #
 # Run from a directory holding dist/. The assets attached are exactly the
 # files dist/SHA256SUMS lists (the set that was checksummed and attested),
@@ -31,12 +41,59 @@ die() {
     exit 1
 }
 
-tag="${1:-}"
-notes="${2:-}"
-bundle_in="${3:-}"
-if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || [ -z "$notes" ] || [ -z "$bundle_in" ]; then
-    die "usage: $0 vX.Y.Z[-suffix] NOTES_FILE BUNDLE_FILE"
+usage() {
+    die "usage: $0 vX.Y.Z[-suffix] TAG_OBJECT NOTES_FILE BUNDLE_FILE, or --check vX.Y.Z[-suffix] TAG_OBJECT"
+}
+
+# release_state: dies unless the tag's release is missing or a draft, and
+# sets draft to "missing" or "true". Only gh's own "release not found" means
+# there is no release; any other failure (an outage, a rate limit, a bad
+# token) stops here, with gh's message.
+release_state() {
+    if ! draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>&1); then
+        [ "$draft" = "release not found" ] || die "could not read the release for $tag: $draft"
+        draft=missing
+    fi
+    case "$draft" in
+        missing | true) ;;
+        false) die "$tag is already published" ;;
+        *) die "could not read the release for $tag: unexpected answer $draft" ;;
+    esac
+}
+
+# check_tag: dies unless the tag on GitHub points at the tag object built.
+check_tag() {
+    local ref
+    ref=$(gh api "repos/$repo/git/ref/tags/$tag" --jq '.object.type + " " + .object.sha' 2>&1) \
+        || die "could not read tag $tag from $repo: $ref"
+    [ "$ref" = "tag $object" ] || die "$tag on GitHub points at $ref, not the built tag object $object"
+}
+
+check=false
+if [ "${1:-}" = --check ]; then
+    check=true
+    shift
+    [ "$#" -eq 2 ] || usage
+else
+    [ "$#" -eq 4 ] || usage
 fi
+tag="$1"
+object="$2"
+[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || usage
+[[ "$object" =~ ^[0-9a-f]{40}$ ]] || usage
+repo="${GH_REPO:-${GITHUB_REPOSITORY:-}}"
+[ -n "$repo" ] || die "GH_REPO or GITHUB_REPOSITORY must be set"
+
+if [ "$check" = true ]; then
+    release_state
+    check_tag
+    echo "publish-release: $tag can be published from tag object $object"
+    exit 0
+fi
+
+notes="$3"
+bundle_in="$4"
+{ [ -n "$notes" ] && [ -n "$bundle_in" ]; } || usage
 [ -f "$notes" ] || die "NOTES_FILE $notes is not a file"
 
 prefix="gosbee-repl_${tag}_"
@@ -77,22 +134,16 @@ case "$tag" in
         ;;
 esac
 
-# Only gh's own "release not found" means there is no release; any other
-# failure (an outage, a rate limit, a bad token) stops here, with gh's message.
-if ! draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>&1); then
-    [ "$draft" = "release not found" ] || die "could not read the release for $tag: $draft"
-    draft=missing
+release_state
+check_tag
+if [ "$draft" = true ]; then
+    echo "publish-release: replacing the draft release for $tag" >&2
+    gh release delete "$tag" --yes
 fi
-case "$draft" in
-    missing) ;;
-    false) die "$tag is already published" ;;
-    true)
-        echo "publish-release: replacing the draft release for $tag" >&2
-        gh release delete "$tag" --yes
-        ;;
-    *) die "could not read the release for $tag: unexpected answer $draft" ;;
-esac
 
+# The create attaches the release to whatever the tag points at when it
+# runs, so the tag is read again on the call just before it.
+check_tag
 gh release create "$tag" --draft --verify-tag --title "$tag" --notes-file "$notes" \
     "${flags[@]+"${flags[@]}"}" "${assets[@]}" dist/SHA256SUMS "$bundle"
 gh release edit "$tag" --draft=false "${latest[@]+"${latest[@]}"}"

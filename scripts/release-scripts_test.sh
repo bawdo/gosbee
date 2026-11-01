@@ -34,6 +34,9 @@ fail() {
 
 # The fake gh. FAKE_GH_DIR holds the canned answers and the call log:
 #   ref.json      body of GET repos/OWNER/REPO/git/ref/tags/TAG
+#   ref.next.json when present, replaces ref.json once ref.json has been
+#                 read, standing in for a tag moved between two reads
+#   ref.fail      when present, the ref read prints it to stderr and exits 1
 #   tag.json      body of GET repos/OWNER/REPO/git/tags/SHA
 #   is_draft      what "release view --json isDraft" prints; when absent the
 #                 release does not exist and the view exits 1. Create, edit
@@ -55,7 +58,16 @@ answer() {
     if [ -n "$jq_expr" ]; then jq -r "$jq_expr" "$1"; else cat "$1"; fi
 }
 case "$1 $2" in
-    "api "*/git/ref/tags/*) answer "$FAKE_GH_DIR/ref.json" ;;
+    "api "*/git/ref/tags/*)
+        if [ -f "$FAKE_GH_DIR/ref.fail" ]; then
+            cat "$FAKE_GH_DIR/ref.fail" >&2
+            exit 1
+        fi
+        answer "$FAKE_GH_DIR/ref.json"
+        if [ -f "$FAKE_GH_DIR/ref.next.json" ]; then
+            mv "$FAKE_GH_DIR/ref.next.json" "$FAKE_GH_DIR/ref.json"
+        fi
+        ;;
     "api "*/git/tags/*) answer "$FAKE_GH_DIR/tag.json" ;;
     "release view")
         if [ -f "$FAKE_GH_DIR/view.fail" ]; then
@@ -84,10 +96,15 @@ esac
 EOF
 chmod +x "$ROOT/bin/gh"
 
+# The tag object the build job verified, which publish-release.sh is given.
+OBJ=7a90000123456789abcdef0123456789abcdef03
+# Another tag object, for a tag moved since the build.
+MOVED=3a40000123456789abcdef0123456789abcdef04
+
 # fake NAME [TAG]: makes a fresh directory for one case's canned answers, with
 # a dist/ holding a stand-in binary for TAG (default v0.1.0), a SHA256SUMS
-# listing it, a notes.md and a bundle.json (a two-line pretty JSON object),
-# and prints its path.
+# listing it, a notes.md, a bundle.json (a two-line pretty JSON object) and a
+# ref.json in which TAG points at the tag object OBJ, and prints its path.
 fake() {
     local dir="$ROOT/$1" tag="${2:-v0.1.0}"
     mkdir -p "$dir/dist"
@@ -97,6 +114,7 @@ fake() {
         "gosbee-repl_${tag}_linux_amd64" > "$dir/dist/SHA256SUMS"
     printf '{\n  "mediaType": "bundle"\n}\n' > "$dir/bundle.json"
     echo "notes" > "$dir/notes.md"
+    printf '{"object":{"type":"tag","sha":"%s"}}\n' "$OBJ" > "$dir/ref.json"
     echo "$dir"
 }
 
@@ -228,10 +246,12 @@ create_line() {
     grep '^release create ' "$1/gh.log"
 }
 
+PUBLISH_USAGE="publish-release: usage: $SCRIPTS/publish-release.sh vX.Y.Z[-suffix] TAG_OBJECT NOTES_FILE BUNDLE_FILE, or --check vX.Y.Z[-suffix] TAG_OBJECT"
+
 name=publish_stops_on_published_release
 dir=$(fake "$name")
 echo false > "$dir/is_draft"
-run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
 expect_refusal "$name" "publish-release: v0.1.0 is already published"
 [ "$(cat "$dir/gh.log")" = "release view v0.1.0 --json isDraft --jq .isDraft" ] \
     || fail "$name" "made a call after finding the release published: $(cat "$dir/gh.log")"
@@ -245,7 +265,7 @@ name=publish_stops_on_other_gh_error
 dir=$(fake "$name")
 echo false > "$dir/is_draft"
 echo "HTTP 502: Bad Gateway (https://api.github.com/repos/bawdo/gosbee/releases/tags/v0.1.0)" > "$dir/view.fail"
-run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
 expect_refusal "$name" "publish-release: could not read the release for v0.1.0: HTTP 502: Bad Gateway (https://api.github.com/repos/bawdo/gosbee/releases/tags/v0.1.0)"
 [ "$(cat "$dir/gh.log")" = "release view v0.1.0 --json isDraft --jq .isDraft" ] \
     || fail "$name" "made a call after the failed read: $(cat "$dir/gh.log")"
@@ -254,7 +274,7 @@ echo "ok $name"
 name=publish_replaces_draft
 dir=$(fake "$name")
 echo true > "$dir/is_draft"
-run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
 [ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
 log_order "$name" "$dir" "release delete v0.1.0 --yes" "release create v0.1.0 --draft --verify-tag" \
     "release edit v0.1.0 --draft=false --latest"
@@ -263,13 +283,17 @@ echo "ok $name"
 
 name=publish_creates_when_missing
 dir=$(fake "$name")
-run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
 [ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
 ! grep -q "release delete" "$dir/gh.log" || fail "$name" "deleted a release"
 log_order "$name" "$dir" "release view v0.1.0 --json isDraft" "release create v0.1.0" \
     "release edit v0.1.0 --draft=false --latest" "release view v0.1.0 --json url"
 [ "$(create_line "$dir")" = "release create v0.1.0 --draft --verify-tag --title v0.1.0 --notes-file $dir/notes.md dist/gosbee-repl_v0.1.0_linux_amd64 dist/SHA256SUMS dist/gosbee-repl_v0.1.0_provenance.intoto.jsonl" ] \
     || fail "$name" "wrong create line: $(create_line "$dir")"
+# The tag is read again on the call just before the create, so a tag moved
+# since the build is caught as late as it can be.
+[ "$(grep -B1 '^release create ' "$dir/gh.log" | head -1)" = "api repos/bawdo/gosbee/git/ref/tags/v0.1.0 --jq .object.type + \" \" + .object.sha" ] \
+    || fail "$name" "the tag was not read just before the create: $(cat "$dir/gh.log")"
 bundle="$dir/dist/gosbee-repl_v0.1.0_provenance.intoto.jsonl"
 [ "$(wc -l < "$bundle" | tr -d ' ')" = 1 ] || fail "$name" "bundle is not one line"
 [ "$(cat "$bundle")" = "$(jq -c . "$dir/bundle.json")" ] || fail "$name" "bundle is not the compacted input"
@@ -288,7 +312,7 @@ for target in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64; do
         "gosbee-repl_v0.1.0_$target" >> "$dir/dist/SHA256SUMS"
 done
 echo stray > "$dir/dist/gosbee-repl_v0.1.0_stray"
-run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
 [ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
 line=$(create_line "$dir")
 for asset in gosbee-repl_v0.1.0_linux_amd64 gosbee-repl_v0.1.0_linux_arm64 gosbee-repl_v0.1.0_darwin_amd64 \
@@ -302,7 +326,7 @@ name=publish_refuses_bad_bundle_before_touching_draft
 dir=$(fake "$name")
 echo true > "$dir/is_draft"
 echo "not json" > "$dir/bundle.json"
-run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
 expect_refusal "$name" "publish-release: BUNDLE_FILE is not a single JSON document"
 [ ! -s "$dir/gh.log" ] || fail "$name" "called gh: $(cat "$dir/gh.log")"
 [ "$(cat "$dir/is_draft")" = true ] || fail "$name" "the draft is gone"
@@ -311,14 +335,14 @@ echo "ok $name"
 
 name=publish_needs_a_bundle
 dir=$(fake "$name")
-run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md"
-expect_refusal "$name" "publish-release: usage: $SCRIPTS/publish-release.sh vX.Y.Z[-suffix] NOTES_FILE BUNDLE_FILE"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md"
+expect_refusal "$name" "$PUBLISH_USAGE"
 [ ! -s "$dir/gh.log" ] || fail "$name" "called gh"
 echo "ok $name"
 
 name=publish_needs_the_notes_file
 dir=$(fake "$name")
-run_gh "$dir" publish-release.sh v0.1.0 "$dir/missing.md" "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/missing.md" "$dir/bundle.json"
 expect_refusal "$name" "publish-release: NOTES_FILE $dir/missing.md is not a file"
 [ ! -s "$dir/gh.log" ] || fail "$name" "called gh"
 echo "ok $name"
@@ -327,8 +351,8 @@ name=publish_rejects_bad_tag
 # shellcheck disable=SC2016 # the $(id) is a literal hostile name, never expanded
 for bad in 'v1.0.0;id' 'v1.0.0$(id)' main v1.0; do
     dir=$(fake "$name")
-    run_gh "$dir" publish-release.sh "$bad" "$dir/notes.md" "$dir/bundle.json"
-    expect_refusal "$name ($bad)" "publish-release: usage: $SCRIPTS/publish-release.sh vX.Y.Z[-suffix] NOTES_FILE BUNDLE_FILE"
+    run_gh "$dir" publish-release.sh "$bad" "$OBJ" "$dir/notes.md" "$dir/bundle.json"
+    expect_refusal "$name ($bad)" "$PUBLISH_USAGE"
     [ ! -s "$dir/gh.log" ] || fail "$name ($bad)" "called gh"
     rm -rf "$dir"
 done
@@ -343,36 +367,127 @@ for entry in "../notes.md" "gosbee-repl_v0.2.0_linux_amd64" "gosbee-repl_v0.1.0_
     dir=$(fake "$name")
     printf '%s  %s\n' 0000000000000000000000000000000000000000000000000000000000000000 "$entry" \
         >> "$dir/dist/SHA256SUMS"
-    run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+    run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
     expect_refusal "$name ($entry)" "publish-release: SHA256SUMS lists $entry, which is not a v0.1.0 asset in dist/"
     [ ! -s "$dir/gh.log" ] || fail "$name ($entry)" "called gh"
     rm -rf "$dir"
 done
 dir=$(fake "$name-empty")
 : > "$dir/dist/SHA256SUMS"
-run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
 expect_refusal "$name (empty)" "publish-release: SHA256SUMS lists no assets"
 [ ! -s "$dir/gh.log" ] || fail "$name (empty)" "called gh"
 dir=$(fake "$name-duplicate")
 cat "$dir/dist/SHA256SUMS" "$dir/dist/SHA256SUMS" > "$dir/sums" && mv "$dir/sums" "$dir/dist/SHA256SUMS"
-run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
 expect_refusal "$name (duplicate)" "publish-release: SHA256SUMS lists gosbee-repl_v0.1.0_linux_amd64 twice"
 [ ! -s "$dir/gh.log" ] || fail "$name (duplicate)" "called gh"
 dir=$(fake "$name-malformed")
 echo "not-a-checksum  gosbee-repl_v0.1.0_linux_amd64" > "$dir/dist/SHA256SUMS"
-run_gh "$dir" publish-release.sh v0.1.0 "$dir/notes.md" "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
 expect_refusal "$name (malformed)" "publish-release: SHA256SUMS line 1 is not <sha256>  <name>"
 [ ! -s "$dir/gh.log" ] || fail "$name (malformed)" "called gh"
 echo "ok $name"
 
 name=publish_marks_prerelease
 dir=$(fake "$name" v0.1.0-rc.1)
-run_gh "$dir" publish-release.sh v0.1.0-rc.1 "$dir/notes.md" "$dir/bundle.json"
+run_gh "$dir" publish-release.sh v0.1.0-rc.1 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
 [ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
 [ "$(create_line "$dir")" = "release create v0.1.0-rc.1 --draft --verify-tag --title v0.1.0-rc.1 --notes-file $dir/notes.md --prerelease dist/gosbee-repl_v0.1.0-rc.1_linux_amd64 dist/SHA256SUMS dist/gosbee-repl_v0.1.0-rc.1_provenance.intoto.jsonl" ] \
     || fail "$name" "wrong create line: $(create_line "$dir")"
 grep -qx "release edit v0.1.0-rc.1 --draft=false" "$dir/gh.log" || fail "$name" "not published: $(cat "$dir/gh.log")"
 ! grep -q -- "--latest" "$dir/gh.log" || fail "$name" "a pre-release was marked latest"
+echo "ok $name"
+
+# A tag moved after the build (here between the script's first read and the
+# one just before the create) is refused, naming both tag objects, and no
+# release is created for it.
+name=publish_refuses_tag_moved_before_create
+dir=$(fake "$name")
+echo true > "$dir/is_draft"
+printf '{"object":{"type":"tag","sha":"%s"}}\n' "$MOVED" > "$dir/ref.next.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
+expect_refusal "$name" "publish-release: replacing the draft release for v0.1.0
+publish-release: v0.1.0 on GitHub points at tag $MOVED, not the built tag object $OBJ"
+! grep -qE '^release (create|edit)' "$dir/gh.log" || fail "$name" "released a moved tag: $(cat "$dir/gh.log")"
+echo "ok $name"
+
+name=publish_refuses_moved_tag_before_any_write
+dir=$(fake "$name")
+echo true > "$dir/is_draft"
+printf '{"object":{"type":"tag","sha":"%s"}}\n' "$MOVED" > "$dir/ref.json"
+run_gh "$dir" publish-release.sh v0.1.0 "$OBJ" "$dir/notes.md" "$dir/bundle.json"
+expect_refusal "$name" "publish-release: v0.1.0 on GitHub points at tag $MOVED, not the built tag object $OBJ"
+! grep -qE '^release (create|edit|delete)' "$dir/gh.log" || fail "$name" "wrote: $(cat "$dir/gh.log")"
+[ "$(cat "$dir/is_draft")" = true ] || fail "$name" "the draft is gone"
+echo "ok $name"
+
+# --check is the publish job's read-only check before its first write (the
+# attestation): the release must not be published and the tag must still
+# point at the tag object the build verified.
+name=publish_check_accepts_missing_or_draft
+for state in missing true; do
+    dir=$(fake "$name-$state")
+    [ "$state" = missing ] || echo "$state" > "$dir/is_draft"
+    run_gh "$dir" publish-release.sh --check v0.1.0 "$OBJ"
+    [ "$CODE" -eq 0 ] || fail "$name ($state)" "expected exit 0"
+    [ "$OUT" = "publish-release: v0.1.0 can be published from tag object $OBJ" ] || fail "$name ($state)" "wrong output"
+    [ "$(cat "$dir/gh.log")" = "release view v0.1.0 --json isDraft --jq .isDraft
+api repos/bawdo/gosbee/git/ref/tags/v0.1.0 --jq .object.type + \" \" + .object.sha" ] || fail "$name ($state)" "made other calls: $(cat "$dir/gh.log")"
+done
+[ "$(cat "$dir/is_draft")" = true ] || fail "$name" "the draft changed"
+echo "ok $name"
+
+name=publish_check_refuses_published
+dir=$(fake "$name")
+echo false > "$dir/is_draft"
+run_gh "$dir" publish-release.sh --check v0.1.0 "$OBJ"
+expect_refusal "$name" "publish-release: v0.1.0 is already published"
+[ "$(cat "$dir/gh.log")" = "release view v0.1.0 --json isDraft --jq .isDraft" ] \
+    || fail "$name" "made a call after finding the release published: $(cat "$dir/gh.log")"
+echo "ok $name"
+
+name=publish_check_refuses_moved_tag
+for ref in "tag $MOVED" "commit $OBJ"; do
+    dir=$(fake "$name")
+    printf '{"object":{"type":"%s","sha":"%s"}}\n' "${ref% *}" "${ref#* }" > "$dir/ref.json"
+    run_gh "$dir" publish-release.sh --check v0.1.0 "$OBJ"
+    expect_refusal "$name ($ref)" "publish-release: v0.1.0 on GitHub points at $ref, not the built tag object $OBJ"
+    rm -rf "$dir"
+done
+echo "ok $name"
+
+# The check reads gh as publishing does: a failed read is never a pass.
+name=publish_check_stops_on_gh_error
+dir=$(fake "$name")
+echo "HTTP 403: API rate limit exceeded" > "$dir/view.fail"
+run_gh "$dir" publish-release.sh --check v0.1.0 "$OBJ"
+expect_refusal "$name (view)" "publish-release: could not read the release for v0.1.0: HTTP 403: API rate limit exceeded"
+dir=$(fake "$name-ref")
+echo "HTTP 404: Not Found" > "$dir/ref.fail"
+run_gh "$dir" publish-release.sh --check v0.1.0 "$OBJ"
+expect_refusal "$name (ref)" "publish-release: could not read tag v0.1.0 from bawdo/gosbee: HTTP 404: Not Found"
+echo "ok $name"
+
+name=publish_rejects_bad_tag_object
+# shellcheck disable=SC2016 # the $(id) is a literal hostile value, never expanded
+for bad in '' abc123 "$(tr a-f A-F <<<"$OBJ")" "$OBJ;id" '$(id)' "${OBJ}0"; do
+    dir=$(fake "$name")
+    run_gh "$dir" publish-release.sh --check v0.1.0 "$bad"
+    expect_refusal "$name (check $bad)" "$PUBLISH_USAGE"
+    run_gh "$dir" publish-release.sh v0.1.0 "$bad" "$dir/notes.md" "$dir/bundle.json"
+    expect_refusal "$name ($bad)" "$PUBLISH_USAGE"
+    [ ! -s "$dir/gh.log" ] || fail "$name ($bad)" "called gh: $(cat "$dir/gh.log")"
+    rm -rf "$dir"
+done
+dir=$(fake "$name-args")
+# shellcheck disable=SC2016 # the $(id) is a literal hostile name, never expanded
+for argv in "v0.1.0;id|$OBJ" 'v1.0.0$(id)'"|$OBJ" "main|$OBJ" "v0.1.0" "v0.1.0|$OBJ|extra"; do
+    IFS='|' read -r -a args <<<"$argv"
+    run_gh "$dir" publish-release.sh --check "${args[@]}"
+    expect_refusal "$name (check $argv)" "$PUBLISH_USAGE"
+done
+[ ! -s "$dir/gh.log" ] || fail "$name" "called gh: $(cat "$dir/gh.log")"
 echo "ok $name"
 
 # Across every publish case: assets are only ever attached by the create of a
