@@ -2,6 +2,8 @@
   "workstream": "repo-quality",
   "integrationBranch": "workstream/repo-quality",
   "unitBranchPrefix": "unit",
+  "specDir": "docs/workstreams/repo-quality/specs",
+  "planDir": "docs/workstreams/repo-quality/plans",
   "reviewLanes": ["security", "correctness", "brief"],
   "verificationRecord": ".claude/wombat-verification",
   "verification": "scripts/wombat-verify.sh",
