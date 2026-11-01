@@ -56,6 +56,9 @@ func (m *UpdateManager) toSQLCore(v nodes.Visitor) (string, error) {
 			return "", err
 		}
 	}
+	if err := checkSetTargets(stmt.Table, stmt.Assignments); err != nil {
+		return "", err
+	}
 	return stmt.Accept(v), nil
 }
 

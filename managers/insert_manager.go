@@ -74,6 +74,11 @@ func (m *InsertManager) toSQLCore(v nodes.Visitor) (string, error) {
 			return "", err
 		}
 	}
+	if oc := stmt.OnConflict; oc != nil && oc.Action == nodes.DoUpdate {
+		if err := checkSetTargets(stmt.Into, oc.Assignments); err != nil {
+			return "", err
+		}
+	}
 	return stmt.Accept(v), nil
 }
 

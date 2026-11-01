@@ -70,6 +70,24 @@ Review lanes: security, correctness, brief
   expectations: 12 in `visitors/visitors_test.go`, 3 in `cmd/repl/repl_test.go`. The SET grep
   missed `TestVisitAssignment`, which pins an assignment alone; the first green run found it, and
   it was corrected the same way. No docs carried the qualified form.
+- Review finding (security and correctness lanes, the same one): dropping the qualifier made a
+  SET target from another table resolve silently, `NewUpdateManager(users).Set(posts.Col("title"),
+  x)` rendering `UPDATE "users" SET "title" = $1`, where it had rendered SQL every engine rejects.
+  Reproduced in session. Put to the operator (refuse, document and accept, or defer). **Operator's
+  answer: refuse mismatched targets.** Design: the managers check, in `toSQLCore` after the
+  transformers run (so what is checked is what renders), each SET target of an UPDATE and each
+  DO UPDATE SET target of an INSERT. A target `*nodes.Attribute` passes where its `Relation` is
+  nil, or shares the statement table's `nodes.RelationName` (alias or table name) or
+  `nodes.TableSourceName` (the underlying table, so `users.Col` against `users AS u` passes);
+  anything else fails with an error wrapping the exported `managers.ErrSetTargetTable`. Visitors
+  return strings and cannot refuse, so a caller rendering `Statement.Accept` directly bypasses the
+  check; that is stated on the error's doc comment.
+- Caller census for that change (a shared contract: `UpdateManager.ToSQL` and
+  `InsertManager.ToSQL` can now fail on a statement that rendered before). Command:
+  `grep -rn 'ToSQL(' cmd/repl/*.go` and
+  `grep -rn 'updateQuery.ToSQL\|insertQuery.ToSQL\|\.toSQLCore' --include='*.go' . | grep -v _test.go`.
+  Production callers: `cmd/repl/session.go:132` (insert) and `:137` (update), both returning the
+  error to the REPL's caller. Other callers are tests and the examples.
 
 ## Plan
 
@@ -83,6 +101,9 @@ Questions that fired, with the operator's answer:
   **Answer: fix it in this unit.**
 - Environment (step 1): the agent sandbox refuses httptest's loopback bind, so the verification
   ran in the operator's shell. Not a gate question: the operator ran the command handed over.
+- Review triage scope call (step 6): a SET target from another table now resolves silently.
+  Options offered: refuse mismatched targets, document and accept, defer. **Answer: refuse
+  mismatched targets.**
 
 What landed:
 - Testable examples, each with an `// Output:` block, in external test packages:

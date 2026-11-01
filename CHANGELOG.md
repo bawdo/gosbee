@@ -69,7 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `UPDATE ... SET` and `ON CONFLICT ... DO UPDATE SET` write each target
   column bare (`SET "name" = $1`). They wrote it table-qualified
   (`SET "users"."name" = $1`), which PostgreSQL and SQLite reject. The value
-  side of an assignment is unchanged.
+  side of an assignment is unchanged. Because the target is now bare, `ToSQL`
+  refuses a target column of another table with `managers.ErrSetTargetTable`
+  rather than letting it resolve to a column of the table being written.
 
 ## [v0.2.1] - 2026-10-27
 
