@@ -123,12 +123,12 @@ Either way, check that each file you downloaded is reported `OK` by name.
 
 ### The release itself
 
-Once immutable releases are on for this repository (they are switched on by
-`scripts/repo-settings.sh harden`, after the current release pipeline reaches
-`main`), a published release cannot have its tag moved or its assets added,
-replaced or deleted, and GitHub attests the release when it is published.
-Releases published before that carry no release attestation, so this check
-does not apply to them. For a later release:
+Immutable releases are on for this repository (switched on by
+`scripts/repo-settings.sh harden` on 2026-11-01), so a published release
+cannot have its tag moved or its assets added, replaced or deleted, and GitHub
+attests the release when it is published. Releases published before that
+(v0.2.1 and earlier) carry no release attestation, so this check does not
+apply to them. For a later release:
 
 ```bash
 gh release verify v<version> --repo bawdo/gosbee
@@ -158,9 +158,9 @@ dispatched from, and that branch's commit, as its source, not the tag. Both
 `--source-ref` and `--source-digest` fail for its assets. `--signer-workflow`
 still passes, but it matches `release.yml` as it stands on any branch, so on
 its own it does not bind the source at all. A failure there is a reason to ask
-in an issue, not to drop the flags. Once `scripts/repo-settings.sh harden` is
-applied, the publish job's `release` environment deploys only from a `v*` tag
-or from `main`, so `release.yml` as `main` has it cannot publish from a run
+in an issue, not to drop the flags. The publish job's `release` environment
+deploys only from a `v*` tag or from `main` (`scripts/repo-settings.sh
+harden`), so `release.yml` as `main` has it cannot publish from a run
 dispatched from another branch. A branch that edits the workflow can drop the
 environment, so this narrows mistakes rather than binding someone with write
 access; the tag check above is what binds.
