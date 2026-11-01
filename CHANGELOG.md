@@ -40,6 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   visitor (PostgreSQL, MySQL and SQLite) and each plugin (soft delete and
   OPA, including column masking of a `SELECT *`).
 
+- SECURITY.md explains how to verify a release: the signed tag on `main`,
+  `gh attestation verify` for a binary or SBOM (also offline with the attached
+  bundle), the checksums, the SBOMs, and the Go module through
+  sum.golang.org.
+
+- A code of conduct (Contributor Covenant 2.1), issue forms for bug reports
+  and feature requests, a pull request template and a CODEOWNERS file. Blank
+  issues are turned off, and security reports are pointed at private
+  reporting.
+
 ### Changed
 
 - The `CI OK` check is decided by an in-repo script, `scripts/ci-result.sh`,

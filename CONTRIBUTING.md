@@ -22,11 +22,13 @@ more expressive and powerful.
 - [Documentation](#documentation)
 - [Pull Request Process](#pull-request-process)
 - [Releasing](#releasing)
+- [Badges](#badges)
 
 ## Code of Conduct
 
-Be respectful, constructive, and collaborative. We're all here to build
-something useful together.
+This project follows the [Contributor Covenant 2.1](CODE_OF_CONDUCT.md). By
+taking part you agree to uphold it. Report unacceptable behaviour privately, as
+it describes.
 
 ## Getting Started
 
@@ -36,10 +38,11 @@ something useful together.
    cd gosbee
    ```
 
-2. **Install dependencies:**
+2. **Download dependencies:**
    ```bash
-   go mod tidy
+   make deps        # go mod download
    ```
+   `make help` lists every target.
 
 3. **Run the test suite to verify everything works:**
    ```bash
@@ -57,20 +60,19 @@ something useful together.
 
 ### Reporting Bugs
 
-Found a bug? Open an issue with:
-- A clear, descriptive title
-- Steps to reproduce the problem
-- Expected vs. actual behaviour
-- Go version and operating system
-- Example code if possible
+Found a bug? Open an issue with the **Bug report** form, which asks for a
+minimal program or REPL session, the SQL generated and the SQL you expected,
+the dialect, any plugins, and your gosbee and Go versions.
+
+A security problem (SQL injection, or a way around the soft delete or OPA
+plugins) is never a public issue: report it privately through
+[SECURITY.md](SECURITY.md).
 
 ### Suggesting Features
 
-Have an idea for a new feature? Open an issue with:
-- A clear description of the feature
-- Why it would be useful
-- Example usage (code or pseudocode)
-- Any implementation ideas (optional)
+Have an idea for a new feature? Open an issue with the **Feature request**
+form: describe the problem you want solved, and if you can, the Go you would
+like to write or the SQL you want generated.
 
 ### Improving Documentation
 
@@ -96,37 +98,30 @@ Code contributions might include:
 
 1. **Create a branch** for your work:
    ```bash
-   git checkout -b feature/your-feature-name
+   git checkout -b your-change
    ```
 
-2. **Make your changes** following the [Coding Standards](#coding-standards)
+2. **Make your changes** following the [Coding Standards](#coding-standards).
 
-3. **Write or update tests** to cover your changes
+3. **Write or update tests** to cover your changes.
 
-4. **Run the test suite:**
+4. **Run the quick checks** while you work:
    ```bash
-   go test ./...
+   make test        # go test ./...
+   make check       # gofmt -s check, go vet, golangci-lint, race tests
+   make fmt         # rewrite formatting with gofmt -s
    ```
 
 5. **Check test coverage** (optional):
    ```bash
-   # Generate coverage report in the coverage/ directory
-   go test -coverprofile=coverage/coverage.out ./...
-
-   # View coverage in terminal
-   go tool cover -func=coverage/coverage.out
-
-   # Or open an HTML coverage report in your browser
-   go tool cover -html=coverage/coverage.out
+   make coverage       # writes coverage/coverage.out and prints the summary
+   make coverage-html  # opens the HTML report in a browser
    ```
 
-6. **Pre-CI validation** (recommended before pushing):
+6. **Run the pre-CI validation** before pushing:
    ```bash
-   # Run all CI checks locally and get a success probability report
-   ./scripts/pre-ci-check.sh
-
-   # Auto-fix gofmt formatting issues, then re-run all checks
-   ./scripts/pre-ci-check.sh --fix gofmt
+   make pre-ci         # ./scripts/pre-ci-check.sh
+   make pre-ci-fix     # auto-fix gofmt formatting first, then run every check
    ```
 
    This script mimics the GitHub Actions workflow and runs 8 checks:
@@ -142,9 +137,12 @@ Code contributions might include:
    | 7 | Build | `go build` |
    | 8 | Vulnerability scan | `govulncheck` |
 
-   It generates a CI readiness report showing which checks passed/failed, the
-   overall success probability, and coverage trend (delta from the previous run).
-   Detailed logs are saved to `coverage/pre-ci-*.txt`.
+   It generates a CI readiness report showing which checks passed or failed,
+   the overall success probability, and coverage trend (delta from the
+   previous run). Detailed logs are saved to `coverage/pre-ci-*.txt`. CI runs
+   more than this, including `go mod tidy -diff`, shellcheck, the script
+   tests, the changelog check, zizmor and tests on macOS and the oldest
+   supported Go: see [Branch Rules](#branch-rules) for the full list.
 
    **Dependencies**
 
@@ -156,13 +154,9 @@ Code contributions might include:
    | `golangci-lint` | `brew install golangci-lint` |
    | `bc` | Pre-installed on macOS and Linux |
 
-5. **Run linters:**
-   ```bash
-   go vet ./...
-   go fmt ./...
-   ```
+7. **Update `CHANGELOG.md`** under `[Unreleased]` for any user-visible change.
 
-6. **Commit your changes** with clear commit messages in past tense:
+8. **Commit your changes**, signed, with clear commit messages in past tense:
    ```
    Added support for LATERAL JOIN in PostgreSQL visitor
 
@@ -171,7 +165,7 @@ Code contributions might include:
    - Updated PostgreSQL tests to cover LATERAL JOIN syntax
    ```
 
-7. **Push to your fork** and open a pull request
+9. **Push to your fork** and open a pull request.
 
 ## Project Structure
 
@@ -185,12 +179,13 @@ gosbee/
 │   └── opa/            # OPA policy integration (proof of concept)
 ├── cmd/
 │   └── repl/           # Interactive REPL
+├── internal/           # Private helpers (quoting, sqllex, testutil)
 ├── docs/
 │   ├── guide/          # User-facing documentation
 │   ├── development/    # Contributor documentation
-│   ├── design/         # Design decisions and architecture
-│   └── plans/          # Implementation plans and specs
-└── internal/           # Private helpers (not exported)
+│   └── workstreams/    # Multi-unit work records, with their specs and plans
+├── scripts/            # CI, release and pre-CI scripts, with their tests
+└── tools/              # Pinned Go tools (govulncheck, cyclonedx-gomod)
 ```
 
 ### Key Architecture Documents
@@ -273,14 +268,21 @@ For a complete guide, see:
 
 ### Visitor Pattern
 
-- The `Visitor` interface lives in `nodes/` to avoid circular dependencies
+- The `Visitor` interface lives in `nodes/node.go` to avoid circular
+  dependencies
 - Use the **outer-dispatch pattern**: `baseVisitor.outer` enables virtual method
   resolution for dialect-specific overrides
 - When adding a new node type, update:
-  - `Visitor` interface in `nodes/visitor.go`
-  - `baseVisitor` with a default implementation
-  - `DotVisitor` for AST visualisation
-  - All `stubVisitor` implementations in test files
+  - the `Visitor` interface in `nodes/node.go`
+  - `baseVisitor` in `visitors/visitor.go`, with a default implementation
+  - `DotVisitor` in `visitors/dot_visitor.go`, for AST visualisation
+  - `FormattingVisitor` in `visitors/formatting.go`
+  - the plugin AST `rewriter` in `plugins/walk.go`
+  - `StubVisitor` and `StubParamVisitor` in `internal/testutil/stub_visitor.go`
+  - the `stubVisitor` in `nodes/nodes_test.go`
+
+  `go build ./... && go vet ./...` names any implementation still missing the
+  new method.
 
 ## Testing
 
@@ -322,7 +324,12 @@ go test -cover ./...
 go test -run TestSelectManager_Where ./managers
 ```
 
-Current test count: **~1096 tests** across the entire codebase.
+### Examples
+
+Testable examples (`func ExampleXxx()` with an `// Output:` block) live in
+external test packages beside the code: `managers`, `visitors`,
+`plugins/softdelete` and `plugins/opa`. `go test` checks their output and
+pkg.go.dev shows them, so a new public pattern earns one.
 
 ### Fuzzing
 
@@ -395,9 +402,10 @@ Each plugin has its own README with:
 
 - **[REPL README](cmd/repl/README.md)** — interactive shell usage and commands
 
-### Design Documents (`docs/design/`)
+### Workstreams (`docs/workstreams/`)
 
-Architecture decisions, feature specifications, and design rationale.
+The records of larger work cut into several units, each with its briefs and,
+where a unit earned them, its specs and plans.
 
 ### When to Update Documentation
 
@@ -405,20 +413,25 @@ Architecture decisions, feature specifications, and design rationale.
 - **Plugin READMEs:** When adding plugin options or changing behaviour
 - **Architecture docs:** When making significant structural changes
 - **Code comments:** When the code isn't self-evident
-- **Examples:** When demonstrating a new pattern or feature
+- **Examples:** When demonstrating a new pattern or feature (see
+  [Examples](#examples))
 
 ## Pull Request Process
 
 1. **Ensure all tests pass** and linters are happy
 2. **Update documentation** if you've changed behaviour or added features
-3. **Write a clear PR description** that explains:
+3. **Fill in the pull request template**, and write a clear description
+   that explains:
    - What problem you're solving
    - How you've solved it
    - Any breaking changes (if applicable)
    - Links to related issues
 4. **Keep PRs focused:** one feature or fix per PR when possible
 5. **Respond to feedback** — reviews are collaborative, not adversarial
-6. **Be patient** — maintainers may take time to review
+6. **Be patient**: maintainers may take time to review
+
+`.github/CODEOWNERS` requests a review from the maintainer on every pull
+request opened by someone else.
 
 ### PR Title Format
 
@@ -577,6 +590,16 @@ rule admits only `v*` tags, and a tag ruleset. The workflow names no
 environment yet, since that unit creates it.
 
 Preview a release's notes locally with `scripts/changelog.sh notes v0.3.0`.
+
+## Badges
+
+The README carries CI, Codecov, Go reference, OpenSSF Scorecard and licence
+badges. The OpenSSF Best Practices badge is not there yet: it needs a project
+id, which exists only once the survey at
+<https://www.bestpractices.dev/en/projects/new> is started. When it is, add the
+badge to the README after the Scorecard badge, in the form
+`[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/<id>/badge)](https://www.bestpractices.dev/projects/<id>)`,
+and remove this paragraph.
 
 ## Questions?
 

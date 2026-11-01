@@ -1,9 +1,10 @@
 # gosbee
 
-[![CI](https://github.com/bawdo/gosbee/workflows/CI/badge.svg)](https://github.com/bawdo/gosbee/actions)
+[![CI](https://github.com/bawdo/gosbee/actions/workflows/ci.yml/badge.svg)](https://github.com/bawdo/gosbee/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/bawdo/gosbee/graph/badge.svg?token=5QEEOYCISD)](https://codecov.io/gh/bawdo/gosbee)
 [![GoDoc](https://pkg.go.dev/badge/github.com/bawdo/gosbee.svg)](https://pkg.go.dev/github.com/bawdo/gosbee)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bawdo/gosbee/badge)](https://scorecard.dev/viewer/?uri=github.com/bawdo/gosbee)
+[![Licence: MIT](https://img.shields.io/github/license/bawdo/gosbee?label=licence)](LICENSE)
 
 ![gosbee with plugins](gosbee_with_plugins.png)
 
@@ -352,6 +353,9 @@ See the [REPL guide](cmd/repl/README.md) for the full feature set.
 ### For Contributors
 
 - **[Contributing Guide](CONTRIBUTING.md)** — how to contribute to the project
+- **[Code of Conduct](CODE_OF_CONDUCT.md)**: Contributor Covenant 2.1
+- **[Security Policy](SECURITY.md)**: reporting a vulnerability and verifying
+  a release
 - **[Architecture](docs/development/architecture.md)** — core design patterns and
   visitor pattern
 - **[Writing Plugins](docs/development/writing-plugins.md)** — plugin development
@@ -384,7 +388,8 @@ this approach to SQL query building.
 ## Project Status
 
 gosbee has achieved **100% feature parity** with Ruby Arel's core SQL features.
-The library has ~1096 tests covering all major functionality.
+The test suite covers every node, manager, dialect visitor and plugin, with
+testable examples, fuzz targets and benchmarks alongside.
 
 Current focus areas:
 - Performance optimisation
