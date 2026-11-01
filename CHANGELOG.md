@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `gh attestation verify --bundle` can check a binary without the attestation
   API.
 
+- Each release attaches CycloneDX SBOMs, one for the module and one for each
+  REPL binary, listed in `SHA256SUMS` and so covered by the build provenance
+  attestation.
+
+- The release workflow checks that proxy.golang.org serves the tagged commit
+  and that sum.golang.org records the version.
+
 ### Changed
 
 - The `CI OK` check is decided by an in-repo script, `scripts/ci-result.sh`,

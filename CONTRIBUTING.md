@@ -410,8 +410,9 @@ request can merge once these checks pass:
   - `Lint and audit`: golangci-lint, shellcheck over `scripts/*.sh` (a pinned
     release, checked by sha256), the `ci-result.sh` tests,
     `go mod tidy -diff`, the changelog check, the release script tests
-    (`scripts/release-scripts_test.sh`), govulncheck and a zizmor audit of the
-    workflows
+    (`scripts/release-scripts_test.sh`, which cover the build with its SBOMs,
+    publishing and the module proxy check), govulncheck and a zizmor audit of
+    the workflows
   - `Test`: Linux on the oldest supported Go (`oldstable`) and the current one
     (`stable`), both with the race detector, plus macOS on `stable`.
 - `Analyze (go)` (CodeQL)
@@ -450,7 +451,7 @@ only place release notes are written.
    git tag -s v0.3.0 -m v0.3.0
    git push origin v0.3.0
    ```
-3. The `Release` workflow runs in three stages:
+3. The `Release` workflow runs in four stages:
    - **CI** runs first, on the tag itself (the whole CI workflow, called with
      `refs/tags/<tag>`).
    - **Build**, with a read-only token, refuses a tag name that is not
@@ -459,7 +460,11 @@ only place release notes are written.
      (`scripts/verify-tag.sh`), is on `main` and has a changelog section. It
      builds the REPL binaries for Linux and macOS on amd64 and arm64
      (`scripts/build-release.sh`), smoke tests the Linux amd64 one and writes
-     `SHA256SUMS`.
+     a CycloneDX SBOM for the module (`gosbee-repl_<tag>_module.cdx.json`) and
+     one per binary (`gosbee-repl_<tag>_<os>_<arch>.cdx.json`), with
+     `cyclonedx-gomod` pinned in `tools/go.mod`. `SHA256SUMS` lists every
+     binary and SBOM, so the provenance attestation covers the SBOMs too. A
+     failed SBOM fails the build.
    - **Publish**, the only job that can write, checks the binaries against
      `SHA256SUMS`, attests their build provenance and publishes through a
      draft (`scripts/publish-release.sh`): the draft is created with every
@@ -467,10 +472,18 @@ only place release notes are written.
      attached as `gosbee-repl_<tag>_provenance.intoto.jsonl`, so
      `gh attestation verify --bundle` can check a binary without the
      attestation API.
+   - **Proxy**, after publish and with no checkout, checks that
+     proxy.golang.org serves the version at the tagged commit and that
+     sum.golang.org records it (`scripts/check-module-proxy.sh`, retrying for
+     about a minute while the proxy fetches a new version). It runs after
+     publish, so it reports a problem rather than stopping the release. A
+     commit mismatch means the tag moved after the proxy first fetched it,
+     which nothing undoes: add a `retract` for the version to `go.mod` and
+     release a new tag.
 
    The release notes are that version's changelog section. A tag with a
    suffix (`v0.3.0-rc.1`) is published as a pre-release and is never marked
-   latest.
+   latest, and gets the same SBOMs and proxy check as any other.
 
 A published release is never changed, its notes included, so a changelog fix
 made after release lives in `CHANGELOG.md` only. Release tags (`v*`) cannot be
