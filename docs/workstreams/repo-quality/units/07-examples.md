@@ -170,6 +170,38 @@ candidates; both dismissed, none rewritten or deleted:
   `visitors/visitor.go`; still true.
 No correction written into a later unit's brief.
 
+Review (step 5): 3 lanes dispatched (security, correctness, brief), each a fresh subagent in its
+own detached worktree, all removed after reporting.
+
+Triage (step 6), counted from the lane reports in this session:
+- Security and correctness, the same finding: a SET target from another table resolves silently
+  once targets render bare. **Real**; reproduced in session (`UPDATE "users" SET "title" = $1`, no
+  error). Scope call put to the operator, answered refuse. Fixed in `f8647d0`:
+  `managers.ErrSetTargetTable`, checked in `UpdateManager` and `InsertManager` (DO UPDATE) after
+  the transformers run. Tests seen red on their assertions before the check existed.
+  Mutations, through `record-mutation.sh` (ledger in the session scratchpad):
+
+  ```
+  m2  set_target.go  `if sameRelation(...)` -> `if true || sameRelation(...)`
+      first --- FAIL: TestInsertOnConflictDoUpdateTargetFromAnotherTableRefused   KILLED
+  m3  insert_manager.go  DO UPDATE check guarded off with `false &&`
+      first --- FAIL: TestInsertOnConflictDoUpdateTargetFromAnotherTableRefused   KILLED
+  m4  set_target.go  `return src != "" && ...` -> `return false`
+      first none   SURVIVED  (invalid mutant: `src` unused, the build failed, no test ran)
+  m5  set_target.go  `return src != "" && ...` -> `return src != "" && false`
+      first --- FAIL: TestUpdateSetTargetSameTableAccepted   KILLED
+  ```
+
+- Brief: CHANGELOG's Fixed entry landed in the examples commit, not the fix commit. **Not acted
+  on**: the end state is correct and moving it would rewrite branch history for nothing.
+- Every other check the three lanes made came back clean (brief lane: every Item and criterion
+  met).
+
+Sweep re-run after the review fix (`sweep-docs.sh . --base workstream/repo-quality --claim 'SET
+"users"."name"'`): the same 2 candidates, both still dismissed for the reasons above. The getting
+started guide's UPDATE and DO UPDATE snippets (`docs/guide/getting-started.md:380`, `:417`) use
+same-table targets and show no output, so they stay true.
+
 For 08: the README and guides carry no example section pointing at pkg.go.dev; whether they should
 is 08's call. For 10: `ExampleNewFromServer*` bind a loopback port, as the OPA tests already do.
 
