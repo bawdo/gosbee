@@ -110,4 +110,60 @@ Review lanes: security, correctness, brief
 
 ## Outcome
 
+Close mode as run: auto. Commit grant given in conversation at open, for the session.
+
+Landed, all six Items:
+
+- SECURITY.md "Verifying a release": signed tag on `main` (`git verify-tag`,
+  `git merge-base --is-ancestor`, `git rev-parse '<tag>^{commit}'`), the key (`bawdo.gpg`, primary
+  `661B...82D1`, signing subkey `9954...EE78`, read from the real key and the v0.2.1 signature),
+  `gh attestation verify` with `--repo`, `--signer-workflow`, `--source-ref`, `--source-digest`,
+  `--deny-self-hosted-runners` and the `--bundle` variant, `sha256sum` / `shasum -a 256`, the SBOMs
+  and what they do not prove, the Go module via `go mod download` and sum.golang.org, and
+  "an attestation is provenance, not a security guarantee".
+- CODE_OF_CONDUCT.md: Contributor Covenant 2.1 from upstream, contact through private reporting.
+- `.github/ISSUE_TEMPLATE/{bug_report,feature_request,config}.yml`, `.github/PULL_REQUEST_TEMPLATE.md`,
+  `.github/CODEOWNERS` (`* @bawdo`).
+- README: CI badge on `actions/workflows/ci.yml/badge.svg`, licence badge, Scorecard badge kept,
+  CoC and security policy linked, stale test count removed.
+- CONTRIBUTING: CoC linked, facts corrected (see Decisions), Best Practices badge note in "Badges".
+- CHANGELOG `[Unreleased]` entries; `scripts/changelog.sh check` printed
+  `CHANGELOG.md is consistent (3 versions)`.
+
+Verification at step 1 (`WOMBAT_BASE_REF=workstream/repo-quality scripts/wombat-verify.sh`, in the
+agent sandbox), record at 137fb46, tree clean:
+
+```
+fmt pass | vet fail | lint fail | tidy fail | changelog pass | release-scripts fail | vuln fail
+zizmor fail | shellcheck pass | ci-result pass | fuzz-script pass | test fail
+```
+
+Every fail is the sandbox, not the diff: Go's build cache under `~/Library/Caches/go-build` is not
+writable ("operation not permitted"), uv's cache for zizmor is not writable, and vuln.go.dev is not
+on the network allowlist; the OPA tests also need loopback binding. This unit changes no Go, no
+script and no workflow. The green record that authorises the merge has to come from the operator's
+shell at step 7, as for unit 07. No gate was skipped: the script runs every gate every time.
+
+Lanes: 3, selected by `select-gates.sh`: security, correctness, brief. None skipped, no
+`unmatched` path.
+
+Secrets scan (`scan-secrets.sh .`): `scan clean: 14 files`.
+
+Sweep (`sweep-docs.sh . --base workstream/repo-quality --claim '~1096 tests'`): 6 candidates, all
+`touched` (the PR template, CHANGELOG, CODE_OF_CONDUCT, CONTRIBUTING, README, SECURITY), each
+written by this unit and read in full here; none rewritten further, none deleted. The claim matched
+nowhere else, and `grep -rn "nodes/visitor.go\|docs/design" . --include='*.md'` (workstreams
+excluded) found nothing. No correction written into a later brief: unit 09 (repo-settings) already
+owns the tag ruleset, environment and private reporting, which SECURITY.md and CONTRIBUTING name
+as unit 09's, unchanged in meaning.
+
+Next unit inherits: unit 09 should know SECURITY.md deliberately omits immutable releases, a tag
+ruleset and `gh release verify`; once 09 turns those on, SECURITY.md's "What an attestation proves"
+gains the server-side controls (caddy_shack's wording is the reference). CODE_OF_CONDUCT.md and
+the bug form both rely on private vulnerability reporting staying enabled.
+
 ## Not done, and why
+
+- `examples/before_after_example.go`, the stale commented-out sketch named in unit 07's correction,
+  is left in the tree. Deleting it is outside this unit's Items; the operator was asked at open and
+  has not ruled. It is not linked from any document. Operator to schedule.
