@@ -34,7 +34,64 @@ Review lanes: security, correctness, brief
 
 ## Decisions
 
+- **Re-cut.** Unit 02's handover said a re-cut is due before 03 or 09 opens. At open I put three
+  options to the operator. They answered the commit question and not that one, so 03 runs as
+  briefed: a plan that sits on top of the 02 plan. The re-cut (an implement unit that builds the
+  02 and 03 plans before 09) is still open and goes back to the operator at the hand back.
+- **The plan builds on 02's plan, not on today's `release.yml`.** Every task assumes 02's six tasks
+  have landed: `scripts/build-release.sh`, `scripts/publish-release.sh`,
+  `scripts/release-scripts_test.sh`, and the ci, build and publish jobs.
+- **SBOM tool: `cyclonedx-gomod` v1.12.0, through a `tool` directive in `tools/go.mod`. Format:
+  CycloneDX JSON, spec 1.6.** Why: it reads Go's own module graph (`mod`) and a binary's embedded
+  build info (`bin`), so it describes both the module and the exact modules linked into each REPL
+  binary. Build info survives `-s -w`. It is pinned by `tools/go.sum`, and Dependabot already
+  watches `/tools`, so it stays current without a new mechanism. It downloads nothing at run time.
+  Flags checked against the v1.12.0 source: `mod` has `-json -licenses -type -output-version
+  -output`, and `bin` has `-json -std -version`. Its module wants `go 1.26.0`, which matches
+  `tools/go.mod`. Rejected: syft through `anchore/sbom-action` (the action downloads a syft release
+  at run time, pinned by version rather than by hash, and it catalogues by filesystem heuristics
+  rather than Go's module graph); `spdx-sbom-generator` (unmaintained); a hand-rolled
+  `go version -m` dump (not a standard format). The brief allows either format, and this tool
+  writes CycloneDX only.
+- **SBOM assets.** `gosbee-repl_<tag>_module.cdx.json` (module and dependencies, with licences)
+  and one `gosbee-repl_<tag>_<os>_<arch>.cdx.json` per binary (including the standard library). Both
+  names sit inside 02's `gosbee-repl_<tag>_*` globs, so the artifact upload and
+  `publish-release.sh` take them unchanged. `SHA256SUMS` grows from four lines to nine, so
+  `subject-checksums` attests them.
+- **`actions/attest-sbom` not used.** The criterion is coverage by the `subject-checksums`
+  attestation, and a second attestation adds an action and another `id-token` use for no criterion.
+- **Proxy check as a script, delivered by artifact.** `scripts/check-module-proxy.sh` holds the
+  logic, so it gets fake `curl` tests and shellcheck. The criterion says the job has no checkout, so
+  the build job (read-only token, tag checkout) uploads the script as artifact `proxy-check` and the
+  proxy job downloads it and runs it with `bash`. Inline YAML was rejected because it cannot be tested.
+- **The proxy job checks the build job's `commit` output, not `GITHUB_SHA`.** On a dispatch re-run,
+  `GITHUB_SHA` is the dispatching branch's commit.
+- **Retry budget.** Proxy: up to 5 attempts, 5 seconds apart. Sumdb: up to 2. Every `curl` uses
+  `--max-time 5`. Worst case is 60 seconds across both endpoints (45 + 15), and the job's
+  `timeout-minutes` is 5. A hash mismatch is not retried, because the proxy never changes a
+  version's commit.
+- **Proxy job permissions: `contents: read`**, as go-blinkstick sets it. It writes nothing.
+- **Caller census** (before any edit, for the dist and `SHA256SUMS` contract):
+  `grep -n 'SHA256SUMS\|gosbee-repl_\|dist/\|subject-' docs/workstreams/repo-quality/plans/2026-11-01-release-pipeline.md .github/workflows/*.yml scripts/* CONTRIBUTING.md README.md`.
+  Readers: 02 plan lines 17, 101, 118-122, 152, 155-157, 180; `release.yml` lines 71-89 (rewritten
+  by 02); `CONTRIBUTING.md:443`. 02's `build_writes_four_binaries_and_sums` (4 lines) is amended
+  by this plan's Task 1.
+- **A defect found in 02's plan, not fixed here.** Line 101 compacts the bundle to
+  `dist/gosbee-repl_<tag>_provenance.intoto.jsonl` and then passes both `dist/gosbee-repl_<tag>_*`
+  and `<bundle>` to `gh release create`, so the bundle is listed twice. That is a closed unit's
+  plan, so it goes to the operator and the builder rather than being edited here. This plan names it
+  under "Notes for the builder".
+- **The handover's `--signer-workflow` note.** 02 asked that 03's verification docs pin
+  `--signer-workflow` to `release.yml`, but none of 03's Items or criteria writes verification
+  docs, and unit 07 documents what 02 and 03 ship. Left to 07 and carried forward in the handover.
+- **Reference.** go-blinkstick's `proxy` job at `89bfcec`, read from
+  `/Users/bawdo/working/projects/blinkstick-playground/go-blinkstick`. The live shapes were
+  confirmed against v0.2.1: `.info` carries `Origin.Hash` `57b8d43...`, which equals
+  `v0.2.1^{commit}`, and the sumdb lookup prints `github.com/bawdo/gosbee v0.2.1 h1:...`.
+
 ## Plan
+
+`docs/workstreams/repo-quality/plans/2026-11-01-release-supply-chain.md`
 
 ## Outcome
 
