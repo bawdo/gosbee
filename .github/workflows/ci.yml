@@ -8,14 +8,29 @@ on:
     branches: [ main ]
   pull_request:
   workflow_dispatch:
+  # release.yml calls this workflow to test the tag before building it.
+  workflow_call:
+    inputs:
+      ref:
+        description: Fully qualified ref to test, e.g. refs/tags/v1.2.3; empty tests the event's ref
+        type: string
+        required: false
+        default: ''
   # Weekly run so newly published vulnerabilities and toolchain changes
   # surface without waiting for a pull request.
   schedule:
     - cron: '17 3 * * 1'
 
 # Cancel superseded runs on a pull request, never on main.
+#
+# The "ci-" prefix is literal because in a called workflow the workflow name
+# names the caller, so caller and callee would share one group and deadlock.
+# inputs.ref comes first because on a dispatch re-run of a release github.ref
+# is the dispatching branch, so the release's CI would share
+# ci-refs/heads/main with ordinary pushes, and GitHub keeps only one pending
+# run per group.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ inputs.ref || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -28,6 +43,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           # Full history and tags, so the changelog check can see every tag.
           fetch-depth: 0
           persist-credentials: false
@@ -79,6 +95,11 @@ jobs:
       - name: Check CHANGELOG.md
         run: scripts/changelog.sh check
 
+      # Fake gh, so no network or token; the build cases cross-compile the
+      # four release binaries and smoke test the linux/amd64 one.
+      - name: Test the release scripts
+        run: bash scripts/release-scripts_test.sh
+
       - name: Scan for known vulnerabilities
         # Pinned in tools/go.mod, so Dependabot keeps it current.
         run: go -C tools tool govulncheck -C .. ./...
@@ -94,22 +115,20 @@ jobs:
     name: Test (${{ matrix.go }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    permissions:
-      contents: read
-      id-token: write # Codecov upload via OIDC, no token secret
     strategy:
       fail-fast: false
       matrix:
         # oldstable is the floor go.mod declares; stable is the current release.
         include:
           - { os: ubuntu-latest, go: oldstable, race: true }
-          - { os: ubuntu-latest, go: stable, race: true, coverage: true }
+          - { os: ubuntu-latest, go: stable, race: true }
           - { os: macos-latest, go: stable }
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
 
       - name: Set up Go
@@ -127,27 +146,13 @@ jobs:
       - name: Run tests
         env:
           RACE: ${{ matrix.race && 'true' || 'false' }}
-          COVERAGE: ${{ matrix.coverage && 'true' || 'false' }}
         run: |
           args=(-count=1 -shuffle=on)
           if [ "$RACE" = true ]; then
             args+=(-race)
           fi
-          if [ "$COVERAGE" = true ]; then
-            COVERPKG=$(go list ./... | grep -v testutil | tr '\n' ',' | sed 's/,$//')
-            args+=(-coverprofile=coverage.txt -covermode=atomic -coverpkg="$COVERPKG")
-          fi
           go test "${args[@]}" ./...
         shell: bash
-
-      - name: Upload coverage to Codecov
-        if: matrix.coverage
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          use_oidc: true
-          files: ./coverage.txt
-          fail_ci_if_error: false
-          verbose: true
 
   # The single required check, so the main ruleset never has to track job or
   # matrix names. Every job in needs must pass except those the event skips on
@@ -166,6 +171,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
 
       - name: Fail unless every expected job passed

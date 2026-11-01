@@ -1,0 +1,61 @@
+name: Coverage
+
+# Measures test coverage and uploads it to Codecov. This lives outside ci.yml
+# because release.yml calls ci.yml, and a called workflow cannot be granted
+# id-token unless the caller grants it too. Keeping the upload here means no
+# job in the release chain except publish ever holds id-token.
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on a pull request, never on main.
+concurrency:
+  group: coverage-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  coverage:
+    name: Coverage (stable, ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # Codecov upload via OIDC, no token secret
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      # -count=1 stops the restored build cache from replaying earlier results.
+      # -shuffle=on randomises test order; a failing run prints its seed.
+      - name: Run tests with coverage
+        run: |
+          COVERPKG=$(go list ./... | grep -v testutil | tr '\n' ',' | sed 's/,$//')
+          go test -count=1 -shuffle=on -race -coverprofile=coverage.txt -covermode=atomic \
+            -coverpkg="$COVERPKG" ./...
+        shell: bash
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          use_oidc: true
+          files: ./coverage.txt
+          fail_ci_if_error: false
+          verbose: true
