@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
-# Tests for the scripts release.yml runs: verify-tag.sh, publish-release.sh
-# and build-release.sh. Every gh call goes to a fake gh put first on PATH,
-# which logs its arguments and answers from canned files, so nothing here
-# touches the network. Prints "ok <name>" per case and exits non-zero on the
+# Tests for the scripts release.yml runs: verify-tag.sh, publish-release.sh,
+# check-module-proxy.sh and build-release.sh. Every gh and curl call goes to
+# a fake put first on PATH, which logs its arguments and answers from canned
+# files (and sleep to one that returns at once), so nothing here touches the
+# network. Prints "ok <name>" per case and exits non-zero on the
 # first failure, with a line starting "FAIL". The build cases cross-compile
-# four binaries, so they run last and take a while.
+# four binaries and write their SBOMs, so they run last and take a while.
 #
 # Usage: scripts/release-scripts_test.sh
 
@@ -365,13 +366,243 @@ for log in "$ROOT"/publish_*/gh.log; do
 done
 echo "ok $name"
 
+# The fake curl and sleep for check-module-proxy.sh, in their own directory
+# so no other case sees them. FAKE_CURL_DIR holds:
+#   proxy.body    what a proxy.golang.org URL answers
+#   sumdb.body    what a sum.golang.org URL answers
+#   proxy.fail    when present, the number of proxy calls that fail (exit 22)
+#                 before one answers; "always" fails every call
+#   sumdb.fail    the same for sum.golang.org
+#   curl.log      one line per curl call, the arguments joined by spaces
+#   sleep.log     one line per sleep call, its arguments
+mkdir -p "$ROOT/net"
+cat > "$ROOT/net/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "$*" >> "$FAKE_CURL_DIR/curl.log"
+url="${*: -1}"
+case "$url" in
+    https://proxy.golang.org/*) kind=proxy ;;
+    https://sum.golang.org/*) kind=sumdb ;;
+    *)
+        echo "fake curl: unexpected URL: $url" >&2
+        exit 2
+        ;;
+esac
+calls=$(grep -c "$kind" "$FAKE_CURL_DIR/curl.log" || true)
+if [ -f "$FAKE_CURL_DIR/$kind.fail" ]; then
+    fails=$(cat "$FAKE_CURL_DIR/$kind.fail")
+    if [ "$fails" = always ] || [ "$calls" -le "$fails" ]; then
+        echo "curl: (22) The requested URL returned error: 404" >&2
+        exit 22
+    fi
+fi
+cat "$FAKE_CURL_DIR/$kind.body"
+EOF
+cat > "$ROOT/net/sleep" <<'EOF'
+#!/usr/bin/env bash
+echo "$*" >> "$FAKE_CURL_DIR/sleep.log"
+EOF
+chmod +x "$ROOT/net/curl" "$ROOT/net/sleep"
+
+MODULE=github.com/bawdo/gosbee
+C=c0ffee0123456789abcdef0123456789abcdef01
+D=d00d000123456789abcdef0123456789abcdef02
+PROXY_URL="https://proxy.golang.org/$MODULE/@v/v0.3.0.info"
+SUMDB_URL="https://sum.golang.org/lookup/$MODULE@v0.3.0"
+
+# info TAG HASH: a proxy .info body shaped like the live one.
+info() {
+    printf '{"Version":"%s","Time":"2026-11-01T00:00:00Z","Origin":{"VCS":"git","URL":"https://github.com/bawdo/gosbee","Hash":"%s","Ref":"refs/tags/%s"}}\n' \
+        "$1" "$2" "$1"
+}
+
+# sumdb TAG: a sum.golang.org lookup body recording TAG.
+sumdb() {
+    printf '%s\n' 4242 \
+        "$MODULE $1 h1:Mh2nYLfrlAZbXt7OfUmmanBF91Mv0Aqoqf8MtRVfXA0=" \
+        "$MODULE $1/go.mod h1:eKg3XoAuUt0Y8jT9sVGK3wHBDmdPrTmuRhCnjS1Bxek=" \
+        "" "go.sum database tree" 4243 "PlusDxqVTUm8qLSgZEvp2ozG6v+0yhj3k1GfMBPCPEk=" "" \
+        "— sum.golang.org Az3grlGJGVZtkJXGvMe9VTRtmXsdNk3dwnRtd2Nf7ZHTHvjQ="
+}
+
+# proxy_case NAME [TAG] [HASH]: a directory for one case, whose proxy serves
+# TAG (default v0.3.0) at HASH (default C) and whose sumdb records TAG.
+proxy_case() {
+    local dir="$ROOT/$1" tag="${2:-v0.3.0}"
+    mkdir -p "$dir"
+    : > "$dir/curl.log"
+    : > "$dir/sleep.log"
+    info "$tag" "${3:-$C}" > "$dir/proxy.body"
+    sumdb "$tag" > "$dir/sumdb.body"
+    echo "$dir"
+}
+
+# run_proxy DIR ARGS...: runs check-module-proxy.sh with the fake curl and
+# sleep first on PATH, capturing OUT, ERR and CODE.
+run_proxy() {
+    local dir="$1"
+    shift
+    CODE=0
+    OUT=$(PATH="$ROOT/net:$PATH" FAKE_CURL_DIR="$dir" bash "$SCRIPTS/check-module-proxy.sh" "$@" \
+        2>"$dir/.stderr") || CODE=$?
+    ERR=$(cat "$dir/.stderr")
+}
+
+# calls DIR HOST: how many curl calls went to HOST.
+calls() {
+    grep -c "https://$2/" "$1/curl.log" || true
+}
+
+name=proxy_accepts_matching_commit
+dir=$(proxy_case "$name")
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+[ "$OUT" = "check-module-proxy: proxy.golang.org has $MODULE@v0.3.0 at $C
+check-module-proxy: sum.golang.org records $MODULE@v0.3.0" ] || fail "$name" "wrong output"
+[ "$(cat "$dir/curl.log")" = "-fsS --max-time 5 $PROXY_URL
+-fsS --max-time 5 $SUMDB_URL" ] || fail "$name" "wrong curl calls: $(cat "$dir/curl.log")"
+[ ! -s "$dir/sleep.log" ] || fail "$name" "slept"
+echo "ok $name"
+
+name=proxy_retries_then_succeeds
+dir=$(proxy_case "$name")
+echo 2 > "$dir/proxy.fail"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+[ "$(calls "$dir" proxy.golang.org)" = 3 ] || fail "$name" "expected 3 proxy calls: $(cat "$dir/curl.log")"
+[ "$(cat "$dir/sleep.log")" = "5
+5" ] || fail "$name" "expected two 5 second sleeps: $(cat "$dir/sleep.log")"
+echo "ok $name"
+
+name=proxy_gives_up_after_five
+dir=$(proxy_case "$name")
+echo always > "$dir/proxy.fail"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "::error::proxy.golang.org has no $MODULE@v0.3.0 after 5 attempts" ] || fail "$name" "wrong output"
+[ "$(calls "$dir" proxy.golang.org)" = 5 ] || fail "$name" "expected 5 proxy calls: $(cat "$dir/curl.log")"
+[ "$(calls "$dir" sum.golang.org)" = 0 ] || fail "$name" "called sumdb"
+echo "ok $name"
+
+# The proxy keeps the first commit it saw for a version, so a mismatch never
+# goes away and is not retried.
+name=proxy_rejects_moved_tag
+dir=$(proxy_case "$name" v0.3.0 "$D")
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "::error::proxy.golang.org has $MODULE@v0.3.0 at $D, the tag points at $C" ] || fail "$name" "wrong output"
+[ "$(calls "$dir" proxy.golang.org)" = 1 ] || fail "$name" "retried a mismatch: $(cat "$dir/curl.log")"
+[ "$(calls "$dir" sum.golang.org)" = 0 ] || fail "$name" "called sumdb"
+[ ! -s "$dir/sleep.log" ] || fail "$name" "slept"
+echo "ok $name"
+
+name=proxy_rejects_missing_origin
+dir=$(proxy_case "$name")
+echo '{"Version":"v0.3.0","Time":"2026-11-01T00:00:00Z"}' > "$dir/proxy.body"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "::error::proxy.golang.org has $MODULE@v0.3.0 at unknown, the tag points at $C" ] || fail "$name" "wrong output"
+echo "ok $name"
+
+# The hash reaches the job log, where a line starting "::" is a workflow
+# command, so only a commit hash is ever printed.
+name=proxy_rejects_hostile_hash
+dir=$(proxy_case "$name")
+jq -n --arg h "$D"$'\n::warning::injected' '{Version: "v0.3.0", Origin: {VCS: "git", Hash: $h}}' > "$dir/proxy.body"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "::error::proxy.golang.org has $MODULE@v0.3.0 at unknown, the tag points at $C" ] || fail "$name" "wrong output"
+echo "ok $name"
+
+name=proxy_rejects_bad_json
+dir=$(proxy_case "$name")
+echo 'not json' > "$dir/proxy.body"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "::error::proxy.golang.org returned unreadable JSON for $MODULE@v0.3.0" ] || fail "$name" "wrong output"
+[ "$(calls "$dir" sum.golang.org)" = 0 ] || fail "$name" "called sumdb"
+echo "ok $name"
+
+name=sumdb_miss_fails
+dir=$(proxy_case "$name")
+printf '%s\n' 4242 "$MODULE v0.3.0/go.mod h1:eKg3XoAuUt0Y8jT9sVGK3wHBDmdPrTmuRhCnjS1Bxek=" > "$dir/sumdb.body"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$OUT" = "check-module-proxy: proxy.golang.org has $MODULE@v0.3.0 at $C
+::error::sum.golang.org has no record of $MODULE@v0.3.0 after 2 attempts" ] || fail "$name" "wrong output"
+[ "$(calls "$dir" sum.golang.org)" = 2 ] || fail "$name" "expected 2 sumdb calls: $(cat "$dir/curl.log")"
+echo "ok $name"
+
+# A record of another version, or of another module, that merely contains
+# the tag or the module never satisfies the check.
+name=sumdb_rejects_other_version
+for body in "$(sumdb v0.3.0-rc.1)" "$(sumdb v0.3.0 | sed "s|^$MODULE |$MODULE/sub |")" \
+    "$(sumdb v0.3.0 | sed 's| h1:| x1:|')" "$(sumdb v0.3.0 | sed "s|^$MODULE v0.3.0 |$MODULE v0.3.0x |")"; do
+    dir=$(proxy_case "$name")
+    printf '%s\n' "$body" > "$dir/sumdb.body"
+    run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+    [ "$CODE" -eq 1 ] || fail "$name" "expected exit 1 for: $body"
+    grep -qxF "::error::sum.golang.org has no record of $MODULE@v0.3.0 after 2 attempts" <<<"$OUT" \
+        || fail "$name" "wrong output for: $body"
+    rm -rf "$dir"
+done
+echo "ok $name"
+
+name=proxy_accepts_prerelease
+dir=$(proxy_case "$name" v0.3.0-rc.1)
+run_proxy "$dir" "$MODULE" v0.3.0-rc.1 "$C"
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+[ "$(cat "$dir/curl.log")" = "-fsS --max-time 5 https://proxy.golang.org/$MODULE/@v/v0.3.0-rc.1.info
+-fsS --max-time 5 https://sum.golang.org/lookup/$MODULE@v0.3.0-rc.1" ] || fail "$name" "wrong curl calls: $(cat "$dir/curl.log")"
+echo "ok $name"
+
+name=proxy_rejects_bad_args
+usage="check-module-proxy: usage: check-module-proxy.sh <module> vX.Y.Z[-suffix] <40-hex commit>"
+# shellcheck disable=SC2016 # the $(id) is a literal hostile name, never expanded
+for args in "$MODULE|v0.3.0;id|$C" "$MODULE|"'v0.3.0$(id)'"|$C" "$MODULE|main|$C" "github.com/Bawdo/gosbee|v0.3.0|$C" \
+    "$MODULE|v0.3.0|abc123" "$MODULE|v0.3.0|$(tr a-f A-F <<<"$C")" "gosbee|v0.3.0|$C" "$MODULE|v0.3.0" "$MODULE|v0.3.0|$C|extra" \
+    "$MODULE|v0.3.0|$C"$'\n'"x" "../x/y|v0.3.0|$C" "github.com/bawdo/../x|v0.3.0|$C" "github.com/bawdo/gosbee.|v0.3.0|$C"; do
+    IFS='|' read -r -d '' -a argv < <(printf '%s' "$args") || true
+    dir=$(proxy_case "$name")
+    run_proxy "$dir" "${argv[@]}"
+    expect_refusal "$name ($args)" "$usage"
+    [ ! -s "$dir/curl.log" ] || fail "$name ($args)" "called curl: $(cat "$dir/curl.log")"
+    rm -rf "$dir"
+done
+echo "ok $name"
+
+# The worst case is bounded: 4 waits for the proxy and 1 for sumdb, and 7
+# calls of at most 5 seconds each, so about 60 seconds in all.
+name=proxy_time_is_bounded
+dir=$(proxy_case "$name")
+echo 4 > "$dir/proxy.fail"
+echo always > "$dir/sumdb.fail"
+run_proxy "$dir" "$MODULE" v0.3.0 "$C"
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+[ "$(awk '{ s += $1 } END { print s }' "$dir/sleep.log")" = 25 ] || fail "$name" "slept: $(cat "$dir/sleep.log")"
+[ "$(wc -l < "$dir/curl.log" | tr -d ' ')" = 7 ] || fail "$name" "expected 7 calls: $(cat "$dir/curl.log")"
+! grep -v -- '^-fsS --max-time 5 ' "$dir/curl.log" || fail "$name" "a call lacks -fsS --max-time 5"
+echo "ok $name"
+
 # The build runs in a copy of the committed tree, so the repository's own
 # dist/ and worktree list are never touched. The working tree's
 # build-release.sh is the one run, so an uncommitted change to it is what is
 # tested.
+#
+# The copy is its own git repository with an annotated v0.0.0-test tag on its
+# only commit, as the release checkout of a tag is, because cyclonedx-gomod
+# reads the module SBOM's version from the tag at HEAD.
 BUILD="$ROOT/build"
 mkdir -p "$BUILD"
 git -C "$REPO" archive HEAD | tar -x -C "$BUILD"
+# The tools module is what runs cyclonedx-gomod, so its working tree copy is
+# used too, as the script's is.
+cp "$REPO/tools/go.mod" "$REPO/tools/go.sum" "$BUILD/tools/"
+git init -q -b main "$BUILD"
+"${G[@]}" -C "$BUILD" add -A
+"${G[@]}" -C "$BUILD" commit -q -m "Release copy"
+"${G[@]}" -C "$BUILD" tag -a v0.0.0-test -m v0.0.0-test
 
 # run_build ARGS...: runs build-release.sh from the build copy, capturing OUT,
 # ERR and CODE.
@@ -402,17 +633,25 @@ expect_refusal "$name" "build-release: dist/ already exists; remove it first"
 rm -rf "$BUILD/dist"
 echo "ok $name"
 
-name=build_writes_four_binaries_and_sums
+name=build_writes_binaries_sboms_and_sums
 run_build v0.0.0-test
 [ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
-expected="SHA256SUMS
-gosbee-repl_v0.0.0-test_darwin_amd64
+assets="gosbee-repl_v0.0.0-test_darwin_amd64
+gosbee-repl_v0.0.0-test_darwin_amd64.cdx.json
 gosbee-repl_v0.0.0-test_darwin_arm64
+gosbee-repl_v0.0.0-test_darwin_arm64.cdx.json
 gosbee-repl_v0.0.0-test_linux_amd64
-gosbee-repl_v0.0.0-test_linux_arm64"
+gosbee-repl_v0.0.0-test_linux_amd64.cdx.json
+gosbee-repl_v0.0.0-test_linux_arm64
+gosbee-repl_v0.0.0-test_linux_arm64.cdx.json
+gosbee-repl_v0.0.0-test_module.cdx.json"
+expected="SHA256SUMS
+$assets"
 actual=$(cd "$BUILD/dist" && find . -mindepth 1 | sed 's|^\./||' | LC_ALL=C sort)
 [ "$actual" = "$expected" ] || fail "$name" "dist/ holds: $(tr '\n' ' ' <<<"$actual")"
-[ "$(wc -l < "$BUILD/dist/SHA256SUMS" | tr -d ' ')" = 4 ] || fail "$name" "expected four checksum lines"
+[ "$(wc -l < "$BUILD/dist/SHA256SUMS" | tr -d ' ')" = 9 ] || fail "$name" "expected nine checksum lines"
+[ "$(sed 's/^[0-9a-f]\{64\}  //' "$BUILD/dist/SHA256SUMS")" = "$assets" ] \
+    || fail "$name" "SHA256SUMS does not list each asset once, by name: $(cat "$BUILD/dist/SHA256SUMS")"
 if command -v sha256sum >/dev/null 2>&1; then
     (cd "$BUILD/dist" && sha256sum -c --quiet SHA256SUMS) || fail "$name" "checksums do not match"
 else
@@ -431,6 +670,10 @@ for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
     # binary: it defines no symbols (a darwin one still lists its imports, U).
     defined=$(go tool nm "$binary" 2>/dev/null | grep -v ' U ' || true)
     [ -z "$defined" ] || fail "$name" "$target is not stripped"
+    # Each binary's SBOM is of that binary: its target is in every purl.
+    jq -e --arg q "goarch=${target#*_}&goos=${target%_*}" \
+        '[.components[].purl | select(contains($q) | not)] == []' "$binary.cdx.json" >/dev/null \
+        || fail "$name" "the SBOM for $target describes another target"
 done
 grep -qF "smoke tested gosbee-repl_v0.0.0-test_$(go env GOHOSTOS)_$(go env GOHOSTARCH)" <<<"$OUT" \
     || fail "$name" "no smoke test reported"
@@ -439,6 +682,73 @@ echo "ok $name"
 # The case above built a pre-release tag end to end.
 name=build_accepts_prerelease_tag
 [ -f "$BUILD/dist/gosbee-repl_v0.0.0-test_linux_amd64" ] || fail "$name" "no binary carries v0.0.0-test"
+echo "ok $name"
+
+# module_version PATH: the version go list reports for a dependency of the
+# main module.
+module_version() {
+    (cd "$REPO" && go list -m -f '{{.Version}}' "$1")
+}
+
+# has_purl NAME FILE PURL_PREFIX: asserts some component's purl starts with
+# PURL_PREFIX followed by "?" (the qualifiers) or the end.
+has_purl() {
+    jq -e --arg p "$3" 'any(.components[].purl; . == $p or startswith($p + "?"))' "$2" >/dev/null \
+        || fail "$1" "$2 has no component $3"
+}
+
+name=build_module_sbom_describes_module
+sbom="$BUILD/dist/gosbee-repl_v0.0.0-test_module.cdx.json"
+jq -e '.bomFormat == "CycloneDX" and .specVersion == "1.6"' "$sbom" >/dev/null || fail "$name" "not CycloneDX 1.6"
+jq -e '.metadata.component.type == "library"' "$sbom" >/dev/null || fail "$name" "main component is not a library"
+jq -e '.metadata.component.purl | startswith("pkg:golang/github.com/bawdo/gosbee@v0.0.0-test?")' "$sbom" >/dev/null \
+    || fail "$name" "main component is not github.com/bawdo/gosbee@v0.0.0-test: $(jq -r .metadata.component.purl "$sbom")"
+has_purl "$name" "$sbom" "pkg:golang/github.com/jackc/pgx/v5@$(module_version github.com/jackc/pgx/v5)"
+has_purl "$name" "$sbom" "pkg:golang/modernc.org/sqlite@$(module_version modernc.org/sqlite)"
+# Detected licences are evidence, not assertions (cyclonedx-gomod's default).
+jq -e 'any(.components[]; (.evidence.licenses // []) != [])' "$sbom" >/dev/null || fail "$name" "no component has a licence"
+echo "ok $name"
+
+name=build_binary_sbom_describes_binary
+sbom="$BUILD/dist/gosbee-repl_v0.0.0-test_linux_amd64.cdx.json"
+jq -e '.bomFormat == "CycloneDX" and .specVersion == "1.6"' "$sbom" >/dev/null || fail "$name" "not CycloneDX 1.6"
+jq -e '.metadata.component.version == "v0.0.0-test"' "$sbom" >/dev/null || fail "$name" "main component is not v0.0.0-test"
+has_purl "$name" "$sbom" "pkg:golang/github.com/ergochat/readline@$(module_version github.com/ergochat/readline)"
+jq -e 'any(.components[]; .name == "std" and (.purl | startswith("pkg:golang/std@go")))' "$sbom" >/dev/null \
+    || fail "$name" "no standard library component"
+echo "ok $name"
+
+# A go that fails every cyclonedx-gomod run and is the real go otherwise.
+REAL_GO=$(command -v go)
+mkdir -p "$ROOT/sbom-fails"
+cat > "$ROOT/sbom-fails/go" <<EOF
+#!/usr/bin/env bash
+case " \$* " in *cyclonedx-gomod*) exit 3 ;; esac
+exec "$REAL_GO" "\$@"
+EOF
+chmod +x "$ROOT/sbom-fails/go"
+
+name=build_fails_when_sbom_fails
+rm -rf "$BUILD/dist"
+PATH="$ROOT/sbom-fails:$PATH" run_build v0.0.0-test
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+grep -qxF "build-release: SBOM generation failed for gosbee-repl_v0.0.0-test_module.cdx.json" <<<"$ERR" \
+    || fail "$name" "no SBOM failure reported"
+[ ! -e "$BUILD/dist/SHA256SUMS" ] || fail "$name" "wrote SHA256SUMS"
+echo "ok $name"
+
+# cyclonedx-gomod names the module SBOM's version after a tag at HEAD, and a
+# commit can carry more than one (a pre-release and its final release). An
+# SBOM naming any version but the tag being built is refused.
+name=build_refuses_module_sbom_of_other_version
+rm -rf "$BUILD/dist"
+"${G[@]}" -C "$BUILD" tag -d v0.0.0-test >/dev/null
+"${G[@]}" -C "$BUILD" tag -a v0.0.0-other -m v0.0.0-other
+run_build v0.0.0-test
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+grep -qxF "build-release: gosbee-repl_v0.0.0-test_module.cdx.json names version v0.0.0-other, not v0.0.0-test" <<<"$ERR" \
+    || fail "$name" "no version mismatch reported"
+[ ! -e "$BUILD/dist/SHA256SUMS" ] || fail "$name" "wrote SHA256SUMS"
 echo "ok $name"
 
 echo "all release script tests passed"

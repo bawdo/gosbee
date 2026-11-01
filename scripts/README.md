@@ -124,8 +124,13 @@ workflow's build job runs it.
 It builds `dist/gosbee-repl_<tag>_<os>_<arch>` for Linux and macOS on amd64
 and arm64 with `CGO_ENABLED=0 go build -trimpath -ldflags='-s -w'`, smoke
 tests the binary for the host (it must start on the sqlite engine and exit
-cleanly) and writes `dist/SHA256SUMS`. It refuses a malformed tag and an
-existing `dist/` before building anything.
+cleanly), writes CycloneDX JSON 1.6 SBOMs and then `dist/SHA256SUMS` listing
+every binary and SBOM. The SBOMs come from `cyclonedx-gomod`, pinned in
+`tools/go.mod`: `dist/gosbee-repl_<tag>_module.cdx.json` for the module (its
+version, read from the tag at HEAD, must be `<tag>`) and
+`dist/gosbee-repl_<tag>_<os>_<arch>.cdx.json` for each binary. It refuses a
+malformed tag and an existing `dist/` before building anything, and a failed
+SBOM stops it before `SHA256SUMS` is written. It needs `jq`.
 
 **Tests**: `./scripts/release-scripts_test.sh`.
 
@@ -150,9 +155,31 @@ and is never marked latest.
 
 **Tests**: `./scripts/release-scripts_test.sh`.
 
+## check-module-proxy.sh
+
+**Purpose**: Checks that proxy.golang.org serves a released version at its
+tagged commit and that sum.golang.org records it. The `Release` workflow's
+proxy job runs it after publishing.
+
+**Usage**:
+```bash
+./scripts/check-module-proxy.sh github.com/bawdo/gosbee v0.3.0 "$(git rev-parse 'v0.3.0^{commit}')"
+```
+
+It refuses a module path that is not lower case, a malformed tag and anything
+but a 40-hex commit before any request. It asks
+`https://proxy.golang.org/<module>/@v/<tag>.info` up to 5 times and
+`https://sum.golang.org/lookup/<module>@<tag>` up to 2, 5 seconds apart, with
+`curl -fsS --max-time 5`, so it gives up within about a minute. A commit
+mismatch is never retried: it means the tag moved after the proxy fetched it,
+which needs a `retract` and a new tag. A failure is one `::error::` line on
+stdout. It needs `curl` and `jq`.
+
+**Tests**: `./scripts/release-scripts_test.sh`.
+
 ## release-scripts_test.sh
 
-**Purpose**: Tests `verify-tag.sh`, `publish-release.sh` and
-`build-release.sh`. Every `gh` call goes to a fake `gh`, so it needs no
-network or token. The build cases cross-compile the four binaries, so they run
-last. Run by CI and by `wombat-verify.sh`. It needs `jq` and Go.
+**Purpose**: Tests `verify-tag.sh`, `publish-release.sh`,
+`check-module-proxy.sh` and `build-release.sh`. Every `gh` and `curl` call
+goes to a fake, so it needs no network or token. The build cases cross-compile the four binaries and write their
+SBOMs, so they run last. Run by CI and by `wombat-verify.sh`. It needs `jq` and Go.

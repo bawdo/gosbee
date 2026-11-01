@@ -5,10 +5,13 @@ name: Release
 # ref). The build job then checks the tag is annotated, signed (GitHub
 # verifies the signature) and on main, and that CHANGELOG.md is consistent.
 # The release notes are the version's changelog section, never written by
-# hand. REPL binaries for linux and darwin on amd64 and arm64 are built,
-# smoke tested and listed in SHA256SUMS. The publish job attests them with
-# build provenance and attaches the attestation's Sigstore bundle as
-# gosbee-repl_<tag>_provenance.intoto.jsonl.
+# hand. REPL binaries for linux and darwin on amd64 and arm64 are built and
+# smoke tested, CycloneDX SBOMs are written for the module and for each
+# binary, and all of them are listed in SHA256SUMS. The publish job attests
+# that set with build provenance and attaches the attestation's Sigstore
+# bundle as gosbee-repl_<tag>_provenance.intoto.jsonl. Last, the proxy job
+# checks that proxy.golang.org serves the tagged commit and sum.golang.org
+# records the version.
 #
 # Only the publish job can write to the repository, and it checks out nothing
 # but scripts/publish-release.sh and runs no Go and no dependency. The build
@@ -60,6 +63,9 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    outputs:
+      # The tagged commit, for the proxy job.
+      commit: ${{ steps.tagged.outputs.commit }}
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
 
@@ -82,6 +88,7 @@ jobs:
           ref: refs/tags/${{ inputs.tag || github.ref_name }}
 
       - name: Check the tag is on main
+        id: tagged
         run: |
           set -euo pipefail
           commit=$(git rev-parse "refs/tags/$TAG^{commit}")
@@ -93,6 +100,7 @@ jobs:
             echo "::error::$TAG points at a commit that is not on main"
             exit 1
           fi
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Check the tag is signed
         env:
@@ -118,16 +126,26 @@ jobs:
       - name: Verify module checksums
         run: go mod verify
 
-      - name: Build and smoke test the binaries
+      - name: Build and smoke test the binaries, and write their SBOMs
         run: scripts/build-release.sh "$TAG"
 
-      - name: Keep the binaries for the publish job
+      - name: Keep the binaries and SBOMs for the publish job
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: |
             dist/gosbee-repl_*
             dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 1
+
+      # The proxy job has no checkout, so it runs the script from this job's
+      # read-only checkout of the tag.
+      - name: Keep the proxy check for the proxy job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: proxy-check
+          path: scripts/check-module-proxy.sh
           if-no-files-found: error
           retention-days: 1
 
@@ -187,3 +205,33 @@ jobs:
           GH_REPO: ${{ github.repository }}
           BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
         run: scripts/publish-release.sh "$TAG" notes/notes.md "$BUNDLE_PATH"
+
+  # Runs after publish, so its failure cannot stop the release, only report
+  # it. A commit mismatch means the tag moved after the proxy fetched it,
+  # which nothing undoes: the version needs a retract in go.mod and a new
+  # tag. The job has no checkout and no Go: the script comes from the build
+  # job's read-only checkout of the tag, and the commit is the build job's
+  # output, so a dispatch re-run checks the tagged commit, never the
+  # dispatching branch's.
+  proxy:
+    name: Check the module proxy
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Fetch the proxy check
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: proxy-check
+          path: proxy-check
+
+      # bash, because an artifact does not keep the executable bit.
+      - name: Check proxy.golang.org and sum.golang.org
+        env:
+          MODULE: github.com/bawdo/gosbee
+          TAG: ${{ inputs.tag || github.ref_name }}
+          COMMIT: ${{ needs.build.outputs.commit }}
+        run: bash proxy-check/check-module-proxy.sh "$MODULE" "$TAG" "$COMMIT"
