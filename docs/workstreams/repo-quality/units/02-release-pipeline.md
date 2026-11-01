@@ -127,4 +127,70 @@ Review lanes: security, correctness, brief
 
 ## Outcome
 
+Close mode as run: `auto`. The unit stopped at its plan, as a `plan` unit does, and the brief
+does not say to continue into the build.
+
+Landed: the plan at `docs/workstreams/repo-quality/plans/2026-11-01-release-pipeline.md` (six
+tasks: callable CI with Codecov split out, verify-tag.sh with the test harness,
+publish-release.sh, build-release.sh, the release.yml rewrite, then gates and docs). Also the
+Decisions above, and `planDir`/`specDir` in `.claude/wombat-workstream.json`. No workflow,
+script or documentation outside the workstream record changed, so nothing the plan describes
+is built yet.
+
+Exercise before unit 09, as decided: local only (fake `gh` script tests, actionlint, zizmor,
+shellcheck, verify gates). This unit wrote no code, so none of it has run yet. It is the
+implementing session's to do.
+
+Questions put to the operator, with answers:
+- Codecov OIDC versus "publish is the only job with id-token": "Research the most modern,
+  acceptable, and secure approach." The research and the choice (a separate `coverage.yml`)
+  are under Decisions.
+- sync-notes: "Drop it (Recommended)".
+- Commit grant: "Yes, commit freely".
+- Plan location, raised because `docs/plans` is gitignored: "Set planDir in workstream
+  (Recommended)".
+- Signing failed once, inside the agent sandbox (`gpg: can't connect to the gpg-agent:
+  Operation not permitted`). It was retried outside the sandbox and signed, with no key
+  refresh needed.
+
+Verification at step 1 (`WOMBAT_BASE_REF=workstream/repo-quality scripts/wombat-verify.sh`,
+run outside the sandbox), record at `7a34731`:
+
+```
+wombat-verification 1
+tree	clean
+fmt	7a347319601966f0da96237305ebb1b98c5e49ee	pass	0	-
+vet	7a347319601966f0da96237305ebb1b98c5e49ee	pass	0	-
+lint	7a347319601966f0da96237305ebb1b98c5e49ee	pass	1	-
+tidy	7a347319601966f0da96237305ebb1b98c5e49ee	pass	0	-
+changelog	7a347319601966f0da96237305ebb1b98c5e49ee	pass	0	-
+vuln	7a347319601966f0da96237305ebb1b98c5e49ee	pass	3	-
+zizmor	7a347319601966f0da96237305ebb1b98c5e49ee	skipped	0	zizmor not installed (CI runs it)
+shellcheck	7a347319601966f0da96237305ebb1b98c5e49ee	pass	0	-
+test	7a347319601966f0da96237305ebb1b98c5e49ee	pass	2	-
+```
+
+Lanes (`select-gates.sh .`): 1 lane ran, `brief`. `security` and `correctness` were skipped
+with "no changed path matched", because this diff touches only the workstream record and
+`.claude/wombat-workstream.json`.
+
+Scan (`scan-secrets.sh .`): `scan clean: 11 files`.
+
+Sweep (`sweep-docs.sh . --base workstream/repo-quality`): printed nothing, so 0 candidates. No
+claim was passed, because this unit changed no documented behaviour. A manual
+`git grep -n "docs/plans\|docs/specs"` found only this brief and
+`nodes/rawsql_security_test.go:32`, a pre-existing citation of a local plan that this unit
+did not touch. No later brief was corrected.
+
+For unit 03 (release-supply-chain): the release chain grants `id-token` only in publish, and
+the verification docs should pin `--signer-workflow` to `release.yml`. For unit 04: ci.yml
+gains a `workflow_call` with a `ref` input, a `ci-` concurrency prefix and a release script
+test step, and Codecov lives in `coverage.yml`. An actionlint gate is left to unit 04. For
+unit 08: `Coverage` is a new workflow but not a required check. For unit 09: the first real
+run of the pipeline is the first tag, and an `-rc.1` is suggested.
+
 ## Not done, and why
+
+- The build itself: this is a `plan` unit and its brief does not say to continue. The plan
+  needs an implementing session. The index has no implement unit for it yet, and that is the
+  operator's call at the hand back.
