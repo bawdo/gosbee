@@ -465,11 +465,21 @@ only place release notes are written.
      `cyclonedx-gomod` pinned in `tools/go.mod`. `SHA256SUMS` lists every
      binary and SBOM, so the provenance attestation covers the SBOMs too. A
      failed SBOM fails the build.
-   - **Publish**, the only job that can write, checks the binaries against
-     `SHA256SUMS`, attests their build provenance and publishes through a
-     draft (`scripts/publish-release.sh`): the draft is created with every
-     asset attached, then published. The attestation's Sigstore bundle is
-     attached as `gosbee-repl_<tag>_provenance.intoto.jsonl`, so
+   - **Publish**, the only job that can write, checks out
+     `scripts/publish-release.sh` from the commit the build job built, never
+     the tag by name. Before its first write (the attestation, which also
+     makes a public transparency log entry) it checks, read only, that the
+     release is not already published and that the tag on GitHub still
+     points at the tag object the build verified
+     (`scripts/publish-release.sh --check`). A tag moved during the build is
+     refused there, naming both tag objects. It then checks the binaries
+     against `SHA256SUMS`, attests their build provenance and publishes
+     through a draft (`scripts/publish-release.sh`, which reads the tag once
+     more just before it creates the release): the draft is created with
+     every asset attached, then published. Any `gh` failure but "release not
+     found" stops it rather than being read as no release. The
+     attestation's Sigstore bundle is attached as
+     `gosbee-repl_<tag>_provenance.intoto.jsonl`, so
      `gh attestation verify --bundle` can check a binary without the
      attestation API.
    - **Proxy**, after publish and with no checkout, checks that
@@ -486,15 +496,43 @@ only place release notes are written.
    latest, and gets the same SBOMs and proxy check as any other.
 
 A published release is never changed, its notes included, so a changelog fix
-made after release lives in `CHANGELOG.md` only. Release tags (`v*`) cannot be
-moved or deleted once pushed.
+made after release lives in `CHANGELOG.md` only. Release tags (`v*`) must never
+be moved or deleted once pushed. A tag ruleset enforcing that is a repository
+setting, left to the repo-settings unit; until it exists, publish's checks
+refuse a tag moved during a run, but nothing stops a move between runs.
 
-If a release run fails part way, fix the cause and recover it from the Actions
-tab by running the `Release` workflow with the existing tag: a leftover draft
-is replaced and the release published, and a release already published is
-refused before anything is written. Tags made before this pipeline existed
-(`v0.2.1` and earlier) cannot be re-run that way, because they do not carry
-`scripts/verify-tag.sh`, so the build job fails.
+If a release run fails before the release is published, fix the cause and
+recover it from the Actions tab by running the `Release` workflow from `main`
+with the existing tag: a leftover draft is replaced and the release published.
+That does not help once the release is published: publish's check refuses it
+("already published") before anything is written, and the proxy job, which
+needs publish to succeed, is skipped. To repeat a failed proxy check:
+
+- use "Re-run failed jobs" on the original run. When publish succeeded, that
+  re-runs the proxy job alone, but only while the run's `proxy-check` artifact
+  lasts (1 day);
+- otherwise run the check by hand, from a checkout of the tag:
+  ```bash
+  scripts/check-module-proxy.sh github.com/bawdo/gosbee v0.3.0 "$(git rev-parse 'v0.3.0^{commit}')"
+  ```
+
+Tags made before this pipeline existed (`v0.2.1` and earlier) cannot be re-run
+by hand, because they do not carry `scripts/verify-tag.sh`, so the build job
+fails.
+
+A run started by hand (`workflow_dispatch`) uses `release.yml`, and the
+`ci.yml` it calls, as they are on the branch the dispatcher picks, not as on
+`main`. The tag name, signed tag and on-`main` checks therefore bind only when
+the run is dispatched from `main`: a branch carrying an edited `release.yml`
+can drop them, and anyone who can push a branch can dispatch from it. Dispatch
+only from `main`. A dispatched run's provenance attestation also records the
+dispatched ref and that branch's commit as its source, not the tag, so
+`gh attestation verify --source-ref refs/tags/<tag>` fails for its assets,
+while `--signer-workflow bawdo/gosbee/.github/workflows/release.yml` still
+holds. The controls that make this binding are repository settings, left to
+the repo-settings unit: an `environment:` on the publish job whose deployment
+rule admits only `v*` tags, and a tag ruleset. The workflow names no
+environment yet, since that unit creates it.
 
 Preview a release's notes locally with `scripts/changelog.sh notes v0.3.0`.
 

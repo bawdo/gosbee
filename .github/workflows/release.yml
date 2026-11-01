@@ -24,9 +24,20 @@ name: Release
 # the release.
 #
 # A published release is never changed, its notes included: a changelog fix
-# made after release lives in CHANGELOG.md only. If a run fails part way, fix
-# the cause and run this workflow by hand with the existing tag: a leftover
-# draft is replaced and the release published.
+# made after release lives in CHANGELOG.md only. If a run fails before the
+# release is published, fix the cause and run this workflow by hand, from
+# main, with the existing tag: a leftover draft is replaced and the release
+# published. A by-hand run on a tag already published stops at publish's
+# check ("already published") and skips the proxy job. To repeat a failed
+# proxy check, "Re-run failed jobs" on the original run re-runs the proxy job
+# alone when publish succeeded, while the proxy-check artifact lasts (1 day);
+# after that, run scripts/check-module-proxy.sh <module> <tag> <commit> by
+# hand from a checkout of the tag.
+#
+# A dispatched run uses this file and ci.yml from the branch it is dispatched
+# from, so its checks bind only when that is main, and its provenance names
+# that branch, not the tag, as the source. CONTRIBUTING.md (Releasing) has
+# the detail and the repository settings that would close this.
 
 permissions:
   contents: read

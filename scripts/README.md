@@ -192,6 +192,15 @@ stdout. It needs `curl` and `jq`.
 ## release-scripts_test.sh
 
 **Purpose**: Tests `verify-tag.sh`, `publish-release.sh`,
-`check-module-proxy.sh` and `build-release.sh`. Every `gh` and `curl` call
-goes to a fake, so it needs no network or token. The build cases cross-compile the four binaries and write their
-SBOMs, so they run last. Run by CI and by `wombat-verify.sh`. It needs `jq` and Go.
+`check-module-proxy.sh` and `build-release.sh`.
+
+**Usage**:
+```bash
+./scripts/release-scripts_test.sh
+```
+
+Every `gh` and `curl` call goes to a fake, so it needs no network or token.
+The build cases cross-compile the four binaries and write their SBOMs, so they
+run last. It prints `ok <case>` per case and stops at the first failure, on a
+line starting `FAIL`. Run by CI and by `wombat-verify.sh`. It needs `jq` and
+Go.

@@ -42,8 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read-only token, then publish from a job that is the only one able to write.
   The build checks the tag is signed and verified by GitHub and smoke tests a
   binary. Publishing goes through a draft, so a release never exists without
-  its assets, and a part-failed run is recovered by running `Release` again
-  with the tag. A pre-release tag is never marked latest.
+  its assets, and a run that fails before publishing is recovered by running
+  `Release` again with the tag. A pre-release tag is never marked latest.
 - Release notes are no longer rewritten after publication: a published
   release is never changed.
 - Coverage is uploaded to Codecov by a separate `Coverage` workflow instead of
