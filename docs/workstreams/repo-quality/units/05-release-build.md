@@ -73,6 +73,19 @@ release-proof, now unit 10.
   before fuzzing, renumbering fuzzing to release-proof from 05-09 to 06-10. This is a re-cut,
   counted in the closeout. Built next because both plans predate unit 04's `ci.yml` changes, so
   building them soonest keeps the drift smallest.
+- Opened 2026-11-01: router current, pre-flight `none` (no checks configured), no `jira` block, no
+  `knownTraps` key, no inherited corrections. `work-items.sh` gave two waves (`a`, then `b`), no
+  collision (shared paths are ordered by `After: a`), not oversize. Commit grant given once, in
+  conversation, for the unit.
+- Skills: `testFirst` (superpowers:test-driven-development) handed to each implementer; `plan`
+  configured but unused (no `Plan: yes` item); `implement` not configured, and dispatch replaces it.
+- Verification runs unsandboxed: in the sandbox the Go build cache is unwritable, httptest binds are
+  refused even with `allowLocalBinding` set, and vuln.go.dev is blocked. The baseline at `9a9905d`
+  was green on every gate unsandboxed, with zizmor skipped (not installed). zizmor is run ad hoc
+  through `uvx zizmor --offline .github/workflows` to meet the zizmor criterion, since the verify
+  script skips it locally.
+- Mutation ledgers live outside the repository, beside the item worktrees under
+  `$TMPDIR/u05-items.suryDu/`; their blocks are copied into `## Outcome`.
 
 ## Plan
 
