@@ -12,6 +12,7 @@
 set -euo pipefail
 
 SCRIPTS="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd -- "$SCRIPTS/.." && pwd)"
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/release-scripts_test.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT
 
@@ -362,6 +363,82 @@ for log in "$ROOT"/publish_*/gh.log; do
     ! grep -E 'release upload|--clobber' "$log" || fail "$name" "$log uploads assets"
     ! grep '^release edit' "$log" | grep -v -- '--draft=false' || fail "$name" "$log edits without publishing"
 done
+echo "ok $name"
+
+# The build runs in a copy of the committed tree, so the repository's own
+# dist/ and worktree list are never touched. The working tree's
+# build-release.sh is the one run, so an uncommitted change to it is what is
+# tested.
+BUILD="$ROOT/build"
+mkdir -p "$BUILD"
+git -C "$REPO" archive HEAD | tar -x -C "$BUILD"
+
+# run_build ARGS...: runs build-release.sh from the build copy, capturing OUT,
+# ERR and CODE.
+run_build() {
+    CODE=0
+    OUT=$(cd "$BUILD" && GIT_CEILING_DIRECTORIES="$ROOT" bash "$SCRIPTS/build-release.sh" "$@" \
+        2>"$ROOT/.build-stderr") || CODE=$?
+    ERR=$(cat "$ROOT/.build-stderr")
+}
+
+name=build_rejects_bad_tag
+# shellcheck disable=SC2016 # the $(id) is a literal hostile name, never expanded
+for bad in 'v1.0.0;id' 'v1.0.0$(id)' main v1.0 '' '../v1.0.0'; do
+    run_build "$bad"
+    expect_refusal "$name ($bad)" "build-release: usage: $SCRIPTS/build-release.sh vX.Y.Z[-suffix]"
+    [ ! -e "$BUILD/dist" ] || fail "$name ($bad)" "made dist/"
+done
+echo "ok $name"
+
+# A leftover dist/ could carry stale binaries into SHA256SUMS, so it is
+# refused rather than built over.
+name=build_refuses_existing_dist
+mkdir "$BUILD/dist"
+touch "$BUILD/dist/gosbee-repl_v0.0.0-old_linux_amd64"
+run_build v0.0.0-test
+expect_refusal "$name" "build-release: dist/ already exists; remove it first"
+[ "$(ls "$BUILD/dist")" = "gosbee-repl_v0.0.0-old_linux_amd64" ] || fail "$name" "dist/ changed"
+rm -rf "$BUILD/dist"
+echo "ok $name"
+
+name=build_writes_four_binaries_and_sums
+run_build v0.0.0-test
+[ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
+expected="SHA256SUMS
+gosbee-repl_v0.0.0-test_darwin_amd64
+gosbee-repl_v0.0.0-test_darwin_arm64
+gosbee-repl_v0.0.0-test_linux_amd64
+gosbee-repl_v0.0.0-test_linux_arm64"
+actual=$(cd "$BUILD/dist" && find . -mindepth 1 | sed 's|^\./||' | LC_ALL=C sort)
+[ "$actual" = "$expected" ] || fail "$name" "dist/ holds: $(tr '\n' ' ' <<<"$actual")"
+[ "$(wc -l < "$BUILD/dist/SHA256SUMS" | tr -d ' ')" = 4 ] || fail "$name" "expected four checksum lines"
+if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$BUILD/dist" && sha256sum -c --quiet SHA256SUMS) || fail "$name" "checksums do not match"
+else
+    (cd "$BUILD/dist" && shasum -a 256 -c --quiet SHA256SUMS) || fail "$name" "checksums do not match"
+fi
+for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+    binary="$BUILD/dist/gosbee-repl_v0.0.0-test_$target"
+    grep -qE "^[0-9a-f]{64}  gosbee-repl_v0.0.0-test_$target\$" "$BUILD/dist/SHA256SUMS" \
+        || fail "$name" "SHA256SUMS does not list $target"
+    info=$(go version -m "$binary") || fail "$name" "go version -m failed on $target"
+    grep -qF "$(printf 'path\t%s' "github.com/bawdo/gosbee/cmd/repl")" <<<"$info" || fail "$name" "$target is not cmd/repl"
+    for setting in CGO_ENABLED=0 -trimpath=true "GOOS=${target%_*}" "GOARCH=${target#*_}"; do
+        grep -qF "$(printf 'build\t%s' "$setting")" <<<"$info" || fail "$name" "$target lacks $setting"
+    done
+    # -trimpath keeps -ldflags out of the build info, so -s is checked on the
+    # binary: it defines no symbols (a darwin one still lists its imports, U).
+    defined=$(go tool nm "$binary" 2>/dev/null | grep -v ' U ' || true)
+    [ -z "$defined" ] || fail "$name" "$target is not stripped"
+done
+grep -qF "smoke tested gosbee-repl_v0.0.0-test_$(go env GOHOSTOS)_$(go env GOHOSTARCH)" <<<"$OUT" \
+    || fail "$name" "no smoke test reported"
+echo "ok $name"
+
+# The case above built a pre-release tag end to end.
+name=build_accepts_prerelease_tag
+[ -f "$BUILD/dist/gosbee-repl_v0.0.0-test_linux_amd64" ] || fail "$name" "no binary carries v0.0.0-test"
 echo "ok $name"
 
 echo "all release script tests passed"
