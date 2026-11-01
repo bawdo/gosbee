@@ -5,7 +5,7 @@
 # which logs its arguments and answers from canned files, so nothing here
 # touches the network. Prints "ok <name>" per case and exits non-zero on the
 # first failure, with a line starting "FAIL". The build cases cross-compile
-# four binaries, so they run last and take a while.
+# four binaries and write their SBOMs, so they run last and take a while.
 #
 # Usage: scripts/release-scripts_test.sh
 
@@ -369,9 +369,20 @@ echo "ok $name"
 # dist/ and worktree list are never touched. The working tree's
 # build-release.sh is the one run, so an uncommitted change to it is what is
 # tested.
+#
+# The copy is its own git repository with an annotated v0.0.0-test tag on its
+# only commit, as the release checkout of a tag is, because cyclonedx-gomod
+# reads the module SBOM's version from the tag at HEAD.
 BUILD="$ROOT/build"
 mkdir -p "$BUILD"
 git -C "$REPO" archive HEAD | tar -x -C "$BUILD"
+# The tools module is what runs cyclonedx-gomod, so its working tree copy is
+# used too, as the script's is.
+cp "$REPO/tools/go.mod" "$REPO/tools/go.sum" "$BUILD/tools/"
+git init -q -b main "$BUILD"
+"${G[@]}" -C "$BUILD" add -A
+"${G[@]}" -C "$BUILD" commit -q -m "Release copy"
+"${G[@]}" -C "$BUILD" tag -a v0.0.0-test -m v0.0.0-test
 
 # run_build ARGS...: runs build-release.sh from the build copy, capturing OUT,
 # ERR and CODE.
@@ -402,17 +413,25 @@ expect_refusal "$name" "build-release: dist/ already exists; remove it first"
 rm -rf "$BUILD/dist"
 echo "ok $name"
 
-name=build_writes_four_binaries_and_sums
+name=build_writes_binaries_sboms_and_sums
 run_build v0.0.0-test
 [ "$CODE" -eq 0 ] || fail "$name" "expected exit 0"
-expected="SHA256SUMS
-gosbee-repl_v0.0.0-test_darwin_amd64
+assets="gosbee-repl_v0.0.0-test_darwin_amd64
+gosbee-repl_v0.0.0-test_darwin_amd64.cdx.json
 gosbee-repl_v0.0.0-test_darwin_arm64
+gosbee-repl_v0.0.0-test_darwin_arm64.cdx.json
 gosbee-repl_v0.0.0-test_linux_amd64
-gosbee-repl_v0.0.0-test_linux_arm64"
+gosbee-repl_v0.0.0-test_linux_amd64.cdx.json
+gosbee-repl_v0.0.0-test_linux_arm64
+gosbee-repl_v0.0.0-test_linux_arm64.cdx.json
+gosbee-repl_v0.0.0-test_module.cdx.json"
+expected="SHA256SUMS
+$assets"
 actual=$(cd "$BUILD/dist" && find . -mindepth 1 | sed 's|^\./||' | LC_ALL=C sort)
 [ "$actual" = "$expected" ] || fail "$name" "dist/ holds: $(tr '\n' ' ' <<<"$actual")"
-[ "$(wc -l < "$BUILD/dist/SHA256SUMS" | tr -d ' ')" = 4 ] || fail "$name" "expected four checksum lines"
+[ "$(wc -l < "$BUILD/dist/SHA256SUMS" | tr -d ' ')" = 9 ] || fail "$name" "expected nine checksum lines"
+[ "$(sed 's/^[0-9a-f]\{64\}  //' "$BUILD/dist/SHA256SUMS")" = "$assets" ] \
+    || fail "$name" "SHA256SUMS does not list each asset once, by name: $(cat "$BUILD/dist/SHA256SUMS")"
 if command -v sha256sum >/dev/null 2>&1; then
     (cd "$BUILD/dist" && sha256sum -c --quiet SHA256SUMS) || fail "$name" "checksums do not match"
 else
@@ -431,6 +450,10 @@ for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
     # binary: it defines no symbols (a darwin one still lists its imports, U).
     defined=$(go tool nm "$binary" 2>/dev/null | grep -v ' U ' || true)
     [ -z "$defined" ] || fail "$name" "$target is not stripped"
+    # Each binary's SBOM is of that binary: its target is in every purl.
+    jq -e --arg q "goarch=${target#*_}&goos=${target%_*}" \
+        '[.components[].purl | select(contains($q) | not)] == []' "$binary.cdx.json" >/dev/null \
+        || fail "$name" "the SBOM for $target describes another target"
 done
 grep -qF "smoke tested gosbee-repl_v0.0.0-test_$(go env GOHOSTOS)_$(go env GOHOSTARCH)" <<<"$OUT" \
     || fail "$name" "no smoke test reported"
@@ -439,6 +462,73 @@ echo "ok $name"
 # The case above built a pre-release tag end to end.
 name=build_accepts_prerelease_tag
 [ -f "$BUILD/dist/gosbee-repl_v0.0.0-test_linux_amd64" ] || fail "$name" "no binary carries v0.0.0-test"
+echo "ok $name"
+
+# module_version PATH: the version go list reports for a dependency of the
+# main module.
+module_version() {
+    (cd "$REPO" && go list -m -f '{{.Version}}' "$1")
+}
+
+# has_purl NAME FILE PURL_PREFIX: asserts some component's purl starts with
+# PURL_PREFIX followed by "?" (the qualifiers) or the end.
+has_purl() {
+    jq -e --arg p "$3" 'any(.components[].purl; . == $p or startswith($p + "?"))' "$2" >/dev/null \
+        || fail "$1" "$2 has no component $3"
+}
+
+name=build_module_sbom_describes_module
+sbom="$BUILD/dist/gosbee-repl_v0.0.0-test_module.cdx.json"
+jq -e '.bomFormat == "CycloneDX" and .specVersion == "1.6"' "$sbom" >/dev/null || fail "$name" "not CycloneDX 1.6"
+jq -e '.metadata.component.type == "library"' "$sbom" >/dev/null || fail "$name" "main component is not a library"
+jq -e '.metadata.component.purl | startswith("pkg:golang/github.com/bawdo/gosbee@v0.0.0-test?")' "$sbom" >/dev/null \
+    || fail "$name" "main component is not github.com/bawdo/gosbee@v0.0.0-test: $(jq -r .metadata.component.purl "$sbom")"
+has_purl "$name" "$sbom" "pkg:golang/github.com/jackc/pgx/v5@$(module_version github.com/jackc/pgx/v5)"
+has_purl "$name" "$sbom" "pkg:golang/modernc.org/sqlite@$(module_version modernc.org/sqlite)"
+# Detected licences are evidence, not assertions (cyclonedx-gomod's default).
+jq -e 'any(.components[]; (.evidence.licenses // []) != [])' "$sbom" >/dev/null || fail "$name" "no component has a licence"
+echo "ok $name"
+
+name=build_binary_sbom_describes_binary
+sbom="$BUILD/dist/gosbee-repl_v0.0.0-test_linux_amd64.cdx.json"
+jq -e '.bomFormat == "CycloneDX" and .specVersion == "1.6"' "$sbom" >/dev/null || fail "$name" "not CycloneDX 1.6"
+jq -e '.metadata.component.version == "v0.0.0-test"' "$sbom" >/dev/null || fail "$name" "main component is not v0.0.0-test"
+has_purl "$name" "$sbom" "pkg:golang/github.com/ergochat/readline@$(module_version github.com/ergochat/readline)"
+jq -e 'any(.components[]; .name == "std" and (.purl | startswith("pkg:golang/std@go")))' "$sbom" >/dev/null \
+    || fail "$name" "no standard library component"
+echo "ok $name"
+
+# A go that fails every cyclonedx-gomod run and is the real go otherwise.
+REAL_GO=$(command -v go)
+mkdir -p "$ROOT/sbom-fails"
+cat > "$ROOT/sbom-fails/go" <<EOF
+#!/usr/bin/env bash
+case " \$* " in *cyclonedx-gomod*) exit 3 ;; esac
+exec "$REAL_GO" "\$@"
+EOF
+chmod +x "$ROOT/sbom-fails/go"
+
+name=build_fails_when_sbom_fails
+rm -rf "$BUILD/dist"
+PATH="$ROOT/sbom-fails:$PATH" run_build v0.0.0-test
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+grep -qxF "build-release: SBOM generation failed for gosbee-repl_v0.0.0-test_module.cdx.json" <<<"$ERR" \
+    || fail "$name" "no SBOM failure reported"
+[ ! -e "$BUILD/dist/SHA256SUMS" ] || fail "$name" "wrote SHA256SUMS"
+echo "ok $name"
+
+# cyclonedx-gomod names the module SBOM's version after a tag at HEAD, and a
+# commit can carry more than one (a pre-release and its final release). An
+# SBOM naming any version but the tag being built is refused.
+name=build_refuses_module_sbom_of_other_version
+rm -rf "$BUILD/dist"
+"${G[@]}" -C "$BUILD" tag -d v0.0.0-test >/dev/null
+"${G[@]}" -C "$BUILD" tag -a v0.0.0-other -m v0.0.0-other
+run_build v0.0.0-test
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+grep -qxF "build-release: gosbee-repl_v0.0.0-test_module.cdx.json names version v0.0.0-other, not v0.0.0-test" <<<"$ERR" \
+    || fail "$name" "no version mismatch reported"
+[ ! -e "$BUILD/dist/SHA256SUMS" ] || fail "$name" "wrote SHA256SUMS"
 echo "ok $name"
 
 echo "all release script tests passed"
