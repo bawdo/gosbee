@@ -1,7 +1,8 @@
 # Workstream: repo-quality
 
 Integration branch: workstream/repo-quality
-Next unit: 10
+Next unit: none
+Closed: 2026-11-01
 
 Bring gosbee's GitHub, CI and release practice up to (and past) bawdo/caddy_shack,
 bawdo/jellyfish and bawdo/go-blinkstick: a strong OpenSSF Scorecard and readiness for
@@ -28,22 +29,4 @@ old 05 to 09 renumbered 06 to 10, and 06 and 09 continue from plan into build.
 | 07 | examples | implement | unit/07-examples | done | units/07-examples.md |
 | 08 | community-docs | implement | unit/08-community-docs | done | units/08-community-docs.md |
 | 09 | repo-settings | plan | unit/09-repo-settings | done | units/09-repo-settings.md |
-| 10 | release-proof | implement | unit/10-release-proof | next | units/10-release-proof.md |
-
-## Handover from unit 09
-
-Unit 09 added `scripts/repo-settings.sh` (`metadata`, `rulesets`, `harden`, `show`; `DRY_RUN=1`
-prints each write and its body) with `repo-settings_test.sh` in CI and `wombat-verify.sh`.
-**Applied live 2026-11-01:** homepage, topics, auto-merge, Update branch; rulesets
-`Protect main` (strict on, `CI OK` + `Analyze (go)`, `code_scanning` CodeQL), `Protect release
-tags`, new `Protect release tag creation` (admin-only `v*`). `release.yml` publish job names
-`environment: release`; SECURITY.md gained `gh release verify`.
-**For 10:** after the operator's merge to `main` (PR must be up to date: strict is now on), run
-`DRY_RUN=1 scripts/repo-settings.sh harden` from `main`, get approval, apply, paste `show`.
-Check at that dry run: whether GitHub matches subpath actions against `owner/repo@*`, and whether
-composite actions (codecov-action) pull nested third-party or tag-pinned actions that the
-allowlist or SHA pinning would refuse. Until `harden` runs, the `release` environment has no
-deployment rule. `gh` needs the sandbox off (TLS, OSStatus -26276); zizmor runs in it with uv's
-cache, tool and Python dirs under `$TMPDIR`; verification still runs outside it.
-**Open, operator to schedule:** unchanged from 08 (`verify-tag.sh`, the stale example sketch,
-`quoting.EscapeString`).
+| 10 | release-proof | implement | unit/10-release-proof | done | units/10-release-proof.md |

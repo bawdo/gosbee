@@ -270,6 +270,11 @@ Review lanes: security, correctness, brief
     - `if: github.event_name == 'push'` on the tag job: first failing line
       `FAIL release_yml_tag_job_shape: tag job or its step has a condition`.
   - `knownTraps` is not configured, so no trap file is grown.
+- Step 7, verification at `34842c9` after the triage commits: tree clean, all 13 gates pass, none
+  skipped. The review fixes changed no contract or documented behaviour, so the sweep was not re-run.
+- Step 8: merged into `workstream/repo-quality` with no question from the verify gate (a `verify
+  silent` row in the gate log at 10:42:37Z). No question fired at steps 6 to 8. The unit branch was
+  deleted behind the `merge-base --is-ancestor` guard.
 
 ## Not done, and why
 
