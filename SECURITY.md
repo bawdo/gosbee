@@ -53,7 +53,7 @@ In a clone of this repository:
 
 ```bash
 curl -fsSL https://github.com/bawdo.gpg | gpg --import
-git fetch origin tag v<version>
+git fetch origin main tag v<version>
 git verify-tag v<version>
 git merge-base --is-ancestor v<version> origin/main
 git rev-parse 'v<version>^{commit}'
@@ -64,11 +64,16 @@ The first command imports the maintainer's public keys, which
 by Keith Bawden's key with primary fingerprint
 `661B 030E 1C0F F788 151B  9525 E8C1 84EB 4B8F 82D1`, through the signing
 subkey `9954 8FCC B94B E845 41E5  73AA 4823 4C2C 292E EE78`. A good result
-from `git verify-tag` is a good signature naming that subkey. Any other key
-is not a release signature.
+from `git verify-tag` is a good signature naming that subkey. Treat a
+signature from any other key as a failure. A new release key will be named
+here, in this file on `main`, before any release is signed with it. The key
+and this fingerprint both come from GitHub, so for more assurance compare the
+fingerprint with one you got another way, such as a keyserver or an earlier
+clone of this file.
 
-`git merge-base --is-ancestor` prints nothing and exits 0 when the tag is on
-`main`, and exits non-zero when it is not. `git rev-parse` prints the commit
+The fetch updates `origin/main` as well as the tag, so the next check reads
+`main` as it is now. `git merge-base --is-ancestor` prints nothing and exits 0
+when the tag is on `main`, and exits non-zero when it is not. `git rev-parse` prints the commit
 the tag points at: use it as `<commit sha>` below.
 
 ### A binary
@@ -83,7 +88,9 @@ gh attestation verify gosbee-repl_v<version>_<os>_<arch> --repo bawdo/gosbee \
 
 The same command checks an SBOM: name the `.cdx.json` file instead of the
 binary. To verify without querying GitHub's attestation API, download the
-bundle next to the binary and add `--bundle`:
+bundle next to the binary and add `--bundle`. A bundle cannot tell whether
+`bawdo/gosbee` has since been renamed or its name taken by another owner, so
+prefer the command above when you can reach GitHub:
 
 ```bash
 gh attestation verify gosbee-repl_v<version>_<os>_<arch> --repo bawdo/gosbee \
@@ -94,17 +101,25 @@ gh attestation verify gosbee-repl_v<version>_<os>_<arch> --repo bawdo/gosbee \
   --bundle gosbee-repl_v<version>_provenance.intoto.jsonl
 ```
 
-Then check the digests, from the directory holding the downloads. On Linux:
+`SHA256SUMS` is not signed and not itself attested: anyone able to replace a
+binary on the release could replace it too. The attestation above is the
+authenticity check. The checksums only confirm a download arrived intact, and
+are useful for checking several files at once after the attestation has
+passed. From the directory holding the downloads, on Linux:
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-On macOS:
+On macOS, use `shasum`, not the `sha256sum` macOS also ships, which prints
+nothing and exits 0 when none of your files is listed (a renamed download, for
+example):
 
 ```bash
 shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
+
+Either way, check that each file you downloaded is reported `OK` by name.
 
 ### What an attestation proves
 
@@ -119,9 +134,11 @@ above close that gap, because they show the tag is signed by the maintainer
 and its commit is on `main`.
 
 A release run started by hand from the Actions tab records the branch it was
-dispatched from as its source, not the tag, so `--source-ref` fails for its
-assets while `--signer-workflow` still holds. A failure there is a reason to
-look closer, not to drop the flag.
+dispatched from, and that branch's commit, as its source, not the tag. Both
+`--source-ref` and `--source-digest` fail for its assets. `--signer-workflow`
+still passes, but it matches `release.yml` as it stands on any branch, so on
+its own it does not bind the source at all. A failure there is a reason to ask
+in an issue, not to drop the flags.
 
 ### The SBOMs
 
@@ -147,8 +164,10 @@ go mod download -json github.com/bawdo/gosbee@v<version>
 ```
 
 `go` refuses a module whose hash does not match the checksum database (or
-your `go.sum`), unless `GOSUMDB=off`, `GONOSUMDB` or `GOPRIVATE` has turned
-that off for it, so check none of them covers `github.com/bawdo/gosbee`. The
+your `go.sum`), unless `GOSUMDB`, `GONOSUMDB` or `GOPRIVATE` has changed that
+for it. Check with `go env GOSUMDB GONOSUMDB GOPRIVATE`, which also shows
+values set with `go env -w`: `GOSUMDB` should be `sum.golang.org`, and neither
+of the others should cover `github.com/bawdo/gosbee`. The
 JSON's `Origin.Hash`, where the proxy supplies it, is the commit the proxy
 fetched: it should equal `<commit sha>` from `git rev-parse` above. The
 release workflow checks the same thing after publishing, and a mismatch means

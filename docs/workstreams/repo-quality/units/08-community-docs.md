@@ -60,7 +60,7 @@ Review lanes: security, correctness, brief
 - Correction from 07, handled at open: no markdown file links `examples/before_after_example.go`
   (`grep -rn "examples/\|before_after" . --include='*.md'`, workstreams excluded: no hits), and
   the only table-qualified `SET` in the docs (`grep -rn 'SET "[a-z_]*"\."' . --include='*.md'`) is
-  CHANGELOG.md:71, the fix entry itself, which is correct. Deleting the sketch is outside this
+  the CHANGELOG fix entry itself (line 71 at open, line 81 after this unit's entries), which is correct. Deleting the sketch is outside this
   unit's Items; asked the operator at open, no answer given, so it is left (see Not done).
 - Key facts read from the real key, not copied from caddy_shack: `https://github.com/bawdo.gpg`
   fetched and read with `gpg --show-keys` in a throwaway GNUPGHOME. It serves two primary keys
@@ -161,6 +161,40 @@ Next unit inherits: unit 09 should know SECURITY.md deliberately omits immutable
 ruleset and `gh release verify`; once 09 turns those on, SECURITY.md's "What an attestation proves"
 gains the server-side controls (caddy_shack's wording is the reference). CODE_OF_CONDUCT.md and
 the bug form both rely on private vulnerability reporting staying enabled.
+
+Review triage (step 6). Three fresh lanes, each in its own detached worktree. Findings counted
+from their reports: brief 2, correctness 5, security 6, with brief 1 and correctness 1 the same
+defect. Every one was checked on the tree before acting, and all were judged real and fixed:
+
+- Brief 1 / correctness 1: `docs/plans/` is gitignored (`.gitignore:56 /docs/plans`;
+  `git ls-files docs` lists development, guide and workstreams only). Removed from the CONTRIBUTING
+  tree and heading; plans are described under `docs/workstreams/`.
+- Brief 2: the licence badge rendered shields' own "license" label; `?label=licence` added.
+- Correctness 2: the node-type checklist named one stub. A grep for `VisitTable(` implementations
+  found six; all six are now listed, plus `go build ./... && go vet ./...` to catch a missed one.
+- Correctness 3: the "CI runs more than this" summary omitted `go mod tidy -diff` and the test
+  matrix; added.
+- Correctness 4: CODEOWNERS does not request the author's own review; reworded to "opened by
+  someone else".
+- Correctness 5: the Decisions line reference CHANGELOG.md:71 moved to 81 after this unit's entries
+  (`grep -n` printed `81:`); corrected.
+- Security 1: a dispatched run fails `--source-digest` as well as `--source-ref`, and
+  `--signer-workflow` alone binds no source; reworded.
+- Security 2: `SHA256SUMS` is unsigned and unattested, now said so; macOS `/sbin/sha256sum`
+  exits 0 with no file matched (reproduced: `darwin sha256sum exit=0`, while `shasum` printed
+  `no file was verified` and exited 1), so macOS readers are told to use `shasum` and to check
+  each file is reported `OK`.
+- Security 3: gh's own caveat for `--bundle` (cannot detect a renamed or re-registered repository)
+  added.
+- Security 4: `scripts/verify-tag.sh` accepts any signature GitHub verifies (read at lines 33-38),
+  so the doc's pinned subkey is stricter than CI. Left strict (fails closed) and added a rotation
+  path (a new key is named in SECURITY.md on `main` first) and an out-of-band cross-check line.
+  CI's looser check is not changed: a script change is outside this unit's Items.
+- Security 5: `git fetch origin tag` left `origin/main` stale; now `git fetch origin main tag`.
+- Security 6: the checksum-database bypass check now says how (`go env GOSUMDB GONOSUMDB GOPRIVATE`,
+  which shows `go env -w` values) and that `GOSUMDB` should be `sum.golang.org`.
+
+No `knownTraps` key is configured, so no trap file is grown.
 
 ## Not done, and why
 

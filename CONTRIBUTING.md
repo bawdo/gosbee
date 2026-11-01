@@ -140,8 +140,9 @@ Code contributions might include:
    It generates a CI readiness report showing which checks passed or failed,
    the overall success probability, and coverage trend (delta from the
    previous run). Detailed logs are saved to `coverage/pre-ci-*.txt`. CI runs
-   more than this (shellcheck, the script tests, the changelog check, zizmor):
-   see [Branch Rules](#branch-rules).
+   more than this, including `go mod tidy -diff`, shellcheck, the script
+   tests, the changelog check, zizmor and tests on macOS and the oldest
+   supported Go: see [Branch Rules](#branch-rules) for the full list.
 
    **Dependencies**
 
@@ -182,8 +183,7 @@ gosbee/
 ├── docs/
 │   ├── guide/          # User-facing documentation
 │   ├── development/    # Contributor documentation
-│   ├── plans/          # Design specs and implementation plans
-│   └── workstreams/    # Multi-unit work records (repository practice)
+│   └── workstreams/    # Multi-unit work records, with their specs and plans
 ├── scripts/            # CI, release and pre-CI scripts, with their tests
 └── tools/              # Pinned Go tools (govulncheck, cyclonedx-gomod)
 ```
@@ -276,7 +276,13 @@ For a complete guide, see:
   - the `Visitor` interface in `nodes/node.go`
   - `baseVisitor` in `visitors/visitor.go`, with a default implementation
   - `DotVisitor` in `visitors/dot_visitor.go`, for AST visualisation
+  - `FormattingVisitor` in `visitors/formatting.go`
+  - the plugin AST `rewriter` in `plugins/walk.go`
+  - `StubVisitor` and `StubParamVisitor` in `internal/testutil/stub_visitor.go`
   - the `stubVisitor` in `nodes/nodes_test.go`
+
+  `go build ./... && go vet ./...` names any implementation still missing the
+  new method.
 
 ## Testing
 
@@ -396,10 +402,10 @@ Each plugin has its own README with:
 
 - **[REPL README](cmd/repl/README.md)** — interactive shell usage and commands
 
-### Plans and Workstreams (`docs/plans/`, `docs/workstreams/`)
+### Workstreams (`docs/workstreams/`)
 
-Design specs and implementation plans for larger changes, and the records of
-work cut into several units.
+The records of larger work cut into several units, each with its briefs and,
+where a unit earned them, its specs and plans.
 
 ### When to Update Documentation
 
@@ -425,7 +431,7 @@ work cut into several units.
 6. **Be patient**: maintainers may take time to review
 
 `.github/CODEOWNERS` requests a review from the maintainer on every pull
-request.
+request opened by someone else.
 
 ### PR Title Format
 
