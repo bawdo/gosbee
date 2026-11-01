@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- An OpenSSF Scorecard workflow checks the repository's supply chain hygiene
+  weekly and on every push to `main`, publishing the result to scorecard.dev
+  and the Security tab. The README carries the Scorecard badge.
+
 ### Changed
 
 - REPL release binaries are built without the symbol table and DWARF debug

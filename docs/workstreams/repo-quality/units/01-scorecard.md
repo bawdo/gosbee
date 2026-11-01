@@ -36,6 +36,27 @@ Review lanes: security, correctness, brief
 
 ## Decisions
 
+- Caller census: none needed. The unit adds a new workflow file and touches no shared
+  contract; README badges and the CHANGELOG `[Unreleased]` section are read by
+  `scripts/changelog.sh check` only, which runs at verification.
+- Copied `.github/workflows/scorecard.yml` from bawdo/caddy_shack unchanged.
+  `diff ../caddy_shack/.github/workflows/scorecard.yml .github/workflows/scorecard.yml`
+  prints nothing. Source defects checked: actionlint is clean, and zizmor 1.31.1 (the
+  version CI pins) run through `uvx zizmor@1.31.1 --offline` reports no findings at
+  the default persona. The `actions/checkout` SHA (`3d3c42e…`, v7.0.1) is the one
+  `release.yml` already uses.
+- zizmor's auditor persona reports three suppressed findings on the file:
+  `excessive-permissions` (top-level `read-all`), `undocumented-permissions` and
+  `concurrency-limits`. These are left as they are. CI runs the default persona, the brief
+  mandates `permissions: read-all` (the pattern Scorecard's own template uses), and
+  keeping the file identical to caddy_shack's is part of this branch's R&D hypothesis.
+- `skills.testFirst` does not apply here: there is no behaviour change in Go code with a
+  test to write first. `skills.implement` is not configured. `skills.plan` does not apply
+  to an implement unit.
+- Badge placed after GoDoc, using the same label as caddy_shack ("OpenSSF Scorecard").
+  The CHANGELOG entry goes under a new `### Added` heading, ahead of `### Changed`, in Keep
+  a Changelog order.
+
 ## Plan
 
 ## Outcome
