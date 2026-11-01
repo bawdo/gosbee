@@ -158,9 +158,13 @@ $ git diff --name-only 93810c1^1 93810c1 | wc -l
 9
 $ bash scripts/release-scripts_test.sh 2>&1 | grep -c "^ok"
 38
-$ git diff --stat workstream/repo-quality...HEAD | tail -1
-15 files changed, 1815 insertions(+), 103 deletions(-)
+$ git diff --stat workstream/repo-quality...1f699ec -- ':!docs/workstreams' | tail -1
+14 files changed, 2080 insertions(+), 102 deletions(-)
 ```
+
+The suite count above is at `1f699ec`, after the review fixes. The diffstat is also taken there,
+leaving out the workstream record, so the figure names its sha and the brief's own later edits do
+not stale it. The brief lane found the first figure here lagging the tip.
 
 Verification at step 1 (`c93f34f`): every gate ran and passed (fmt, vet, lint, tidy, changelog,
 release-scripts, vuln, zizmor, shellcheck, ci-result, test). None was skipped, and `tree` read
@@ -230,5 +234,74 @@ $ grep -c '^verdict  SURVIVED' /private/tmp/claude-501/u05-items.suryDu/ledger-b
     describes another target`
   - `no-version-check`: `FAIL build_refuses_module_sbom_of_other_version: expected exit 1`
   - `sbom-failure-ignored`: `FAIL build_fails_when_sbom_fails: no SBOM failure reported`
+
+Review (step 5): 3 lanes, security, correctness and brief, each a fresh subagent in its own
+detached worktree, given the diff and the brief. None was skipped, and the selector printed no
+`unmatched` line.
+
+Triage (step 6), finding counts read off each lane's report in this session: security 6
+(2 medium, 2 low, 2 informational), correctness 4 plus one note, brief 5.
+
+- Fixed, by a fresh fix subagent on `unit/05-release-build-fix`, merged at `1f699ec`:
+  - security 1 (medium): a tag moved between build and publish chose the script publish ran, and
+    the commit the release attached to. Publish now checks out `needs.build.outputs.commit`. Build
+    exports the verified `tag_object`, and `publish-release.sh --check` refuses a moved tag before
+    any write. The script re-reads the tag just before `gh release create`.
+  - correctness 2: the attestation (a write and a Rekor entry) ran before the published-release
+    refusal. The `--check` step runs first.
+  - correctness 3: any `gh release view` error read as "no release". Only `release not found` now
+    means missing; anything else dies with gh's message.
+  - security 3 (low): the SBOM tool ran over the built binaries before they were checksummed. The
+    binaries are now hashed first and re-hashed after the SBOMs, and the build dies on a change.
+  - correctness 4: tests had less power than they looked. There is a new case for the tool run
+    itself failing, and only nm's exact "no symbols" output counts as stripped.
+  - correctness 1 and the documentation half of security 2: the recovery documented for a failed
+    proxy check was untrue. It is rewritten in CONTRIBUTING.md and the release.yml header, which now
+    also cover the dispatch trust model and that a dispatched run's provenance names the branch, not
+    the tag. CONTRIBUTING's "cannot be moved" became "must never be", pending a tag ruleset. One
+    CHANGELOG entry was reworded to match.
+  - brief 5: scripts/README.md wrapped, with a Usage line for the test suite.
+- Fixed in this session: brief 2 and brief 3 (decisions recorded above) and brief 4 (the figure
+  above).
+- brief 1 (no evidence of red runs): the implementers reported red-first runs, quoted in their hand
+  backs: for example `FAIL verify_tag_accepts_valid_signed_tag ... exit: 127` before verify-tag.sh
+  existed, `FAIL build_writes_binaries_sboms_and_sums` before the SBOM code, and
+  `FAIL publish_stops_on_other_gh_error ... HTTP 502` before the fix for correctness 3. Those are
+  relayed claims, not measurements of this session. Each task commit carries its test and its code
+  together, so test-first order cannot be shown from history. What is measured is power: every
+  ledger below, and every mutation in them was killed in the end.
+- Not acted on: security 4 (the `ci` job takes the raw dispatch input: a `with:` value, prefixed
+  `refs/tags/`, read-only, and git refuses bad refnames); security 5 (release notes are `cat` into
+  the log, from reviewed main); security 6 (`v1.0.0-..` passes the regex, but git refuses it at
+  checkout); the correctness note that a missing proxy `Origin` reads like a moved tag (a false
+  alarm only, after publish). The repository-settings half of security 2 (an `environment:` on
+  publish with a tag rule, and a tag ruleset) goes to unit 09 through the handover.
+- Review fix commits and the fix mutation ledger:
+
+```
+$ git rev-list --count --no-merges 1f699ec^1..1f699ec^2
+5
+$ git diff --name-only 1f699ec^1 1f699ec | wc -l
+7
+$ grep -c '^verdict  KILLED' /private/tmp/claude-501/u05-items.suryDu/ledger-fix.txt
+7
+$ grep -c '^verdict  SURVIVED' /private/tmp/claude-501/u05-items.suryDu/ledger-fix.txt
+0
+```
+
+  - `f1-no-recheck-before-create`: `FAIL publish_refuses_tag_moved_before_create: expected exit 1`
+  - `f1-check-skips-tag`: `FAIL publish_check_accepts_missing_or_draft (missing): made other calls`
+  - `f2-check-skips-published`: `FAIL publish_check_accepts_missing_or_draft (missing): made other
+    calls: api repos/bawdo/gosbee/git/ref/tags/v0.1.0`
+  - `f3-any-error-is-missing`: `FAIL publish_stops_on_other_gh_error: ... HTTP 502: Bad Gateway`
+  - `f4-no-recheck-after-sboms`: `FAIL build_fails_when_sbom_alters_a_binary: expected exit 1`
+  - `f5a-tool-run-status-ignored`: `FAIL build_fails_when_sbom_tool_run_fails: no SBOM failure
+    reported`
+  - `f5b-nm-other-error`: `FAIL build_writes_binaries_sboms_and_sums: go tool nm failed on
+    linux_amd64`
+
+Step 7 sweep, re-run because the fixes changed `publish-release.sh`'s arguments: the same eight
+candidates as at step 3, with no `claim` line for the old usage string. `git grep` finds no caller
+left on the old argument order.
 
 ## Not done, and why
