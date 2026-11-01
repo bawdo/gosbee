@@ -252,6 +252,24 @@ Review lanes: security, correctness, brief
     still exists. Dismissed.
   - No later unit exists, so no correction was written into another brief.
 - Review lanes, three, from the selector: security, correctness, brief. None skipped.
+- Step 6 triage. Six findings across the three lanes (two each), counted from their reports, two
+  of them the same wording point. All low or cosmetic.
+  - security: the tag regex admits names git refuses as refs (`v1.2.3-a..b`, `.lock`). Not a
+    defect: such a ref cannot exist, so the ci checkout fails and nothing is injected. No change.
+  - security: on a dispatch from `main`, ci runs a `v*` tag's code in main's cache scope before
+    build checks the tag is signed and on `main`. Real, by design; recorded under Not done.
+  - brief: CHANGELOG.md's tag-check entry ran to 130 characters. Fixed, rewrapped (`339392a`).
+  - brief and correctness: that entry said the tag job runs "with no token"; it gets
+    `Metadata: read`. Fixed to "no token scope" (`339392a`), as CONTRIBUTING.md words it. The
+    published rc notes are immutable and keep the old wording.
+  - correctness: `release_yml_tag_job_shape` did not refuse a job or step `if:` or
+    `continue-on-error`, either of which lets a refused name reach ci. Fixed (`339392a`); two
+    mutations through `record-mutation.sh`, both KILLED:
+    - `continue-on-error: true` on the check step: first failing line
+      `FAIL release_yml_tag_job_shape: tag job tolerates a failed check`.
+    - `if: github.event_name == 'push'` on the tag job: first failing line
+      `FAIL release_yml_tag_job_shape: tag job or its step has a condition`.
+  - `knownTraps` is not configured, so no trap file is grown.
 
 ## Not done, and why
 
@@ -272,3 +290,11 @@ Review lanes: security, correctness, brief
     workstream; the ratio rises as pull requests land.
   - Packaging -1 (inconclusive, left out of the aggregate): Scorecard recognises known publishing
     actions, and the release publishes through `gh` in `scripts/publish-release.sh`.
+- The release's cache-scope trust, from the security lane: on a `release.yml` dispatch from `main`,
+  ci runs the named `v*` tag's code, with the Go cache on, in main's cache scope, before build
+  checks the tag is signed and on `main`. So any `v*` tag, even an unsigned one at a commit off
+  `main`, can write main's Go cache. What stands between that and a hostile write is that only an
+  admin can create a `v*` tag (`Protect release tag creation`, bypass: admin role only). Release
+  artefacts are not exposed: build compiles with `cache: false`. Closing it would mean moving the
+  signature and on-`main` checks ahead of ci, or turning the cache off for called runs; neither
+  was asked for, and it is left for the operator to schedule.
