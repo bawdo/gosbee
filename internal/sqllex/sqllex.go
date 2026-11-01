@@ -53,18 +53,17 @@ func Lex(d Dialect, sql string) ([]Token, error) {
 	var tokens []Token
 	i := 0
 	for i < len(sql) {
-		ch := sql[i]
-		switch {
-		case ch == ' ' || ch == '\t' || ch == '\n':
+		switch sql[i] {
+		case ' ', '\t', '\n':
 			i++
-		case ch == identQuote:
+		case identQuote:
 			val, next, err := quoted(sql, i, identQuote, false)
 			if err != nil {
 				return nil, err
 			}
 			tokens = append(tokens, Token{Ident, val})
 			i = next
-		case ch == '\'':
+		case '\'':
 			val, next, err := quoted(sql, i, '\'', d == MySQL)
 			if err != nil {
 				return nil, err
