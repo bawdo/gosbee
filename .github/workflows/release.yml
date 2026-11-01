@@ -181,6 +181,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Its deployment policy (scripts/repo-settings.sh harden) admits only v*
+    # tags and main, so a run dispatched from any other branch cannot publish.
+    environment: release
     permissions:
       contents: write     # create the release and upload its assets
       id-token: write     # sign the build provenance attestation
