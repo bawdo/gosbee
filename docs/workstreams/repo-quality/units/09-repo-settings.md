@@ -115,6 +115,76 @@ Review lanes: security, correctness, brief
 
 ## Plan
 
+`docs/workstreams/repo-quality/plans/2026-11-01-repo-settings.md`, written with
+`superpowers:writing-plans` (`skills.plan`); built in this session with
+`superpowers:test-driven-development` (`skills.testFirst`); `skills.implement` is not configured.
+Items carry no ids, so `work-items.sh` was not needed: the unit ran as a legacy list.
+
 ## Outcome
 
+Close mode as run: `auto`. Questions that fired, with answers:
+
+- Scope (unit 08 correction): private vulnerability reporting and the publish environment.
+  Operator: add both to `harden`.
+- SECURITY.md wording and `verify-tag.sh`. Operator: SECURITY.md only.
+- Commit grant. Operator: yes, for this unit.
+- `metadata` dry run. Operator: apply. `rulesets` dry run. Operator: apply.
+
+Built: `scripts/repo-settings.sh` (phases `metadata`, `rulesets`, `harden`, `show`) and
+`scripts/repo-settings_test.sh`, 17 cases, all `ok` (counted from the run's `^ok ` lines),
+shellcheck clean; the test runs in CI (`Lint and audit`) and as the `repo-settings` gate in
+`scripts/wombat-verify.sh`. `release.yml`'s publish job names `environment: release`. zizmor
+1.31.1 offline: no findings (run in the sandbox with uv's cache, tool and Python dirs under
+`$TMPDIR`). CONTRIBUTING (Branch Rules, new Repository Settings, Releasing), SECURITY.md,
+scripts/README.md and CHANGELOG `[Unreleased]` updated.
+
+Mutations, through `record-mutation.sh` with `--fail-pattern '^FAIL '`, all four KILLED:
+
+- `DRY_RUN` check never true: first failing line `FAIL dry_run_sends_nothing_for_every_phase: sent a write`.
+- `Protect main` strict policy false: `FAIL rulesets_creates_when_absent: wrong main ruleset`.
+- GitHub-owned actions kept in the allowlist: `FAIL harden_sends_every_setting_in_order: PUT .../selected-actions body fails`.
+- A failed list read answered as `[]`: `FAIL rulesets_stops_when_the_list_cannot_be_read: expected exit 1`.
+
+Applied, after approval: `metadata` (PATCH repo, PUT topics, exit 0) and `rulesets` (PUT
+13059268, PUT 25916143, POST created `Protect release tag creation` 26305661, exit 0). A dry
+re-run of `rulesets` afterwards PUTs all three by id and POSTs nothing. `show` after applying:
+
+```
+description: A Golang SQL Builder
+homepage: https://pkg.go.dev/github.com/bawdo/gosbee
+topics: arel ast go golang mysql postgresql query-builder sql sql-builder sqlite
+merge_methods: squash
+allow_auto_merge: true
+allow_update_branch: true
+delete_branch_on_merge: true
+has_discussions: true
+has_wiki: false
+has_projects: false
+rulesets: Protect main, Protect release tag creation, Protect release tags
+private_vulnerability_reporting: enabled
+allowed_actions: all
+sha_pinning_required: true
+allowed_action_patterns: none
+default_workflow_permissions: read
+fork_pr_approval: all_external_contributors
+code_scanning_default_setup: configured
+code_scanning_query_suite: default
+immutable_releases: disabled
+release_environment_policies: none
+```
+
+`harden` dry run for unit 10 (not applied, operator ruling): third-party actions
+`codecov/codecov-action@*`, `golangci/golangci-lint-action@*`, `ossf/scorecard-action@*`,
+`zizmorcore/zizmor-action@*`; writes, in order: PUT actions/permissions (selected, SHA pinning),
+PUT selected-actions (GitHub-owned yes, verified no, those four patterns), PUT
+actions/permissions/workflow (read, no PR approval), PUT fork-pr-contributor-approval
+(`all_external_contributors`), PATCH code-scanning/default-setup (`extended`, actions and go),
+PUT private-vulnerability-reporting, PUT immutable-releases, PUT environments/release (no
+reviewers, custom policies), POST policy `v*` (tag), POST policy `main` (branch). Unit 10 must
+re-run the dry run from `main` after the merge: the list is read from the workflows checked out.
+
 ## Not done, and why
+
+- `harden` not applied: operator ruling, applied in unit 10 after the integration branch merges.
+- `scripts/verify-tag.sh` still accepts any GitHub-verified signature: operator ruling, left for
+  the operator to schedule.
