@@ -75,4 +75,85 @@ Review lanes: security, correctness, brief
 
 ## Outcome
 
+Close mode as run: auto. Commit grant given once in conversation for the session.
+
+Questions that fired, with the operator's answer:
+- Scope (found mid-unit, before the close): UPDATE SET targets render table-qualified, which
+  PostgreSQL and SQLite reject. Options offered: MySQL example and defer, pin and defer, fix here.
+  **Answer: fix it in this unit.**
+- Environment (step 1): the agent sandbox refuses httptest's loopback bind, so the verification
+  ran in the operator's shell. Not a gate question: the operator ran the command handed over.
+
+What landed:
+- Testable examples, each with an `// Output:` block, in external test packages:
+
+  ```
+  $ git grep -c '^func Example' -- '*_test.go'
+  managers/example_test.go:6
+  plugins/opa/example_test.go:3
+  plugins/softdelete/example_test.go:2
+  visitors/example_test.go:3
+  ```
+
+  Builder: `ExampleSelectManager_Select`, `_Join`, `_Where` (AND plus a grouped OR),
+  `ExampleInsertManager_Values`, `ExampleUpdateManager_Set`, `ExampleDeleteManager_Where`.
+  Dialects: `ExampleNewPostgresVisitor`, `ExampleNewMySQLVisitor`, `ExampleNewSQLiteVisitor`.
+  Plugins: softdelete `ExampleNew`, `ExampleWithTableColumn`; opa `ExampleNew` (PolicyFunc),
+  `ExampleNewFromServer` (`SELECT *` masked through a `ColumnResolver`, the unit 06 correction's
+  path), `ExampleNewFromServer_maskedColumnRefused` (`refuseMaskedUse`, `ErrMaskedColumnUse`).
+  `plugins/` ships two plugins (softdelete, opa); the rest of `plugins/` is the transformer
+  framework, not a plugin.
+- Fix: `baseVisitor.VisitAssignment` writes a column target bare, so UPDATE SET and ON CONFLICT
+  DO UPDATE SET are valid on PostgreSQL and SQLite. Pinned expectations corrected, 14 in
+  `visitors/visitors_test.go` and 3 in `cmd/repl/repl_test.go`:
+
+  ```
+  $ git diff workstream/repo-quality...HEAD -- visitors/visitors_test.go cmd/repl/repl_test.go | grep -c '^-[^-]'
+  17
+  ```
+
+  A SQLite assertion and `TestVisitUpdateSetTargetUnqualifiedValueQualified` were added.
+- CHANGELOG `[Unreleased]`: Added (examples) and Fixed (UPDATE SET).
+
+Proof:
+- Each example was first seen failing against a placeholder `// Output:` (visitors, softdelete)
+  or a wrong one (`ExampleUpdateManager_Set` before the fix), so `go test` checks the output.
+- The fix's tests were seen red before the change. Mutation, through `record-mutation.sh`
+  (ledger in the session scratchpad, outside the repository):
+
+  ```
+  mutation .../scratchpad/m1.patch
+  command  go test -count=1 -run Update\|Assign\|Conflict\|Example ./visitors/ ./managers/ ./cmd/repl/
+  diff     visitors/visitor.go: `ok {` -> `ok && false {` in VisitAssignment
+  first    --- FAIL: TestVisitInsertOnConflictDoUpdateWithWhere (0.00s)
+  verdict  KILLED
+  ```
+
+- `ExampleNewFromServer`'s output was derived by hand and first run in the operator's
+  verification at `80693c2`, where the `test` gate (`go test -race -count=1 -shuffle=on ./...`)
+  passed.
+
+Verification at step 1 (`WOMBAT_BASE_REF=workstream/repo-quality scripts/wombat-verify.sh`, run
+by the operator at `80693c2`): tree clean; gates fmt, vet, lint, tidy, changelog, release-scripts,
+vuln, zizmor, shellcheck, ci-result, fuzz-script, test all `pass`; none skipped.
+
+Lanes: `select-gates.sh .` printed security, correctness, brief (3 lanes, none skipped, no
+`unmatched` line).
+
+Scan: `scan-secrets.sh .` printed `scan clean: 14 files`.
+
+Sweep: `sweep-docs.sh . --base workstream/repo-quality --claim 'SET "users"."name"'` printed 2
+candidates; both dismissed, none rewritten or deleted:
+- `CHANGELOG.md` (claim): this unit's own Fixed entry, quoting the old output on purpose.
+- `CONTRIBUTING.md` (named-file `visitor.go`): names `nodes/visitor.go`, not the changed
+  `visitors/visitor.go`; still true.
+No correction written into a later unit's brief.
+
+For 08: the README and guides carry no example section pointing at pkg.go.dev; whether they should
+is 08's call. For 10: `ExampleNewFromServer*` bind a loopback port, as the OPA tests already do.
+
 ## Not done, and why
+
+- `examples/before_after_example.go` (a commented-out sketch, not compiled) shows stale API
+  (`sm.UsePlugin`, `plugins.NewSoftDeletePlugin`, a two-value `ToSQL`). Outside this unit's items;
+  left for the operator to schedule or delete.
