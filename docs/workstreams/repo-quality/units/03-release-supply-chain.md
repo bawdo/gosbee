@@ -95,4 +95,46 @@ Review lanes: security, correctness, brief
 
 ## Outcome
 
+Close mode as run: `auto`. Plan only, as the mode says. The plan's handoff to execution was not
+taken.
+
+Landed: `docs/workstreams/repo-quality/plans/2026-11-01-release-supply-chain.md`.
+
+```
+$ grep -c '^### Task' docs/workstreams/repo-quality/plans/2026-11-01-release-supply-chain.md
+4
+$ grep -c '^- \[ \]' docs/workstreams/repo-quality/plans/2026-11-01-release-supply-chain.md
+20
+```
+
+Task 1 adds SBOMs to `build-release.sh`, Task 2 adds `check-module-proxy.sh`, Task 3 adds the
+`proxy` job, and Task 4 covers the gates and docs. Every brief criterion maps to a task: the proxy
+job (Tasks 2 and 3), the SBOM asset and its pinning (Task 1), generation in the build job, listing
+in `SHA256SUMS` and the attestation (Task 1), the tool choice (Decisions), zizmor, shellcheck and
+the gate list (Tasks 3 and 4), and CHANGELOG (Task 4).
+
+Verification at step 1, `WOMBAT_BASE_REF=workstream/repo-quality scripts/wombat-verify.sh` (run
+outside the sandbox), recorded at `839eb43`: fmt, vet, lint, tidy, changelog, vuln, shellcheck and
+test `pass`. zizmor `skipped`, reason "zizmor not installed (CI runs it)". Tree `clean`.
+
+Lane selection, `select-gates.sh .`: `brief` runs. `security` and `correctness` were skipped, both
+with the reason "no changed path matched". This unit changed only Markdown under
+`docs/workstreams/`.
+
+Scan, `scan-secrets.sh .`: `scan clean: 12 files`.
+
+Sweep, `sweep-docs.sh . --base workstream/repo-quality`: printed no candidates. No `--claim` was
+passed, because a plan falsifies no document. Nothing was rewritten, deleted or dismissed, and no
+later brief was corrected.
+
+Questions that fired: at open, the re-cut question. The operator answered the commit question
+("You may commit - follow all rules.") but not the re-cut one, so the unit ran as briefed. Standing
+commit grant given in conversation.
+
+Inherited by whoever builds this: the 02 plan's double-listed bundle (see Decisions), and the
+`--signer-workflow` verification docs, now left to unit 07.
+
 ## Not done, and why
+
+- The re-cut that 02's handover called due before 03 or 09 opens. It is not this unit's to make,
+  and the operator has not ruled on it yet.
