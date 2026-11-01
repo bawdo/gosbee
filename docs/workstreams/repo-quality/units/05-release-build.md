@@ -85,7 +85,7 @@ release-proof, now unit 10.
   through `uvx zizmor --offline .github/workflows` to meet the zizmor criterion, since the verify
   script skips it locally.
 - Mutation ledgers live outside the repository, beside the item worktrees under
-  `$TMPDIR/u05-items.suryDu/`; their blocks are copied into `## Outcome`.
+  `/private/tmp/claude-501/u05-items.suryDu/`; their blocks are copied into `## Outcome`.
 - Item [a] rulings (implementer's, accepted at merge):
   - Fix 2 is done by attaching exactly the files `dist/SHA256SUMS` lists, then `SHA256SUMS`, then
     the bundle. A glob also matches the bundle's own name, so the plan's command uploaded it twice.
@@ -124,23 +124,80 @@ release-proof, now unit 10.
 
 ## Outcome
 
-Work items: `[a]` merged at `dd10469` (6 signed commits, 11 files), verification green on every
-gate there, zizmor included. `[b]` merged at `93810c1` (4 signed commits, 9 files), green on every
-gate there. The 03 plan's precondition check passed before its Task 1 (scripts present; `ci`,
-`build` and `publish` jobs at lines 44, 56 and 142). `scripts/release-scripts_test.sh`: 22 cases
-after `[a]`, 38 after `[b]`, counted on the unit branch. actionlint clean at `93810c1`.
+Close mode as run: `auto`. Questions that fired: none so far.
+
+What landed: both plans in full, in plan order. Work item `[a]` (the 02 plan) merged at `dd10469`
+and item `[b]` (the 03 plan) merged at `93810c1`, both signed, with verification green on every gate
+after each merge, zizmor included. The 03 plan's precondition check passed before its Task 1: the
+scripts were present, and the `ci`, `build` and `publish` jobs sat at lines 44, 56 and 142 of
+`release.yml`. actionlint printed nothing at `93810c1`. Nothing was pushed or tagged, and nothing
+ran remotely: unit 10 is the first real run.
+
+```
+$ git rev-list --count --no-merges dd10469^1..dd10469^2
+6
+$ git diff --name-only dd10469^1 dd10469 | wc -l
+11
+$ git rev-list --count --no-merges 93810c1^1..93810c1^2
+4
+$ git diff --name-only 93810c1^1 93810c1 | wc -l
+9
+$ bash scripts/release-scripts_test.sh 2>&1 | grep -c "^ok"
+38
+$ git diff --stat workstream/repo-quality...HEAD | tail -1
+15 files changed, 1815 insertions(+), 103 deletions(-)
+```
+
+Verification at step 1 (`c93f34f`): every gate ran and passed (fmt, vet, lint, tidy, changelog,
+release-scripts, vuln, zizmor, shellcheck, ci-result, test). None was skipped, and `tree` read
+clean. The run was unsandboxed, as Decisions says. The lane selector printed security,
+correctness and brief, with no `unmatched` line. `scan-secrets.sh` printed `scan clean: 13 files`.
+
+Sweep (`sweep-docs.sh . --base workstream/repo-quality`, no `--claim`: no single sentence was
+falsified, since the docs the change made untrue were rewritten inside the items):
+
+```
+CHANGELOG.md	touched	CHANGELOG.md
+CONTRIBUTING.md	touched	CONTRIBUTING.md
+README.md	named-file	README.md
+cmd/repl/README.md	named-file	README.md
+plugins/README.md	named-file	README.md
+plugins/opa/README.md	named-file	README.md
+plugins/softdelete/README.md	named-file	README.md
+scripts/README.md	touched	scripts/README.md
+```
+
+- Acted on: the three `touched` documents, which the items rewrote to describe the pipeline as
+  built (CONTRIBUTING.md Branch Rules and Releasing, CHANGELOG.md `[Unreleased]`, and
+  scripts/README.md for the four new scripts).
+- Dismissed: the five `named-file` READMEs, which match only because `scripts/README.md`
+  changed. None mentions release, coverage or a workflow file (`git grep` for `release`,
+  `codecov`, `ci.yml`, `sync-notes` and SBOM). The root README's `CI` badge still resolves,
+  because `ci.yml` keeps `name: CI`.
+- Deleted: none. Corrections written into later briefs: none.
 
 Mutation ledgers (`record-mutation.sh`, fail pattern anchored on the suite's `^FAIL <case>`
 marker), as `patch: first failing line`:
 
-- `[a]`, 6 of 6 KILLED:
+```
+$ grep -c '^verdict  KILLED' /private/tmp/claude-501/u05-items.suryDu/ledger-a.txt
+6
+$ grep -c '^verdict  SURVIVED' /private/tmp/claude-501/u05-items.suryDu/ledger-a.txt
+0
+$ grep -c '^verdict  KILLED' /private/tmp/claude-501/u05-items.suryDu/ledger-b.txt
+16
+$ grep -c '^verdict  SURVIVED' /private/tmp/claude-501/u05-items.suryDu/ledger-b.txt
+1
+```
+
+- `[a]`, all KILLED:
   - `build-smoke-postgres`: `FAIL build_writes_four_binaries_and_sums: expected exit 0`
   - `build-no-strip`: `FAIL build_writes_four_binaries_and_sums: darwin_amd64 is not stripped`
   - `verify-tag-unanchored`: `FAIL verify_tag_rejects_bad_name (v1.0.0;id)`
   - `publish-bundle-twice`: `FAIL publish_creates_when_missing: wrong create line` (bundle twice)
   - `publish-prerelease-latest`: `FAIL publish_marks_prerelease`
   - `publish-overwrites-published`: `FAIL publish_stops_on_published_release: expected exit 1`
-- `[b]`, 17 records, 16 KILLED, 1 SURVIVED:
+- `[b]`, every record KILLED except the one SURVIVED, then re-recorded:
   - `proxy-retries-mismatch`: `FAIL proxy_rejects_moved_tag: wrong output`
   - `proxy-six-attempts`: `FAIL proxy_gives_up_after_five: expected 5 proxy calls`
   - `sumdb-three-attempts`: `FAIL sumdb_miss_fails: expected 2 sumdb calls`
