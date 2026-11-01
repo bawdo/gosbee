@@ -122,6 +122,11 @@ Close mode as run: **auto**. Questions that fired, with the operator's answers:
 - Coverage and zizmor could not run here: the sandbox blocks local port binding (`httptest`),
   and the auto-mode classifier refused both an unsandboxed `go test` and `uvx zizmor`. The
   operator ran `measure.sh` and the step 1 verification themselves.
+- After step 4, the step 7 re-verification needed the same port binding, so the operator ran it
+  again: `WOMBAT_BASE_REF=workstream/repo-quality scripts/wombat-verify.sh` at `26aafba`, tree
+  `clean`, every gate `pass` but `zizmor` (skipped, "zizmor not installed (CI runs it)"). Merged as
+  `a91f253` with no gate refusal. No other question fired after step 4.
+- Not done notes written: 0 (`## Not done, and why` is empty), so none travelled.
 
 ### What landed
 

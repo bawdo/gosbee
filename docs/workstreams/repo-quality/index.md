@@ -1,7 +1,7 @@
 # Workstream: repo-quality
 
 Integration branch: workstream/repo-quality
-Next unit: 04
+Next unit: 05
 
 Bring gosbee's GitHub, CI and release practice up to (and past) bawdo/caddy_shack,
 bawdo/jellyfish and bawdo/go-blinkstick: a strong OpenSSF Scorecard and readiness for
@@ -20,25 +20,23 @@ documents what 02 and 03 ship, 08 needs the final action set, 09 proves it all.
 | 01 | scorecard | implement | unit/01-scorecard | done | units/01-scorecard.md |
 | 02 | release-pipeline | plan | unit/02-release-pipeline | done | units/02-release-pipeline.md |
 | 03 | release-supply-chain | plan | unit/03-release-supply-chain | done | units/03-release-supply-chain.md |
-| 04 | ci-gate-and-lint | implement | unit/04-ci-gate-and-lint | next | units/04-ci-gate-and-lint.md |
-| 05 | fuzzing | plan | unit/05-fuzzing | pending | units/05-fuzzing.md |
+| 04 | ci-gate-and-lint | implement | unit/04-ci-gate-and-lint | done | units/04-ci-gate-and-lint.md |
+| 05 | fuzzing | plan | unit/05-fuzzing | next | units/05-fuzzing.md |
 | 06 | examples | implement | unit/06-examples | pending | units/06-examples.md |
 | 07 | community-docs | implement | unit/07-community-docs | pending | units/07-community-docs.md |
 | 08 | repo-settings | plan | unit/08-repo-settings | pending | units/08-repo-settings.md |
 | 09 | release-proof | implement | unit/09-release-proof | pending | units/09-release-proof.md |
 
-## Handover from unit 03
+## Handover from unit 04
 
-Unit 03 landed a plan only:
-`docs/workstreams/repo-quality/plans/2026-11-01-release-supply-chain.md`, four TDD tasks, built
-on top of the 02 plan (it stops if 02's scripts and jobs are absent). SBOMs: `cyclonedx-gomod`
-v1.12.0 via `tools/go.mod`, CycloneDX JSON 1.6, a module SBOM plus one per binary, all named
-inside 02's `gosbee-repl_<tag>_*` globs so `SHA256SUMS` (now nine lines) and `subject-checksums`
-cover them. The proxy check is `scripts/check-module-proxy.sh`, run by a `proxy` job after publish
-with no checkout (the script arrives as a build artifact) against the build job's `commit` output.
-**Still open for the operator: the re-cut.** Nothing builds the 02 or 03 plans, and 09 assumes the
-pipeline is on `main`. 03 ran as briefed because the question went unanswered at open. **For the
-02 builder:** 02's plan lists the provenance bundle twice in `gh release create` (its line 101).
-For 07: the verification docs should pin `--signer-workflow` to `release.yml` (passed on from 02),
-and mention the SBOMs. Carried from 02: for 04, an actionlint gate is left to it; for 08,
-`Coverage` is not a required check. gpg signing fails inside the agent sandbox, so commit outside it.
+Unit 04 landed code. `CI OK` is now decided by `scripts/ci-result.sh` (alls-green gone): `JOBS=(lint test)`
+plus a `skippable` case table, one arm per event, all empty. **For 05:** add `fuzz` to `JOBS`, to the gate's
+`needs:`, and to the arms of the events that may skip it; `scripts/ci-result_test.sh` fails until `JOBS`,
+`needs:` and the ci.yml job list agree, and its permitted-skip case `sed`-rewrites the exact line
+`        pull_request) echo "" ;;` in a copy (it fails loudly if that line changes). CI lint now shellchecks
+`scripts/*.sh` (v0.11.0, sha256 pinned in the step's env, not tracked by Dependabot). Codecov project 93% and
+patch 80% now gate (Codecov's `main` read 94.16%). **For the 02 builder:** the gate job has its own checkout,
+which needs `ref: inputs.ref` once ci.yml is callable. `pre-ci-check.sh --fix gofmt` works now. Local `go test`
+needs port binding the agent sandbox blocks, so verification runs fell to the operator; zizmor is not
+installed locally. Still open: the 02/03 re-cut; for 07, pin `--signer-workflow` to `release.yml` and
+mention SBOMs; for 08, `Coverage` is not a required check. gpg signing needs commits outside the sandbox.
