@@ -128,9 +128,12 @@ cleanly), writes CycloneDX JSON 1.6 SBOMs and then `dist/SHA256SUMS` listing
 every binary and SBOM. The SBOMs come from `cyclonedx-gomod`, pinned in
 `tools/go.mod`: `dist/gosbee-repl_<tag>_module.cdx.json` for the module (its
 version, read from the tag at HEAD, must be `<tag>`) and
-`dist/gosbee-repl_<tag>_<os>_<arch>.cdx.json` for each binary. It refuses a
-malformed tag and an existing `dist/` before building anything, and a failed
-SBOM stops it before `SHA256SUMS` is written. It needs `jq`.
+`dist/gosbee-repl_<tag>_<os>_<arch>.cdx.json` for each binary. The SBOM tool
+is third-party code that runs after the binaries exist, so they are
+checksummed before it runs, and a binary changed after it fails the build,
+named. It refuses a malformed tag and an existing `dist/` before building
+anything, and a failed SBOM stops it before `SHA256SUMS` is written. It needs
+`jq`.
 
 **Tests**: `./scripts/release-scripts_test.sh`.
 

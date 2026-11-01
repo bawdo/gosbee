@@ -871,6 +871,34 @@ grep -qxF "build-release: SBOM generation failed for gosbee-repl_v0.0.0-test_mod
 [ ! -e "$BUILD/dist/SHA256SUMS" ] || fail "$name" "wrote SHA256SUMS"
 echo "ok $name"
 
+# A go that resolves cyclonedx-gomod to FAKE_SBOM_TOOL and is the real go
+# otherwise, so the build runs a stand-in tool.
+mkdir -p "$ROOT/sbom-tool"
+cat > "$ROOT/sbom-tool/go" <<EOF
+#!/usr/bin/env bash
+[ "\$*" = "-C tools tool -n cyclonedx-gomod" ] && { echo "\$FAKE_SBOM_TOOL"; exit 0; }
+exec "$REAL_GO" "\$@"
+EOF
+# The real tool, after appending to a binary that was already checksummed.
+REAL_TOOL=$(cd "$BUILD" && go -C tools tool -n cyclonedx-gomod)
+cat > "$ROOT/sbom-tool/tampers" <<EOF
+#!/usr/bin/env bash
+echo tampered >> "$BUILD/dist/gosbee-repl_v0.0.0-test_linux_arm64"
+exec "$REAL_TOOL" "\$@"
+EOF
+chmod +x "$ROOT/sbom-tool/go" "$ROOT/sbom-tool/tampers"
+
+# The SBOM tool is third-party code run after the binaries exist, so they are
+# checksummed before it runs and must be unchanged after.
+name=build_fails_when_sbom_alters_a_binary
+rm -rf "$BUILD/dist"
+PATH="$ROOT/sbom-tool:$PATH" FAKE_SBOM_TOOL="$ROOT/sbom-tool/tampers" run_build v0.0.0-test
+[ "$CODE" -eq 1 ] || fail "$name" "expected exit 1"
+grep -qxF "build-release: gosbee-repl_v0.0.0-test_linux_arm64 changed while the SBOMs were written" <<<"$ERR" \
+    || fail "$name" "no changed binary reported"
+[ ! -e "$BUILD/dist/SHA256SUMS" ] || fail "$name" "wrote SHA256SUMS"
+echo "ok $name"
+
 # cyclonedx-gomod names the module SBOM's version after a tag at HEAD, and a
 # commit can carry more than one (a pre-release and its final release). An
 # SBOM naming any version but the tag being built is refused.
