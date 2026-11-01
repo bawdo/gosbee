@@ -211,6 +211,48 @@ Review lanes: security, correctness, brief
   only `x/net` moved), fixing `GO-2026-6860` and `GO-2026-6866`, both pulled in through
   cyclonedx-gomod's go-license-detector.
 
+- Measured counts behind the figures above, run 2026-11-01 at close:
+
+  ```
+  $ grep -c -P "\tpass\t" .claude/wombat-verification
+  13
+  $ gh api repos/bawdo/gosbee/releases/tags/v0.3.0-rc.1 --jq ".assets | length"
+  11
+  $ shasum -a 256 -c SHA256SUMS --ignore-missing | grep -c ": OK$"
+  9
+  $ grep -c "^verdict  KILLED" ledger.md
+  3
+  ```
+
+- Close mode as run: `auto`. Questions put to the operator, each with its cause and answer:
+  - Commit grant at open: granted for the session.
+  - The CodeQL fix's approach (cause: diagnosis before fix): first "both (a) and (b)", then, after
+    the corrected diagnosis, "(b) plus the rename".
+  - Squash versus merge commit for #28 (cause: squash is the only method): squash, as the
+    settings require.
+  - `harden`'s dry run (cause: a write to live settings): approved.
+  - The proof's findings: bump `x/net`, record `GO-2026-5932` (option a), add the SECURITY.md notes.
+  - The join of `d4de27c` stopped on a conflict in this brief (cause: merge conflict, aborted and
+    handed over, not resolved): "proceed" with `git merge -s ours`, which kept this branch's tree,
+    since `d4de27c`'s tree equals `8fe9325`'s and `8fe9325` is on this branch. Joined as `8c2e792`.
+- Close-out step 1, verification at `8c2e792`, `WOMBAT_BASE_REF=workstream/repo-quality
+  scripts/wombat-verify.sh` (outside the sandbox): tree clean; gates run, all pass, none skipped:
+  fmt, vet, lint, tidy, changelog, release-scripts, repo-settings, vuln, zizmor, shellcheck,
+  ci-result, fuzz-script, test. `select-gates.sh .`: lanes security, correctness, brief; no
+  `unmatched` and no `floor` line. `work-item-tree.sh . list`: `none`.
+- Step 2, `scan-secrets.sh .`: `scan clean: 15 files`.
+- Step 3, `sweep-docs.sh . --base workstream/repo-quality`, run twice, with `--claim` set to the
+  CONTRIBUTING.md sentence this unit falsified (CI "called with `refs/tags/<tag>`") and to
+  `inputs.ref`. Each printed four candidates:
+  - `CHANGELOG.md` touched, `SECURITY.md` touched: this unit's own edits, read back and left.
+  - `CONTRIBUTING.md` claim (first run) and touched (second): the old sentence is gone; the claim
+    matched the rewritten one, which keeps both fragments. Re-read: one line of the rewrite ran
+    past the file's wrap width, rewrapped. No other change.
+  - `README.md` named-file `ci.yml`: the CI badge's link to `actions/workflows/ci.yml`, which
+    still exists. Dismissed.
+  - No later unit exists, so no correction was written into another brief.
+- Review lanes, three, from the selector: security, correctness, brief. None skipped.
+
 ## Not done, and why
 
 - Scorecard checks below 10 outside the brief's exempt four (Code-Review, Contributors,
