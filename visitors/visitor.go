@@ -476,8 +476,17 @@ func (b *baseVisitor) VisitDeleteStatement(n *nodes.DeleteStatement) string {
 	return sb.String()
 }
 
+// VisitAssignment renders a SET assignment. A column target is written bare,
+// never table-qualified: the target is always a column of the table being
+// updated, and PostgreSQL and SQLite reject a qualified one. The value is an
+// ordinary expression and is rendered in full.
 func (b *baseVisitor) VisitAssignment(n *nodes.AssignmentNode) string {
-	left := n.Left.Accept(b.outer)
+	var left string
+	if attr, ok := n.Left.(*nodes.Attribute); ok {
+		left = b.quoteIdent(attr.Name)
+	} else {
+		left = n.Left.Accept(b.outer)
+	}
 	right := n.Right.Accept(b.outer)
 	return left + " = " + right
 }

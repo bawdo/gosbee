@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `make fuzz` runs them all, and CI fuzzes every target weekly and on a manual
   run, keeping failing inputs as an artifact for 14 days.
 
+- Testable examples, checked by `go test` and shown on pkg.go.dev, for the
+  core builder (select, join, where, insert, update and delete), each dialect
+  visitor (PostgreSQL, MySQL and SQLite) and each plugin (soft delete and
+  OPA, including column masking of a `SELECT *`).
+
 ### Changed
 
 - The `CI OK` check is decided by an in-repo script, `scripts/ci-result.sh`,
@@ -61,6 +66,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/pre-ci-check.sh --fix gofmt` (and `make pre-ci-fix`) now applies
   the fix. The option was parsed but never reached the script's main
   function, so it was silently ignored.
+- `UPDATE ... SET` and `ON CONFLICT ... DO UPDATE SET` write each target
+  column bare (`SET "name" = $1`). They wrote it table-qualified
+  (`SET "users"."name" = $1`), which PostgreSQL and SQLite reject. The value
+  side of an assignment is unchanged. Because the target is now bare, `ToSQL`
+  refuses a target column of another table with `managers.ErrSetTargetTable`
+  rather than letting it resolve to a column of the table being written.
 
 ## [v0.2.1] - 2026-10-27
 

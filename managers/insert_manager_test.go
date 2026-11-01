@@ -1,6 +1,7 @@
 package managers
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/bawdo/gosbee/internal/testutil"
@@ -297,5 +298,30 @@ func TestInsertToSQLParamsWithoutParameterizer(t *testing.T) {
 	}
 	if params != nil {
 		t.Errorf("expected nil params, got %v", params)
+	}
+}
+
+// --- DO UPDATE SET target must belong to the table inserted into ---
+
+func TestInsertOnConflictDoUpdateTargetFromAnotherTableRefused(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	m := NewInsertManager(users).Columns(users.Col("email")).Values("a@b.com")
+	m.OnConflict(users.Col("email")).
+		DoUpdate(&nodes.AssignmentNode{Left: posts.Col("title"), Right: nodes.Literal("x")})
+	if _, _, err := m.ToSQL(testutil.StubVisitor{}); !errors.Is(err, ErrSetTargetTable) {
+		t.Fatalf("expected ErrSetTargetTable, got %v", err)
+	}
+}
+
+func TestInsertOnConflictDoUpdateTargetSameTableAccepted(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	m := NewInsertManager(users).Columns(users.Col("email")).Values("a@b.com")
+	m.OnConflict(users.Col("email")).
+		DoUpdate(&nodes.AssignmentNode{Left: users.Col("name"), Right: nodes.Literal("x")})
+	if _, _, err := m.ToSQL(testutil.StubVisitor{}); err != nil {
+		t.Fatalf("unexpected error %v", err)
 	}
 }

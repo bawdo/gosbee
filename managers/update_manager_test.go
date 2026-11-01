@@ -242,3 +242,49 @@ func TestUpdateToSQLParamsWithoutParameterizer(t *testing.T) {
 		t.Errorf("expected nil params, got %v", params)
 	}
 }
+
+// --- SET target must belong to the table being updated ---
+
+// The visitor writes a SET target bare, so a column taken from another
+// table would silently resolve to a column of this one. ToSQL refuses it.
+func TestUpdateSetTargetFromAnotherTableRefused(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	posts := nodes.NewTable("posts")
+	m := NewUpdateManager(users).Set(posts.Col("title"), "x")
+	sql, _, err := m.ToSQL(testutil.StubVisitor{})
+	if !errors.Is(err, ErrSetTargetTable) {
+		t.Fatalf("expected ErrSetTargetTable, got %v (sql %q)", err, sql)
+	}
+	if sql != "" {
+		t.Errorf("expected no SQL alongside the error, got %q", sql)
+	}
+}
+
+func TestUpdateSetTargetFromAliasOfAnotherTableRefused(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	p := nodes.NewTable("posts").Alias("p")
+	m := NewUpdateManager(users.Alias("u")).Set(p.Col("title"), "x")
+	if _, _, err := m.ToSQL(testutil.StubVisitor{}); !errors.Is(err, ErrSetTargetTable) {
+		t.Fatalf("expected ErrSetTargetTable, got %v", err)
+	}
+}
+
+func TestUpdateSetTargetSameTableAccepted(t *testing.T) {
+	t.Parallel()
+	users := nodes.NewTable("users")
+	u := users.Alias("u")
+	cases := map[string]*UpdateManager{
+		"same table":              NewUpdateManager(users).Set(users.Col("name"), "x"),
+		"equal table, new node":   NewUpdateManager(users).Set(nodes.NewTable("users").Col("name"), "x"),
+		"alias target, alias col": NewUpdateManager(u).Set(u.Col("name"), "x"),
+		"alias target, table col": NewUpdateManager(u).Set(users.Col("name"), "x"),
+		"unbound column":          NewUpdateManager(users).Set(nodes.NewAttribute(nil, "name"), "x"),
+	}
+	for name, m := range cases {
+		if _, _, err := m.ToSQL(testutil.StubVisitor{}); err != nil {
+			t.Errorf("%s: unexpected error %v", name, err)
+		}
+	}
+}
