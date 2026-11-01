@@ -121,7 +121,7 @@ Questions at step 6 triage (no gate command named, so none went through `record-
 
   ```
   $ bash scripts/fuzz_test.sh | grep -c "^ok "
-  20
+  25
   ```
 - ci.yml `fuzz` job: `if: !inputs.ref && (schedule || workflow_dispatch)`, FUZZTIME 5m on schedule
   and 15s on dispatch, `timeout-minutes: 60`, `persist-credentials: false`, `ref: inputs.ref`,
@@ -132,7 +132,7 @@ Questions at step 6 triage (no gate command named, so none went through `record-
 
   ```
   $ scripts/ci-result_test.sh | grep -c "^ok "
-  33
+  34
   $ git show workstream/repo-quality:scripts/ci-result_test.sh | grep -c 'echo "ok '
   16
   ```
@@ -140,14 +140,31 @@ Questions at step 6 triage (no gate command named, so none went through `record-
   case count. The run count before this unit was not measured.)
 - CONTRIBUTING.md (Testing gets a Fuzzing subsection; Branch Rules lists the Fuzz job and its
   skip), CHANGELOG.md `[Unreleased]` Added, scripts/README.md (a `fuzz.sh` section).
-- Each target was fuzzed locally for 15 to 30s, plus `make fuzz FUZZTIME=2s` over all of them:
-  no finding.
+- Each target was fuzzed locally for 15 to 30s, one `go test -fuzz` run per target in this
+  session, and then all of them together:
+
+  ```
+  $ make fuzz FUZZTIME=2s | grep -E '^(==>|Failed|Every)'
+  ==> github.com/bawdo/gosbee/cmd/repl FuzzTokenize
+  ==> github.com/bawdo/gosbee/cmd/repl FuzzParseValue
+  ==> github.com/bawdo/gosbee/internal/quoting FuzzDoubleQuote
+  ==> github.com/bawdo/gosbee/internal/quoting FuzzBacktick
+  ==> github.com/bawdo/gosbee/internal/quoting FuzzEscapeString
+  ==> github.com/bawdo/gosbee/internal/quoting FuzzEscapeLikePattern
+  ==> github.com/bawdo/gosbee/plugins/opa FuzzMaskedProjection
+  ==> github.com/bawdo/gosbee/visitors FuzzIdentifierQuoting
+  ==> github.com/bawdo/gosbee/visitors FuzzStringLiteral
+  Every fuzz target passed.
+  ```
+
+  No run found anything.
 
 ### Mutation ledger
 
 Each run went through `record-mutation.sh . --patch <p> --fail-pattern <runner marker> --ledger
 <scratchpad>/mut/ledger.txt -- <command>`, with the patches and the ledger in the session
-scratchpad. Verdict lines, verbatim:
+scratchpad. The table is condensed from the ledger: patch, test, `first` and `verdict` per run.
+Runs 17 to 22 come from the review fixes.
 
 ```
 q-doublequote     FuzzDoubleQuote         first --- FAIL: FuzzDoubleQuote          KILLED
@@ -166,17 +183,26 @@ c-schedskip       ci-result_test.sh       first FAIL fuzz_skip_refused_schedule 
 c-nocall          ci-result_test.sh       first FAIL fuzz_skip_permitted_workflow_call KILLED
 c-ifpr            ci-result_test.sh       first FAIL ci_yml_fuzz_job_shape         KILLED
 c-timeout         ci-result_test.sh       first FAIL ci_yml_fuzz_timeout_sized     KILLED
+t-uploadif        ci-result_test.sh       first FAIL ci_yml_fuzz_job_shape         KILLED
+t-concurrency     ci-result_test.sh       first FAIL ci_yml_schedule_own_concurrency_group KILLED
+t-zero            fuzz_test.sh            first FAIL bad_fuzztime_refused_[0s]     KILLED
+t-splice          fuzz_test.sh            first FAIL make_fuzz_value_is_not_shell  KILLED
+t-mysqldq         TestLex                 first none                               SURVIVED
+t-mysqldq2        TestLex                 first --- FAIL: TestLex/mysql_double_quoted_string_escapes KILLED
 $ grep -c '^verdict' ledger.txt; grep -c '^verdict  KILLED' ledger.txt; grep -c '^verdict  SURVIVED' ledger.txt
-16
-14
-2
+22
+19
+3
 ```
 
 The two survivors: `v-noescape` removed the only use of `quoting` in visitor.go, so the mutant did
 not compile and no test ran. It was replaced by `v-noescape2` (`EscapeLikePattern` in place of
 `EscapeString`), which compiles and was killed. `r-tokjoin` against `FuzzParseValue` is a plan
 error: `parseValue` takes a token and never calls `tokenize`, so that target cannot see the
-mutation. `FuzzTokenize` kills it.
+mutation. `FuzzTokenize` kills it. `t-mysqldq` dropped `"` from the string case but not from the
+`Other` stop set, so the lexer looped forever on a zero-length token and the run hung. That is a
+broken mutant. `t-mysqldq2` drops it from both, which restores the pre-fix behaviour, and was
+killed.
 
 ### Verification (step 1)
 
@@ -199,6 +225,56 @@ skipped. Lane selector: `security`, `correctness`, `brief`, with no `unmatched` 
   `scripts/README.md` changed. All five were read and dismissed: none mentions make targets, CI
   jobs, scripts or fuzzing. No later unit's brief was corrected.
 
+### Review lanes (step 5) and triage (step 6)
+
+There were 3 lanes, security, correctness and brief, each a fresh subagent in its own detached
+worktree, given the diff and this brief. The selector skipped none. Counted by reading each report:
+the brief lane raised 6 findings, security 5 and correctness 7, so 18 in all. Several overlap.
+
+Fixed, in f294245:
+
+- The `ci-result.sh` usage example in scripts/README.md failed, because `fuzz` is now expected.
+  It now passes `fuzz` (brief lane).
+- CONTRIBUTING and CHANGELOG overstated the property: not every target reads SQL back, and the
+  backslash case is exempt. Both are reworded (brief lane). CONTRIBUTING also said a security
+  finding goes privately through SECURITY.md, which a public scheduled run cannot honour. It now
+  says CI findings are public on failure (security lane).
+- MySQL multibyte client charsets (GBK, SJIS) are outside what a byte-wise oracle can see. Per the
+  operator, this is a docs caveat in CONTRIBUTING and the sqllex doc, with no advisory, because
+  quoting.go's own SECURITY comment already documents the class. No reproducer is in the record
+  (security lane).
+- The scheduled run shared `ci-refs/heads/main` with pushes for up to an hour. Per the operator,
+  the schedule now has its own concurrency group, pinned by `ci_yml_schedule_own_concurrency_group`
+  (brief, security and correctness lanes).
+- The upload ran only on `if: failure()`, so a timed out (cancelled) job lost its inputs. It is now
+  `failure() || cancelled()`, pinned (correctness lane).
+- `FUZZTIME` `0s`, `0x` and `00m` passed the check but `go test` refuses them. They are now
+  refused with exit 2, and the message says "positive duration". Valid but unusual forms such as
+  `.5s` and `1µs` stay refused: the check is a deliberate subset (correctness lane).
+- `make fuzz` spliced `FUZZTIME` and `GO` into the recipe unvalidated. Both are now exported
+  target-specific variables, so the value reaches fuzz.sh's check as data, pinned by
+  `make_fuzz_value_is_not_shell` (security and correctness lanes).
+- The sqllex MySQL dialect did not read `"..."` as a string, which MySQL's default sql_mode does.
+  It does now. The test name that contradicted its assertion is fixed, and the doc says where
+  `\x` decoding departs from MySQL (correctness lane).
+- `FuzzIdentifierQuoting` checked only the identifier list; it now checks the whole token stream.
+  `FuzzMaskedProjection` also checks its token-kind shape (security lane).
+- `ci_yml_fuzz_job_shape` did not pin FUZZTIME 5m/15s or the upload condition; it pins both now.
+  The timeout target count excludes `tools/` and accepts any receiver name (correctness lane).
+- In this brief, the "verbatim" ledger claim and the unevidenced local-fuzz claim are corrected
+  above (brief lane).
+
+Judged not to need a change, with reasons:
+
+- MySQL `\x` decoding versus MySQL's real `\%`, `\_` and `\n`: exact for what EscapeString
+  emits today, and FuzzEscapeString's ANSI read would catch a MySQL-only escaper drifting. It is
+  now documented in sqllex (correctness lane).
+- The star expansion and `refuseMaskedUse` branches of the OPA plugin are not fuzzed. The brief
+  asks for the mask literal path, and star expansion renders through the same `maskedProjection`.
+  This is recorded under Not done (security lane).
+- The backslash defect has no owner beyond this record. It is carried in the index handover for
+  the operator to schedule (brief lane).
+
 ### What the next units inherit
 
 - 08 (community-docs): fuzzing exists, is documented in CONTRIBUTING (Testing, Fuzzing), and
@@ -215,7 +291,12 @@ skipped. Lane selector: `security`, `correctness`, `brief`, with no `unmatched` 
   doubles `\` for PostgreSQL and SQLite in non-parameterised mode, so a literal backslash comes
   back doubled. Failing input: `\` (`'\\'` reads back as `\\` under ANSI rules). It is not
   injection: the literal never closes early under either lexer, which `FuzzEscapeString`,
-  `FuzzStringLiteral` and `FuzzMaskedProjection` assert. It is pinned by the skipped
+  `FuzzStringLiteral` and `FuzzMaskedProjection` assert for single-byte and UTF-8 connections. It is pinned by the skipped
   `TestEscapeStringANSIRoundTripBackslash`. A fix wants a per-dialect escaper (in a separate
   change), and once it lands the three targets' backslash exemption and the skip are removed.
 - No fuzz finding was produced in the local runs, so nothing is reported for a security advisory.
+  The security lane's multibyte charset point went to the operator, who ruled a docs caveat, not
+  an advisory.
+- The OPA plugin's star expansion branch and its `refuseMaskedUse` check are not fuzzed. The first
+  renders through the same `maskedProjection` the target covers, and the second is an
+  authorisation property, outside the brief's criteria.
