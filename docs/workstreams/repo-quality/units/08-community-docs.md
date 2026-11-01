@@ -51,6 +51,13 @@ Review lanes: security, correctness, brief
 
 ## Decisions
 
+- CORRECTION FROM UNIT 07: `examples/before_after_example.go` (a commented-out sketch, never
+  compiled) shows API that no longer exists (`sm.UsePlugin`, `plugins.NewSoftDeletePlugin`, a
+  two-value `ToSQL`). Unit 07 added compiled `Example*` functions in `managers`, `visitors`,
+  `plugins/softdelete` and `plugins/opa` and left the sketch untouched as outside its items.
+  Unit 07 also changed `UPDATE ... SET` output (targets bare, another table's column refused with
+  `managers.ErrSetTargetTable`).
+
 ## Plan
 
 ## Outcome

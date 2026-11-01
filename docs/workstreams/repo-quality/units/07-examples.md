@@ -209,4 +209,5 @@ is 08's call. For 10: `ExampleNewFromServer*` bind a loopback port, as the OPA t
 
 - `examples/before_after_example.go` (a commented-out sketch, not compiled) shows stale API
   (`sm.UsePlugin`, `plugins.NewSoftDeletePlugin`, a two-value `ToSQL`). Outside this unit's items;
-  left for the operator to schedule or delete.
+  left for the operator to schedule or delete. Carried into unit 08's brief as a
+  `CORRECTION FROM UNIT 07:` at step 9.
