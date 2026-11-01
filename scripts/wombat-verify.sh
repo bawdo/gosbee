@@ -78,11 +78,19 @@ else
 fi
 run tidy tidy_check
 run changelog scripts/changelog.sh check
+if command -v jq > /dev/null 2>&1; then
+    run release-scripts bash scripts/release-scripts_test.sh
+else
+    skip release-scripts "jq not installed (CI runs it)"
+fi
 run vuln go -C tools tool govulncheck -C .. ./...
 if command -v zizmor > /dev/null 2>&1; then
     run zizmor zizmor --offline .github/workflows
+elif command -v uvx > /dev/null 2>&1; then
+    # The version CI's zizmor-action runs.
+    run zizmor uvx zizmor@1.31.1 --offline .github/workflows
 else
-    skip zizmor "zizmor not installed (CI runs it)"
+    skip zizmor "zizmor and uvx not installed (CI runs it)"
 fi
 if command -v shellcheck > /dev/null 2>&1; then
     run shellcheck shellcheck scripts/*.sh
