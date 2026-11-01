@@ -8,7 +8,8 @@ This directory contains scripts to assist with development and testing.
 
 **Usage**:
 ```bash
-./scripts/pre-ci-check.sh
+./scripts/pre-ci-check.sh              # run every check
+./scripts/pre-ci-check.sh --fix gofmt  # apply gofmt -s -w first, then check
 ```
 
 **What it checks**:
@@ -71,3 +72,23 @@ the `Changelog` CI check and the `Release` workflow.
 ```
 
 See [Releasing](../CONTRIBUTING.md#releasing) for the full release process.
+
+## ci-result.sh
+
+**Purpose**: Decides the `CI OK` check, the single check the `main` ruleset
+requires. The gate job in `.github/workflows/ci.yml` runs it after every other
+job, whatever their outcome.
+
+**Usage**:
+```bash
+EVENT=pull_request NEEDS='{"lint":{"result":"success"},"test":{"result":"success"}}' \
+  ./scripts/ci-result.sh
+./scripts/ci-result.sh --jobs   # list the jobs it expects
+```
+
+It prints each job's result and fails on a failed, cancelled, missing or
+unexpected job, and on a skipped job unless the `skippable` table for that
+event permits it. Adding a job to `ci.yml` means adding it to `JOBS` and to the
+gate's `needs:` too; `ci-result_test.sh` fails until both agree. It needs `jq`.
+
+**Tests**: `./scripts/ci-result_test.sh`, run by CI and by `wombat-verify.sh`.

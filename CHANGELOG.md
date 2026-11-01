@@ -13,10 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   weekly and on every push to `main`, publishing the result to scorecard.dev
   and the Security tab. The README carries the Scorecard badge.
 
+- CI lints every script under `scripts/` with a pinned, checksum verified
+  shellcheck release.
+
 ### Changed
 
+- The `CI OK` check is decided by an in-repo script, `scripts/ci-result.sh`,
+  in place of the third-party `re-actors/alls-green` action. It fails on any
+  failed, cancelled, missing or unexpected job, and on a skipped job unless
+  that event is permitted to skip it.
+- Codecov's project and patch coverage statuses now fail a pull request that
+  drops below their targets, instead of being informational.
 - REPL release binaries are built without the symbol table and DWARF debug
   data, which makes them about a third smaller.
+
+### Fixed
+
+- `scripts/pre-ci-check.sh --fix gofmt` (and `make pre-ci-fix`) now applies
+  the fix. The option was parsed but never reached the script's main
+  function, so it was silently ignored.
 
 ## [v0.2.1] - 2026-10-27
 
