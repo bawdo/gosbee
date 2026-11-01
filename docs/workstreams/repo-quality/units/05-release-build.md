@@ -138,7 +138,7 @@ release-proof, now unit 10.
 
 ## Outcome
 
-Close mode as run: `auto`. Questions that fired: none so far.
+Close mode as run: `auto`. Questions that fired: none, at any step, the verify gate at step 8 included. "Not done, and why" notes written: none, so none travelled.
 
 What landed: both plans in full, in plan order. Work item `[a]` (the 02 plan) merged at `dd10469`
 and item `[b]` (the 03 plan) merged at `93810c1`, both signed, with verification green on every gate
