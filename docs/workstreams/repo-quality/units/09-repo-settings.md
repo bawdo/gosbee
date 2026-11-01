@@ -103,6 +103,13 @@ Review lanes: security, correctness, brief
   still refuses a dispatch from any other branch, which is the hole CONTRIBUTING describes. No
   required reviewers: solo maintainer. `release.yml`'s publish job names the environment, which
   CONTRIBUTING says this unit adds.
+- The live "Protect main" pull request rule carries
+  `require_extra_approval_for_unattributed_changes: true`, which the caddy_shack body omits; a PUT
+  without it would likely reset it. Found comparing the first `rulesets` dry run with the live
+  ruleset. The script sends it as `true`, its current value, and the test pins it.
+- Census for `release.yml`'s `environment:`: `grep -rn 'environment' .github scripts
+  CONTRIBUTING.md SECURITY.md README.md` found only CONTRIBUTING.md:588-590 ("The workflow names no
+  environment yet"); no script parses the publish job.
 - Caller census before changing shared contracts: `grep -rn "environment\|repo-settings\|Analyze (go)\|Protect main" --include='*.md' --include='*.yml' --include='*.sh' . | grep -v '^./docs/workstreams/repo-quality/units/0[1-8]'`
   is run at the step that edits each file and its hits recorded in `## Plan`.
 

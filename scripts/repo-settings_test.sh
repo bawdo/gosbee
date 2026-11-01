@@ -242,6 +242,7 @@ jq -e '.name == "Protect main" and .target == "branch" and .enforcement == "acti
         "require_code_owner_review":false,
         "require_last_push_approval":false,
         "required_review_thread_resolution":true,
+        "require_extra_approval_for_unattributed_changes":true,
         "allowed_merge_methods":["squash"]})
     and (.rules[4].parameters.strict_required_status_checks_policy == true)
     and (.rules[4].parameters.required_status_checks == [
