@@ -45,9 +45,11 @@ Review lanes: security, correctness, brief
   CycloneDX JSON, spec 1.6.** Why: it reads Go's own module graph (`mod`) and a binary's embedded
   build info (`bin`), so it describes both the module and the exact modules linked into each REPL
   binary. Build info survives `-s -w`. It is pinned by `tools/go.sum`, and Dependabot already
-  watches `/tools`, so it stays current without a new mechanism. It downloads nothing at run time.
-  Flags checked against the v1.12.0 source: `mod` has `-json -licenses -type -output-version
-  -output`, and `bin` has `-json -std -version`. Its module wants `go 1.26.0`, which matches
+  watches `/tools`, so it stays current without a new mechanism. It downloads no release binary and uses no action.
+  Its module and dependencies are fetched from the proxy in the build job, each verified against
+  `tools/go.sum`. Flags checked against the v1.12.0 source: the shared output options
+  (`-json -output -output-version`) and shared SBOM options (`-std -licenses -noserial`) apply to
+  every subcommand, and `mod` adds `-type -test` and `bin` adds `-version`. Its module wants `go 1.26.0`, which matches
   `tools/go.mod`. Rejected: syft through `anchore/sbom-action` (the action downloads a syft release
   at run time, pinned by version rather than by hash, and it catalogues by filesystem heuristics
   rather than Go's module graph); `spdx-sbom-generator` (unmaintained); a hand-rolled
@@ -70,6 +72,9 @@ Review lanes: security, correctness, brief
   `--max-time 5`. Worst case is 60 seconds across both endpoints (45 + 15), and the job's
   `timeout-minutes` is 5. A hash mismatch is not retried, because the proxy never changes a
   version's commit.
+- **zizmor: proved offline locally, in full in CI**, as 02 recorded. The plan's local proof is
+  `uvx zizmor@1.31.1 --offline`, and the online audits run only in CI's zizmor-action, so the
+  pull request's CI run is where "zizmor reports no findings" is proved in full.
 - **Proxy job permissions: `contents: read`**, as go-blinkstick sets it. It writes nothing.
 - **Caller census** (before any edit, for the dist and `SHA256SUMS` contract):
   `grep -n 'SHA256SUMS\|gosbee-repl_\|dist/\|subject-' docs/workstreams/repo-quality/plans/2026-11-01-release-pipeline.md .github/workflows/*.yml scripts/* CONTRIBUTING.md README.md`.
@@ -130,6 +135,28 @@ later brief was corrected.
 Questions that fired: at open, the re-cut question. The operator answered the commit question
 ("You may commit - follow all rules.") but not the re-cut one, so the unit ran as briefed. Standing
 commit grant given in conversation.
+
+Review: 1 lane (`brief`), in a fresh subagent in its own worktree. It reported 7 findings: 1
+should-fix and 6 nits, none blocking. I counted them from the report, and all 7 were judged real
+and fixed:
+
+1. Task 3's `awk` range extraction stopped on its own start line, because `  proxy:` matches the
+   end pattern, so every absence check passed vacuously. I reproduced it on a sample workflow: the
+   plan's form printed `  proxy:` only, and the fixed form printed the whole job. Replaced with a
+   flag-based `awk`.
+2. Task 1 Step 1 said to learn the stdlib component name from a run against `.`, but only
+   `bin -std` on a binary emits it. Rewritten to probe a built binary with absolute paths.
+3. Task 2's `fetch` helper as described could not retry a sumdb content miss. Now
+   `fetch_until <url> <attempts> <check>`.
+4. Task 1 used `$ROOT`, which 02's script does not define. The plan now defines it.
+5. The SBOM Decision said the tool downloads nothing at run time, but it is fetched from the proxy
+   and verified by `tools/go.sum`. Reworded.
+6. The flag check did not name `-output` and `-output-version` for `bin`. The Decision now says
+   which options are shared.
+7. 02's offline and online zizmor split was not carried into 03's Decisions. Added.
+
+No re-sweep: the fixes change the plan's wording, not any behaviour or contract a document
+describes.
 
 Inherited by whoever builds this: the 02 plan's double-listed bundle (see Decisions), and the
 `--signer-workflow` verification docs, now left to unit 07.
