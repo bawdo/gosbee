@@ -78,6 +78,33 @@ Review lanes: security, correctness, brief
   `scripts/check-module-proxy.sh` reads from the proxy's `.info`.
 - Dispatched-run caveat carried into SECURITY.md from CONTRIBUTING (Releasing): `--source-ref`
   fails for a by-hand run's assets.
+- CODE_OF_CONDUCT.md is built from upstream, not caddy_shack's copy: fetched
+  `EthicalSource/contributor_covenant` `release/content/version/2/1/code_of_conduct.md`, stripped
+  its front matter, and diffed the body against caddy_shack's (identical but for the contact line).
+  caddy_shack's contact, "a private report to @bawdo on GitHub", names no real channel (GitHub has
+  no direct messages), so gosbee's points at the repository's private reporting form, with a line
+  asking the reporter to title it a conduct report. Upstream's American spelling is kept: it is a
+  quoted standard text.
+- Issue forms are written for a library, not copied: the bug form asks for a minimal program, the
+  generated and expected SQL, dialect and plugins (both multi-select), gosbee and Go versions, and
+  sends security problems to SECURITY.md. YAML checked with Ruby's parser.
+- The "~1096 tests" in README and CONTRIBUTING is stale. Measured with
+  `git ls-files '*_test.go' | xargs grep -hE '^func (Test|Example|Fuzz|Benchmark)[A-Za-z0-9_]*\('`:
+  1330 Test, 14 Example, 9 Fuzz, 6 Benchmark. The hand-kept figure is removed rather than replaced,
+  since nothing keeps it current; README now describes coverage in words.
+- CONTRIBUTING facts corrected against the tree: `docs/design/` does not exist (section replaced by
+  `docs/plans/` and `docs/workstreams/`); the `Visitor` interface is in `nodes/node.go`, not
+  `nodes/visitor.go`; `baseVisitor` is in `visitors/visitor.go`, `DotVisitor` in
+  `visitors/dot_visitor.go`, the only `stubVisitor` in `nodes/nodes_test.go`; `go mod tidy` at
+  Getting Started replaced by `make deps` (CI fails on a tidy diff, so tidy is not a setup step);
+  the workflow's numbering (1 to 6, then 5, 6 again) is renumbered 1 to 9 and uses the Makefile
+  targets (each checked against the Makefile); `feature/` branch example dropped; a CHANGELOG step
+  and signed commits added; `internal/`, `scripts/` and `tools/` described as they are. The
+  8-check pre-CI table was checked against `scripts/pre-ci-check.sh` (eight `check_*` functions).
+- Best Practices badge note lives in a new CONTRIBUTING "Badges" section, per the criterion, with
+  the badge's form and where it goes; no badge added.
+- Em dashes: the two README lines added beside existing em-dash list items use colons instead, per
+  the operator's writing rules. Existing em dashes in untouched lines are left alone (out of scope).
 
 ## Plan
 
