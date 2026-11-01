@@ -113,6 +113,61 @@ Review lanes: security, correctness, brief
 
 ## Outcome
 
+Close mode as run: **auto**. Questions that fired, with the operator's answers:
+
+- Commit permission (unit open, house rules): "Yes, commit freely".
+- `pre-ci-check.sh` `main` without `"$@"`, against "behaviour unchanged" (scope): "Pass \"$@\"".
+- Coverage and zizmor could not run here: the sandbox blocks local port binding (`httptest`),
+  and the auto-mode classifier refused both an unsandboxed `go test` and `uvx zizmor`. The
+  operator ran `measure.sh` and the step 1 verification themselves.
+
+### What landed
+
+- `scripts/ci-result.sh` decides `CI OK`; `re-actors/alls-green` is gone from every workflow
+  (`ci-result_test.sh` case `no_alls_green`). The gate job keeps the name `CI OK`, `if: always()`,
+  `needs: [ lint, test ]`, `EVENT`/`NEEDS` through `env:` only.
+- CI `lint` job: shellcheck v0.11.0 by sha256, `--version`, over `scripts/*.sh`; then
+  `scripts/ci-result_test.sh`. actionlint clean locally.
+- `pre-ci-check.sh` shellcheck clean, no `disable` directives; `--fix gofmt` now reaches `main`.
+- `wombat-verify.sh`: shellcheck over `scripts/*.sh`; new `ci-result` gate.
+- `.codecov.yml`: project 93% and patch 80%, both `informational: false`.
+- CONTRIBUTING Branch Rules check list, scripts/README, CHANGELOG `[Unreleased]` (Added, Changed,
+  Fixed).
+
+### Verification (step 1, run by the operator at `7ec5cca`)
+
+`WOMBAT_BASE_REF=workstream/repo-quality scripts/wombat-verify.sh`: tree `clean`; `fmt`, `vet`,
+`lint`, `tidy`, `changelog`, `vuln`, `shellcheck`, `ci-result`, `test` pass; `zizmor` skipped,
+reason "zizmor not installed (CI runs it)" (run by hand earlier: no findings, below).
+Lanes from `select-gates.sh .`: 3 (`security`, `correctness`, `brief`), none skipped.
+
+### Sweep (step 3)
+
+`sweep-docs.sh . --base workstream/repo-quality --claim 're-actors/alls-green'` printed 8
+candidates; a second run with `--claim 'target (80%'` printed the same 8 paths.
+Acted on: none rewritten in the close, none deleted. The stale sentences had already been
+rewritten in the work (`CONTRIBUTING.md` check list and pre-ci table, `scripts/README.md`,
+`pre-ci-check.sh` comment). Dismissed: `CHANGELOG.md` (`claim`: its only hit is the new entry
+saying alls-green was replaced, which is true); `CONTRIBUTING.md`, `scripts/README.md` (`touched`,
+read back, current); `README.md`, `cmd/repl/README.md`, `plugins/README.md`,
+`plugins/opa/README.md`, `plugins/softdelete/README.md` (`named-file` on the basename
+`README.md` only; `grep -n -i` for coverage, shellcheck, `CI OK`, pre-ci found nothing in them).
+CONTRIBUTING's "This script mimics the GitHub Actions workflow" is left: pre-ci-check never ran
+every CI step (zizmor, tidy), and shellcheck joins that list without making the sentence false.
+Corrections written into later briefs: none (unit 05 adds fuzz to a table that exists as briefed;
+unit 08's rename question stands as written).
+
+### What the next units inherit
+
+- Unit 05: add `fuzz` to `JOBS`, to the gate's `needs:`, and to the `skippable` arms of the events
+  that may skip it. `ci-result_test.sh` fails until `JOBS`, `needs:` and the `ci.yml` job list
+  agree, and its permitted-skip case rewrites the `pull_request) echo "" ;;` line in a copy: if
+  05 changes that arm, the test's `sed` must follow (the test fails loudly if it does not).
+- The 02 builder: 02's plan makes `ci.yml` callable and moves Codecov out. The gate job now has its
+  own checkout, which under `workflow_call` needs the same `ref: inputs.ref` treatment as every
+  other checkout in the file.
+- Unit 08: `Coverage` stays not required; Codecov's statuses now gate but are not a ruleset check.
+
 ### Coverage measurement (run by the operator, outside the sandbox)
 
 ```
