@@ -41,6 +41,7 @@ it describes.
 2. **Download dependencies:**
    ```bash
    make deps        # go mod download
+   make outdated    # report outdated modules and tool pins, offer upgrades
    ```
    `make help` lists every target.
 
