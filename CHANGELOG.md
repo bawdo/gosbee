@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `make outdated` reports direct modules with newer releases, the
+  golangci-lint and zizmor pins in CI, the tools in `tools/go.mod` and the
+  `go` directive against oldstable, then offers to upgrade the direct modules
+  on a terminal. Releases under a week old are flagged, matching Dependabot's
+  cooldown.
+
 ## [v0.3.0] - 2026-11-01
 
 ### Added

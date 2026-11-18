@@ -95,6 +95,10 @@ jobs:
       - name: Test the fuzz runner script
         run: bash scripts/fuzz_test.sh
 
+      # Fake go and curl, so no network.
+      - name: Test the outdated report script
+        run: bash scripts/outdated_test.sh
+
       # Fake gh, so no network or token.
       - name: Test the repository settings script
         run: bash scripts/repo-settings_test.sh
