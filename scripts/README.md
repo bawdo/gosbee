@@ -114,6 +114,46 @@ failing input to `<package>/testdata/fuzz/<target>/`.
 **Tests**: `./scripts/fuzz_test.sh` (a fake `go`), run by CI and by
 `wombat-verify.sh`.
 
+## outdated.sh
+
+**Purpose**: Reports outdated dependencies and tool pins, and offers to
+upgrade the direct modules in `go.mod`. `make outdated` calls it.
+
+**Usage**:
+```bash
+./scripts/outdated.sh                    # report, then offer upgrades on a terminal
+COOLDOWN_DAYS=14 ./scripts/outdated.sh   # treat releases under 14 days old as too fresh
+```
+
+**What it reports**:
+- Direct modules in `go.mod` with a newer release in the same major version,
+  plus any that are deprecated or on a retracted version. Indirect modules are
+  only counted, as `go mod tidy` moves them along.
+- The golangci-lint and zizmor `version:` inputs in `.github/workflows/ci.yml`.
+  Dependabot bumps the action SHAs, not these, so this is the only reminder.
+  The zizmor lookup uses the unauthenticated GitHub API and says "lookup
+  failed" when offline or rate limited.
+- Each tool in the `tool` directive of `tools/go.mod` (govulncheck,
+  cyclonedx-gomod), one line per module.
+- The `go` directive in `go.mod` against oldstable, the floor CI's test matrix
+  runs. A mismatch means CI is no longer testing the declared minimum.
+
+Tool pins are report only: the script never edits workflow files or
+`tools/go.mod`. Releases younger than `COOLDOWN_DAYS` (default 7, matching
+`dependabot.yml`) are marked "too fresh" and left out of "all", but can still
+be picked.
+
+**Upgrading**: on a terminal it asks `[a]ll`, `[p]ick` or `[N]one`, then runs
+`go get`, `go mod tidy`, `go build ./...` and `go test ./...` and shows the
+`go.mod` diff. Nothing is committed. It refuses to start while `go.mod` or
+`go.sum` has uncommitted changes. Without a terminal it prints the report and
+exits 0.
+
+Needs `go` and `jq`, plus `curl` for the zizmor check.
+
+**Tests**: `./scripts/outdated_test.sh` (a fake `go` and `curl`), run by CI
+and by `wombat-verify.sh`.
+
 ## verify-tag.sh
 
 **Purpose**: Checks a release tag is annotated and that GitHub verified its

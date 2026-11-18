@@ -82,6 +82,11 @@ lint: ## Run golangci-lint with the CI timeout
 vuln: ## Scan dependencies for known vulnerabilities
 	$(GO) -C tools tool govulncheck -C .. ./...
 
+.PHONY: outdated
+outdated: export GO := $(GO)
+outdated: ## Report outdated modules and tool pins, offer upgrades
+	./scripts/outdated.sh
+
 .PHONY: build
 build: ## Build the REPL binary into bin/
 	$(GO) build -o $(BIN_DIR)/repl $(REPL_PKG)
